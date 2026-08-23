@@ -36,6 +36,7 @@ export function makeLightUniforms(): LightUniforms {
     uCloudTime: { value: 0 },
     uShadowMap: { value: null as THREE.Texture | null },
     uMapSize: { value: new THREE.Vector2(1, 1) },
+    uSunLift: { value: 1 },
     uFilm: { value: SURFACE.filmStrength },
   }
 }
@@ -55,6 +56,11 @@ export function applyLook(u: LightUniforms, look: SeasonLook) {
   u.uRimStrength.value = look.rimStrength
   u.uContrast.value = look.contrast
   u.uLift.value = look.lift
+  // how far toward the sun a point standing this high above the ground has to look to find its own
+  // light: its height over the tangent of the sun's elevation, capped so it does not read the
+  // shadow of somewhere else entirely
+  const tanE = Math.max(0.08, sun[1] / hl)
+  u.uSunLift.value = Math.min(LIGHT.propShadowLiftMax, LIGHT.propShadowLift / tanE)
 }
 
 /** Declarations and the light itself. Included by every fragment shader on the map. */
@@ -76,6 +82,7 @@ uniform float uCloudTime;
 uniform sampler2D uShadowMap;
 uniform vec2 uMapSize;
 uniform float uFilm;
+uniform float uSunLift;
 
 float fhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float fnoise(vec2 p) {
@@ -123,9 +130,14 @@ vec3 shade(vec3 albedo, vec3 n, float shadowSample, float ao, float cloud) {
 }
 
 /** A fine grain over everything, and the contrast that puts the result across the whole range
- *  rather than the middle of it. */
+ *  rather than the middle of it.
+ *
+ *  The grain is measured in pixels, not in tiles. Taken in world space it was a fixed number of
+ *  cycles per tile, which at overview zoom is many cycles per pixel: it stopped being a grain and
+ *  became speckle, and because the speckle does not average to what the smooth version would, the
+ *  whole palette moved as the camera pulled back. In pixels it is the same grain at every zoom. */
 vec3 finish(vec3 c, vec3 world) {
-  float film = fnoise(world.xz * ${SURFACE.filmScale.toFixed(1)}) - 0.5;
+  float film = fnoise(gl_FragCoord.xy * ${SURFACE.filmScale.toFixed(3)}) - 0.5;
   c *= 1.0 + film * uFilm;
   c = (c - 0.5) * uContrast + 0.5 + uLift;
   return max(c, vec3(0.0));
@@ -171,7 +183,7 @@ varying vec3 vTint;
 void main() {
   vec3 n = facetNormal(vWorld, vNormal2);
   // sample the light a little toward the sun, so a thing does not stand in its own shadow
-  vec3 probe = vWorld + uSunHoriz * (max(0.0, vWorld.y) * ${LIGHT.propShadowLift.toFixed(2)});
+  vec3 probe = vWorld + uSunHoriz * (max(0.0, vWorld.y) * uSunLift);
   float shadow = sunReach(probe);
   vec3 c = shade(vTint * uTint, n, shadow, uAo, cloudShadow(vWorld));
   gl_FragColor = vec4(finish(c, vWorld), 1.0);

@@ -102,8 +102,10 @@ export class ShadowBake {
         base[tz * tw + tx] = Math.round(Math.max(0, Math.min(1, v)) * 255)
       }
     }
-    for (const o of statics) this.stamp(base, o, sx, sz, tanE)
+    // blur the marched ground first, then stamp: a tree's shadow is a few texels across and a blur
+    // over the top of it is most of what made the props' shadows invisible on a phone
     blur(base, tw, th, SHADOW.blurPasses)
+    for (const o of statics) this.stamp(base, o, sx, sz, tanE)
     this.work.set(base)
     this.texture.needsUpdate = true
   }
@@ -124,13 +126,13 @@ export class ShadowBake {
   private stamp(buf: Uint8Array, o: Occluder, sx: number, sz: number, tanE: number) {
     const per = this.per
     const len = Math.min(SHADOW.reachTiles, o.height / tanE)
-    const discs = Math.max(2, Math.min(14, Math.round(len * per * 0.9)))
+    const discs = Math.max(2, Math.min(26, Math.round(len * per * 0.9)))
     for (let k = 0; k <= discs; k++) {
       const t = k / discs
       const wx = o.x - sx * len * t
       const wz = o.z - sz * len * t
-      const r = o.radius * SHADOW.contactWidth * (1 - 0.4 * t)
-      const depth = SHADOW.contactDepth * (1 - 0.55 * t)
+      const r = o.radius * SHADOW.contactWidth * (1 - SHADOW.contactTaper * t)
+      const depth = SHADOW.contactDepth * (1 - SHADOW.contactFade * t)
       disc(buf, this.tw, this.th, wx * per, wz * per, r * per, depth)
     }
   }
