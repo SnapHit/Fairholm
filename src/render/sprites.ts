@@ -150,7 +150,14 @@ function hash(a: number, b: number): number {
 
 /** The buildings of one settlement, laid out from its id so the place never reshuffles. Larger
  *  places stand further out, which is how a settlement grows past the tile it is counted on. */
-export function layOut(id: number, pop: number, cx: number, cz: number, heightAt: (x: number, z: number) => number): SpritePlacement[] {
+export function layOut(
+  id: number,
+  pop: number,
+  cx: number,
+  cz: number,
+  heightAt: (x: number, z: number) => number,
+  onLand: (x: number, z: number) => boolean,
+): SpritePlacement[] {
   const n = pieceCount(pop)
   const grown = Math.max(0, Math.min(1, (n - 2) / Math.max(1, ATLAS_PIECES.length - 2)))
   const spread = SPRITE.spreadFrom + grown * (SPRITE.spreadTo - SPRITE.spreadFrom)
@@ -172,8 +179,14 @@ export function layOut(id: number, pop: number, cx: number, cz: number, heightAt
     const radius = ring === 0 ? 0 : spread * (ring / Math.max(1, Math.ceil((n - 1) / 4)))
     const jx = (hash(id * 31 + k, 2) - 0.5) * spread * SPRITE.jitter
     const jz = (hash(id * 31 + k, 3) - 0.5) * spread * SPRITE.jitter
-    const x = cx + Math.cos(angle) * radius + jx
-    const z = cz + Math.sin(angle) * radius * 0.85 + jz
+    // a footprint this size reaches past the tile, and a coastal settlement's ring can reach past
+    // the coast with it. A building that will not stand on the ground it is given walks back in
+    let x = cx + Math.cos(angle) * radius + jx
+    let z = cz + Math.sin(angle) * radius * 0.85 + jz
+    for (let back = 0; back < 3 && !onLand(x, z); back++) {
+      x = cx + (x - cx) * 0.5
+      z = cz + (z - cz) * 0.5
+    }
     // a tint of one is the drawing as it was drawn, so the wander is around that rather than from it
     const warm = (hash(id * 13 + k, 4) - 0.5) * SPRITE.hueJitter
     const value = 1 + (hash(id * 13 + k, 5) - 0.5) * SPRITE.valueJitter

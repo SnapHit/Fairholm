@@ -892,6 +892,132 @@ ground, and open ground is most of what the props now cover. It earns its place 
 it casts rather than through its own shading.
 
 
+## The drawn settlements, the shadows and the open ground, session of 23 August 2026
+
+### 66. The baked drop shadows in the settlement sheet stay, and the sun turns to meet them
+
+The brief offered two ways round the fact that the seven early era buildings are drawn with their
+light already in them: measure the baked direction and rotate the scene's sun to match, or strip the
+baked shadows at load and let the engine stamp its own. The first was to be tried first.
+
+It is the one that was done, and the second turns out not to be available. The drop shadows are not
+on a layer of their own and they are not soft: the sheet's alpha is ninety-nine per cent hard, the
+shadows sit inside the same silhouette as the walls, and their colour overlaps the thatch. Measured
+in saturation against value, a shadow on the white of the background reads 0.32 and the pale roofs
+read 0.27, so any threshold that takes the shadows takes the roofs first. Tried at 0.235 and the
+barn and the yard came away with holes in their roofs. There is no colour test that separates them.
+
+So the sun mirrors instead. It was at azimuth -52 to -6 across the year, which puts it over the
+player's right shoulder; it is now -140 to -172, which puts it over the left, matching the sheet's
+own light from the upper left and its shadows to the lower right. The seasonal swing narrows from
+fifty degrees to thirty so the agreement holds in every season. Verified by baking the shadow map
+and looking at it, and by shooting the same frame at four known azimuths.
+
+The one thing that was separable is the checkerboard the extractor left behind wherever a drop
+shadow had darkened the background enough to stop it reading as background. That is genuinely
+neutral where nothing in the drawing is, and it comes away cleanly. See `scripts/clean-sprites.mjs`.
+
+### 67. Both settlement tiers are built and the zoom picks between them
+
+A settlement below the zoom where props cull is one mark in owner colour, per art brief section 10.
+That could have been a rebuild on the zoom crossing, and the first attempt was: `buildSettlements`
+took a level of detail argument. It never fired, because a zoom change does not rebuild anything,
+and it must not: a rebuild during a gesture is the one thing the renderer never does. Both tiers are
+built and `updateLod` switches their visibility, like the two prop tiers.
+
+### 68. The billboards do not depth test, and the units and rings are pushed after them
+
+A picture of a building has no depth. Depth testing it against a tree makes any overlapping tree
+punch a hole in it, and depth writing makes two overlapping buildings fight. So the sprite layer
+tests nothing, writes nothing, and relies on instance order for the sort, which is why the layout
+sorts by world z before it is filled.
+
+The cost is that everything drawn before it is covered by it. Two things must not be: the selection
+rings, which are now transparent with a render order of ten, and the units, whose material is now
+transparent with a render order of two, so a garrison in a settlement is still visible. Neither
+change moves anything on screen; both only move it in the queue.
+
+### 69. A prop's shadow offset comes from its height, not from its altitude
+
+A prop samples the light a little toward the sun so it does not stand in the shadow it is itself
+casting. That offset was a fixed multiple of the fragment's world height, which is two mistakes: it
+is right at one sun elevation and wrong at every other, and world height on a mountain is two and a
+half tiles, so a boulder up there was reading the light of somewhere three tiles away while a tuft
+in a marsh read its own.
+
+It is now the prop's height over the tangent of the sun's elevation, capped at 3.2 tiles, with the
+height itself capped at 0.55 tiles, about the tallest prop there is. The shader has only the world
+height and not the height above the ground, so the second cap is an approximation; carrying a base
+height per instance would be exact and was not thought worth an attribute.
+
+### 70. The terrain carries the colour of the props it is not wearing
+
+The complaint that the map changes colour with zoom is real, and the cause is not what it looks
+like. Measured over the same four tiles of ground at three zooms, with the same reading size, the
+ground's own colour is constant: 1.3 per cent of luminance and under three degrees of hue. Nothing
+in the shading varies with camera distance. What varies is what is drawn on it.
+
+Pulling back takes twenty thousand props off the map at a stroke, and the same wood goes from
+canopies with shadow between them to a flat rectangle of one green. So the terrain now carries a
+second colour per vertex, being what the props standing there would average to and how much of the
+ground they cover, and blends to it by exactly the amount that is not being drawn. It reads the
+light where their tops would have been as well, or a wood at overview zoom is the dark floor under
+the trees while the same wood at detail zoom is the lit tops of them.
+
+Both are derived from the same constants the props are placed from, in `groundCover`, so the two
+cannot drift apart. The cap is 0.8: a wood floor is still visible between the trees.
+
+### 71. The film grain is measured in pixels
+
+It was a fixed number of cycles per tile, which at overview zoom is twelve cycles per pixel. That is
+not a grain, it is speckle, and it was plainly visible on the open sea. In pixels it is the same
+grain at every zoom. Measuring it did not show the palette moving either way, so this is a fix to
+an artefact rather than to the palette; it is recorded because the palette is what it was changed
+for.
+
+### 72. Props are stamped onto the shadow map after the blur, at half depth
+
+The reason nothing could be seen on a phone. The bake stamped every prop and then ran two passes of
+a three by three blur over the whole map, and a tree's shadow is three or four texels across. The
+blur belongs to the ray marched ground shadow, which is coarse and needs it. Props go on afterwards.
+
+Half depth rather than full, because they accumulate: at full depth the first tree takes all the
+light there is and a wood of forty of them bakes to one black blob with no shadow shapes in it. Also
+sixteen texels per tile rather than twelve, a reach of fourteen tiles rather than eight, and a sun
+five to eight degrees lower in every season, because the length of a shadow is the height of the
+thing over the tangent of the sun's elevation and nothing else.
+
+### 73. Boot time check one is flaky in this environment and was already
+
+`npm run smoke` check one allows two and a half seconds from navigation to a playable state. On this
+machine, under software rendering, it comes in anywhere between two and three and a half seconds,
+and it does so on the commit before this session's work as well: three runs there gave 2384, 2337
+and 3341 milliseconds. It is the dev server and the machine, not the renderer.
+
+The renderer's own share went down rather than up, with nearly twice the props on the map and a
+shadow map half again as large. Colouring the surface asked every vertex for its nine neighbours'
+colours, and a standard map has seventy thousand vertices, so two thousand tiles were being asked
+six hundred thousand times; they are asked once each now. `Math.hypot` went with it. Terrain build
+on a standard map: 273 milliseconds before, 168 after.
+
+### 74. What was tried on the atlas and did not work
+
+Kept because the next person to look at that sheet will try the same things.
+
+- **Separating the drop shadow by colour.** Covered in decision 66. Not possible.
+- **Detecting the checkerboard by its own frequency.** The residue is a two level pattern at a known
+  period, so a local correlation against a square wave at the right phase ought to find it. The
+  phase is findable, and the correlation lights up on the silhouette edges instead, because a hard
+  alpha edge has far more energy at that frequency than the checkerboard does.
+- **Reconstructing the shadow as a ratio against the checkerboard underneath.** The surviving grey
+  really is background times a shadow factor, and the two levels really are 204 and 255, so
+  dividing one by the other would give a clean soft shadow with the grid taken out. It needs the
+  period and the phase per piece, which needs the correlation above.
+
+What is left is a handful of shadow darkened checker squares inside drop shadows that were staying
+anyway. At working zoom they are five pixels across inside a shadow. They are not visible.
+
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

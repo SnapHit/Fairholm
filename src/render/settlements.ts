@@ -94,6 +94,10 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
   const occluders: Occluder[] = []
 
   const push = (list: Piece[], p: Piece) => { list.push(p) }
+  const onLand = (x: number, z: number) => {
+    const t = s.world.tiles[Math.floor(z) * w + Math.floor(x)]
+    return !!t && t.terrain !== 'water'
+  }
 
   for (const st of s.settlements) {
     const cx = (st.tile % w) + 0.5, cz = Math.floor(st.tile / w) + 0.5
@@ -106,7 +110,7 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     // the banner below is the whole settlement, per art brief section 10
     const drawn = era === 0
     if (drawn) {
-      for (const place of layOut(st.id, pop + built * 0.5, cx, cz, heightAt)) {
+      for (const place of layOut(st.id, pop + built * 0.5, cx, cz, heightAt, onLand)) {
         places.push(place)
         occluders.push({ x: place.x, z: place.z, height: SPRITE.occluderHeight, radius: SPRITE.occluderRadius })
       }
