@@ -715,6 +715,183 @@ base surface rather than the water.
 **Confidence: high.**
 
 
+## The map, session of 23 August 2026
+
+Art direction and rendering brief. This session changed only `/src/render` and added three tiling
+textures under `/public/textures`. Nothing in `/src/sim` was touched, so a few of the calls below are
+the renderer declining to read a constant it can no longer use rather than changing it.
+
+### 54. The map's look lives in `src/render/look.ts`, a second theme file
+
+**What.** Every colour and every magnitude the map uses: the four seasons as complete palettes, the
+surface and its elevation, the shadow bake, prop density and size, the settlement kit, and how the
+light is applied. `src/ui/theme.ts` holds the interface's half. A component that holds a colour or a
+number is a bug, not a style.
+
+**Why two files rather than one.** These are three-dimensional quantities, light colours and world
+distances that a CSS custom property cannot carry, and `/src/render` importing from `/src/ui` would
+invert the layering the repository is arranged around. Each file names the other.
+
+**Symptom if wrong.** Someone changes a colour and has to look in two places. **Confidence: medium**
+on the split; **high** that neither file should have a sibling.
+
+### 55. `C.art` is now read only for the summer ground ramp
+
+**What.** `look.ts` takes `C.art.palette` as deep summer's ground colours and defines everything else
+itself. `C.art.subdivisions`, `jitter`, `blendRadius`, `shoreBand`, `sunElevation`, `seasonHueShift`,
+`seasonSaturation`, `cloudScale`, `cloudSpeed` and `cloudStrength` are no longer read by anything.
+
+**Why.** The renderer needed values `C.art` does not have, in shapes it does not have them in, and
+`/src/sim` was out of bounds this session. This is the same debt as `C.feel.holdMs` in decision 49
+and wants the same fix: delete those keys, or move the whole block into `look.ts` and have `C.art`
+hold nothing. **Confidence: high** that it is temporary.
+
+### 56. Two textures, against the brief, and worth it
+
+**What.** Three seamless greyscale patterns, forty seven kilobytes for all three, tiled at high
+frequency and multiplied over the vertex colour. Section 1 of the art brief says no textures anywhere
+and section 13 rejects them.
+
+**Why the brief was right and this is still right.** What the brief rejected was terrain art: painted
+tiles, per-biome sheets, an atlas, seams, download weight. None of that is here. What is here is one
+tooth, and its main job is not the colour it multiplies but the way it bends the surface normal, so
+that a raking sun catches something. Switching them off (`scripts/ablate.mjs`, case `no-textures`)
+leaves the ground a smooth plastic gradient and the water a flat sheet.
+
+**Cost.** The payload goes from zero downloaded assets to forty seven kilobytes. Total over the wire
+is about 265 kB gzipped against a one megabyte budget. **Confidence: high.**
+
+### 57. There are no three.js lights in the scene
+
+**What.** Every material on the map is one custom shader in `src/render/shading.ts`. The
+`DirectionalLight` and `AmbientLight` are gone.
+
+**Why.** The ground already had a custom shader and the props had a Lambert material, so the two were
+lit by different models and could not agree about where the sun was. One shader also means the shadow
+map, the flat shading and the rim are available to everything.
+
+**Symptom if wrong.** A new mesh added with a stock three.js material renders black, because nothing
+lights it. Use `surfaceMaterial` from `shading.ts`. **Confidence: high.**
+
+### 58. Flat shading comes from the derivative of the world position
+
+**What.** `facetNormal` in `shading.ts` takes the cross product of the screen-space derivatives of the
+world position and orients it by the interpolated normal.
+
+**Why.** Flat shading normally means a non-indexed mesh with a normal per triangle, which would
+triple the terrain's vertex count: about 190,000 vertices on a standard map and 530,000 on a massive
+one. The derivative gives the same exact per-face normal for nothing, on the indexed mesh.
+
+**What it costs.** Derivatives are a fragment shader feature and are per two-by-two pixel quad, so a
+facet edge can be one pixel soft. Nothing else. **Confidence: high.**
+
+### 59. Shadows are baked in two layers at two resolutions
+
+**What.** `src/render/shadow.ts` marches a ray toward the sun from every texel of a coarse grid, lifts
+the result onto a grid of twelve texels a tile, and stamps every tree, boulder, roof and unit onto
+that. The base is baked with the world and re-baked when the season moves the sun; the settlements
+and units are stamped again whenever the dynamic layers rebuild, over one typed-array copy.
+
+**Why two resolutions.** A ridge's shadow is broad and its march is the expensive half; a tree's
+shadow is a hand's breadth and needs the fine grid, but stamping one is nearly free. At six texels a
+tile a tree's shadow was one texel across and vanished into the blur.
+
+**Why the march uses part of the height.** The ground's relief is exaggerated so a top-down view has
+something to shade. Marching it at full height threw two-tile shadows off an ordinary hillside, which
+reads as a slab of black. `SHADOW.terrainScale` is the fraction used. **Confidence: medium**, and the
+number is the first thing to move if shadows look wrong.
+
+**The sea is clamped to zero for the march.** Without that, the land throws a long shadow across the
+water as though the water were not there.
+
+### 60. Water holds a cast shadow only weakly
+
+**What.** `LIGHT.waterShadow` mixes the sampled shadow toward full light before the water uses it.
+
+**Why.** At full strength a headland lays a rectangle of black on the sea beside it, which is the one
+thing on the map that looked worse with shadows than without. **Confidence: medium.**
+
+### 61. Seasons are four palettes, re-baked, not a tint
+
+**What.** Each season carries its own light colour and strength, sun elevation and azimuth, sky
+colour, shadow colour and strength, rim, contrast, ground ramp, canopy colours, water, shore, road,
+river, snow line and clear colour. A season turning re-bakes the terrain's vertex colours, rebuilds
+the props and re-bakes the shadow base: about 105 ms on a small map, 300 ms on a large one, four
+times a game year.
+
+**Why.** The previous version was a saturation multiplier and a small grade added in the shader, and
+winter looked like summer with the colour turned down. Winter is the season this had to fix.
+
+**Symptom if wrong.** A visible hitch on the turn a season changes. **Change:** the recolour is the
+expensive part and could be moved to a worker. **Confidence: high** on the direction, **medium** on
+paying for it every third turn.
+
+### 62. A settlement clears the ground it stands on
+
+**What.** No props on a settlement's own tile and a third of the usual density on the ring around it.
+The props are rebuilt when the set of settlement tiles changes, which they were not before: they were
+built once with the world, before the first settlement existed, and never told about it.
+
+**Why.** A settlement founded in a wood was simply invisible under the canopy.
+
+**Confidence: high.** The simulation does not clear forest when a settlement is founded; this is the
+renderer telling the truth about what a town looks like rather than the simulation changing.
+
+### 63. Levels of detail no longer use `C.feel.lodCull` and `lodRestore`
+
+**What.** `PROPS.coarseCull` is 26 and `coarseRestore` 34; the fine tier culls at 52 and restores at
+60.
+
+**Why.** `C.feel.lodCull` is 40 and `lodRestore` 48. Working zoom, which is the default view of the
+game, is 44: it sits inside that band, so whether the default view had any props in it at all
+depended on which side the player had last come from. Arriving from overview, it had none.
+
+**Confidence: high.** Add this to the list in decision 55 of constants the simulation session should
+remove.
+
+### 64. Boot is about two and a half times slower than it was
+
+**What.** The smoke script measures 2.1 to 2.4 seconds to a coastline in a headless software
+rasteriser, against 0.8 before and an acceptance threshold of 2.5.
+
+**Where it goes.** The world bake is about 230 ms on a small map: 150 terrain, 25 props, 60 shadow.
+The rest is module parse and shader compilation, and software shader compilation is the part that
+does not resemble a real device. Halving the terrain's subdivisions moved the total by 120 ms, so the
+bake is not the cost.
+
+**Symptom if wrong.** Acceptance check one fails on a slower machine. **Change:** defer the fine prop
+tier until its zoom is first reached, and drop `SURFACE.subdivisions` to five.
+**Confidence: low** that two and a half seconds is safe; it has never been measured on a phone.
+
+### 65. What the ablation found, including what it found against
+
+`scripts/ablate.mjs` renders the same frame with one thing switched off and measures the difference.
+Recorded because the answer was not what was expected in two places.
+
+| Off | Effect |
+|---|---|
+| The low warm sun | mean luminance +77 per cent, spread +52. By far the largest single thing |
+| Cast and contact shadows | mean +36 per cent, contrast at the middle scale +44 |
+| Every prop | contrast down 56, 49 and 36 per cent at the three scales |
+| The widened value range | spread down 14 per cent, contrast down 15 at every scale |
+| The fine prop tier | fine contrast down 14 per cent, and only at detail zoom |
+| The rim light | fine contrast down 12 per cent |
+| The tiling textures | see below |
+| Occlusion baked into vertex colours | fine contrast down 9 per cent |
+| The procedural grain | fine contrast down 8 per cent |
+| Real terrain elevation | fine contrast down 8 per cent, one hue fewer |
+| Pitched roofs, per-instance variation | not measurable in a whole frame |
+
+**The textures read backwards and are the reason this table exists.** Switching them off *raises*
+measured fine contrast by thirty per cent, because part of what the tooth does is mask the mesh's own
+facet edges. The picture is plainly worse without them. A metric that counts local contrast cannot
+tell tooth from faceting, and neither can anything but looking.
+
+**Terrain elevation is the weakest of the geometric items.** It shows as broad shading across open
+ground, and open ground is most of what the props now cover. It earns its place through the shadows
+it casts rather than through its own shading.
+
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).
@@ -736,3 +913,7 @@ base surface rather than the water.
 - Deleting `C.feel.holdMs`, which nothing reads any more (decision 49).
 - Landscape gets the same one-column settlement screen as portrait, centred. A two-column landscape
   arrangement, ring beside buildings, was not attempted.
+- Deleting the keys of `C.art` and `C.feel` that the renderer no longer reads (decisions 55 and 63).
+- Weather beyond the cloud shadow: the art brief's colour grade and fog density are not built.
+- The narrowing approach, the routes overlay and the fleet's position at sea are still undrawn.
+- A worker for the season re-bake (decision 61), and a lazily built fine prop tier (decision 64).
