@@ -1,0 +1,65 @@
+{
+ "texture": "settlement-early.png",
+ "size": [
+  896,
+  448
+ ],
+ "pieces": {
+  "barn": {
+   "x": 2,
+   "y": 2,
+   "w": 220,
+   "h": 166,
+   "anchorX": 110,
+   "anchorY": 162
+  },
+  "frame": {
+   "x": 226,
+   "y": 2,
+   "w": 220,
+   "h": 155,
+   "anchorX": 110,
+   "anchorY": 151
+  },
+  "hall": {
+   "x": 450,
+   "y": 2,
+   "w": 171,
+   "h": 220,
+   "anchorX": 85,
+   "anchorY": 216
+  },
+  "lodge": {
+   "x": 674,
+   "y": 2,
+   "w": 220,
+   "h": 198,
+   "anchorX": 110,
+   "anchorY": 194
+  },
+  "longhouse": {
+   "x": 2,
+   "y": 226,
+   "w": 220,
+   "h": 176,
+   "anchorX": 110,
+   "anchorY": 172
+  },
+  "steading": {
+   "x": 226,
+   "y": 226,
+   "w": 220,
+   "h": 155,
+   "anchorX": 110,
+   "anchorY": 151
+  },
+  "yard": {
+   "x": 450,
+   "y": 226,
+   "w": 220,
+   "h": 169,
+   "anchorX": 110,
+   "anchorY": 165
+  }
+ }
+}
