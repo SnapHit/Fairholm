@@ -173,11 +173,43 @@ words were and are unowned. See section 12 of the setting and fiction brief for 
 
 ### 8.2 Interface and trade dress
 
-- No colony screen laid out with worked tiles arranged around the edge and building slots inside it
+**Corrected 23 August 2026, twice.** The earlier version forbade both a settlement screen with worked
+tiles arranged in a ring and building slots shown with it. Both prohibitions were over-broad and both
+are withdrawn, on different grounds.
+
+**The ring is permitted, because it is geometry.** A settlement works its own tile plus the eight
+around it, and a three by three grid is the only honest way to draw that. Section 5 states that
+mechanics and methods of operation are not protected. Forbidding the ring would be like forbidding a
+chess interface from drawing eight by eight.
+
+**Buildings shown around the ring are permitted, on a weaker but sufficient ground.** A settlement has
+tiles and buildings; both must be visible; putting them on one screen is obvious rather than inventive.
+This is a closer call than the ring and it should be recorded as such.
+
+### What remains forbidden
+
+- **The original's specific composition and its proportions.** Not the idea of tiles and buildings
+  together, but their particular arrangement, ordering and relative sizing
+- **Its panel chrome, wooden dress, typeface pastiche and icon set**
+- **Its goods bar treatment** along the bottom of the settlement screen
 - No European port screen with a dock, a recruitment pool and a market list in that arrangement
-- No reproduction of the original's palette, panel chrome, typeface pastiche or icon set
 - The art direction must be settled on its own terms per section 1 of the architecture brief, and the
   test is whether a screenshot placed beside the original reads as a different game at a glance
+
+### The obligation this creates
+
+Because two prohibitions have been withdrawn, **the difference has to be carried by the composition and
+the style, and it has to be real rather than cosmetic.**
+
+Portrait on a phone does much of the work automatically, since a landscape 320 by 200 composition
+cannot survive being stacked into a narrow column. **That is helpful and it is not sufficient on its
+own.** A recolour of their layout is still their layout.
+
+**The distinction to hold on to: the mechanics are drawn honestly, the composition and the dress are
+ours.**
+
+**This subsection is now the part of this project that most warrants a solicitor's opinion**, and it is
+worth taking before anything is published rather than after.
 
 ### 8.3 Constants and tables
 
@@ -328,8 +360,15 @@ Apply the section 6 test at each of these, not at the end:
 
 Say so rather than working around it.
 
-Version 2 corrects one position taken in version 1: that all public use of the original's name was
-prohibited everywhere. That was wrong. It conflated the product's own claims with lawful referential
+Three positions have now been corrected. Version 1 held that all public use of the original's name was
+prohibited everywhere, which was wrong. Section 8.2 forbade the ring-of-tiles settlement layout, which
+is the geometry of a mechanic rather than copied expression. Section 8.2 also forbade building slots
+being shown with the ring, which was over-broad on the weaker ground that a settlement has both and
+both must be visible.
+
+**Two withdrawals in one document should be read as a warning rather than as a trend.** The prohibition
+now rests entirely on composition and dress, which means those must be genuinely ours. Section 8.2
+records the obligation that creates. It conflated the product's own claims with lawful referential
 use by a separate editorial property, and as written it would have closed the only channel where
 measurable demand for this kind of game actually exists.
 
