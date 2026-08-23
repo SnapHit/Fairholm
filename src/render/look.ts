@@ -25,7 +25,16 @@ export function hexRgb(h: string): RGB {
 export interface SeasonLook {
   name: string
   /** The sun: a warm key at a low elevation, which is what makes a surface seen from above read as
-   *  landscape rather than as a plan. Elevation in degrees above the horizon. */
+   *  landscape rather than as a plan. Elevation in degrees above the horizon; low, because the length
+   *  of a shadow is the height of the thing over the tangent of this, and on a phone a short shadow
+   *  is no shadow.
+   *
+   *  Azimuth is measured in the ground plane from world +x, and the camera puts +x to the right of
+   *  the screen and +z down it, so a negative azimuth near a hundred and sixty degrees is a sun over
+   *  the player's left shoulder and shadows falling to the lower right. That is where it has to be:
+   *  the early era settlement sprites carry their light baked in from the upper left, and the whole
+   *  map has to agree with them rather than the other way round. The season still swings it, but
+   *  across thirty degrees rather than fifty. */
   keyColour: string
   keyStrength: number
   elevationDeg: number
@@ -68,9 +77,9 @@ export const SEASONS: SeasonLook[] = [
   {
     // new green: everything just come up, wet ground, a pale early sun
     name: 'new green',
-    keyColour: '#ffe9bd', keyStrength: 1.48, elevationDeg: 21, azimuthDeg: -52,
+    keyColour: '#ffe9bd', keyStrength: 1.62, elevationDeg: 15, azimuthDeg: -140,
     ambientColour: '#8fb2dc', ambientStrength: 0.36,
-    shadowStrength: 0.54, shadowColour: '#5f7ea8',
+    shadowStrength: 0.74, shadowColour: '#5b78a2',
     rimStrength: 0.42, rimColour: '#fff3d2',
     contrast: 1.16, lift: -0.015,
     ground: {
@@ -86,9 +95,9 @@ export const SEASONS: SeasonLook[] = [
   {
     // deep summer: the fullest colour of the year, the sun at its highest, shadows short
     name: 'deep summer',
-    keyColour: '#fff2cf', keyStrength: 1.56, elevationDeg: 27, azimuthDeg: -38,
+    keyColour: '#fff2cf', keyStrength: 1.70, elevationDeg: 19, azimuthDeg: -150,
     ambientColour: '#8db1d6', ambientStrength: 0.33,
-    shadowStrength: 0.54, shadowColour: '#63799e',
+    shadowStrength: 0.72, shadowColour: '#5d7396',
     rimStrength: 0.38, rimColour: '#fff6dd',
     contrast: 1.18, lift: -0.01,
     ground: {
@@ -104,9 +113,9 @@ export const SEASONS: SeasonLook[] = [
   {
     // the turn of the leaf: ochre and rust, a low amber sun and long shadows
     name: 'the turn of the leaf',
-    keyColour: '#ffdca4', keyStrength: 1.5, elevationDeg: 17, azimuthDeg: -22,
+    keyColour: '#ffdca4', keyStrength: 1.66, elevationDeg: 13, azimuthDeg: -162,
     ambientColour: '#93a6cc', ambientStrength: 0.34,
-    shadowStrength: 0.62, shadowColour: '#6b6f96',
+    shadowStrength: 0.80, shadowColour: '#63668c',
     rimStrength: 0.46, rimColour: '#ffe6b4',
     contrast: 1.20, lift: -0.015,
     ground: {
@@ -124,9 +133,9 @@ export const SEASONS: SeasonLook[] = [
     // This is the season that has to look like winter rather than like summer with the colour turned
     // down, so the whole ramp moves, not the saturation.
     name: 'bare ground',
-    keyColour: '#ffd7a2', keyStrength: 1.42, elevationDeg: 13, azimuthDeg: -6,
+    keyColour: '#ffd7a2', keyStrength: 1.58, elevationDeg: 10, azimuthDeg: -172,
     ambientColour: '#8aa8d6', ambientStrength: 0.46,
-    shadowStrength: 0.64, shadowColour: '#6f88bb',
+    shadowStrength: 0.82, shadowColour: '#6880b0',
     rimStrength: 0.52, rimColour: '#ffe8c4',
     contrast: 1.14, lift: 0.02,
     ground: {
@@ -190,17 +199,28 @@ export const SURFACE = {
    *  darkening the colour. This is most of what the textures are for. */
   grainBump: 0.65,
   rockBump: 1.35,
-  /** Fine noise in the fragment shader, under the textures. */
-  filmStrength: 0.1,
-  filmScale: 190,
+  /** Fine noise in the fragment shader, under the textures. In cycles per pixel, so that it is the
+   *  same grain at every zoom rather than a pattern the camera can outrun. */
+  filmStrength: 0.055,
+  filmScale: 0.5,
+
+  /** Country is not one colour. Two fields of noise wander the ground's value and its warmth: a
+   *  broad one about ten tiles across, which is a change of soil or a drier reach, and a finer one
+   *  about two tiles across, which is where the grass is thinner. Baked into the vertex colour with
+   *  the season, so it costs nothing to draw and it changes when the year does. */
+  patchScale: 0.085,
+  patchValue: 0.26,
+  patchWarmth: 0.12,
+  moteScale: 0.52,
+  moteValue: 0.14,
 }
 
 // ---- the baked shadow map -------------------------------------------------------------------------
 
 export const SHADOW = {
-  /** Texels per tile on the map that is sampled. Twelve is what a tree's shadow needs to be more
-   *  than a smudge at detail zoom. */
-  texelsPerTile: 12,
+  /** Texels per tile on the map that is sampled. Sixteen, because a tree's shadow is about a fifth
+   *  of a tile wide and twelve left it three texels across, which the blur then took most of. */
+  texelsPerTile: 16,
   /** The ray march runs on a grid this many times coarser, because a ridge's shadow is broad and the
    *  march is the expensive half. The result is lifted back onto the fine grid before the props are
    *  stamped onto it. */
@@ -208,24 +228,35 @@ export const SHADOW = {
   /** Samples along one ray, and how fast the step between them grows. */
   marchSteps: 26,
   marchGrowth: 1.14,
-  /** How far a ray looks toward the sun, in tiles. Beyond this a shadow simply stops. */
-  reachTiles: 8,
+  /** How far a ray looks toward the sun, in tiles, and how far the longest cast shadow runs. Beyond
+   *  this a shadow simply stops. A low sun wants a long reach: at ten degrees a tree a fifth of a
+   *  tile high lays a shadow more than a tile long, and cutting it short is what made the shadows
+   *  read as smudges under things rather than as shadows lying beside them. */
+  reachTiles: 14,
   /** The ground's relief is exaggerated so that a top-down view has something to shade. Taking the
    *  shadow march at full height then throws shadows two tiles long off an ordinary hillside, which
    *  reads as a slab of black rather than as shade. The march uses this fraction of the height. */
-  terrainScale: 0.42,
+  terrainScale: 0.32,
   /** Height difference, in tiles, over which a shadow edge softens. */
   softness: 0.7,
-  /** Passes of a three by three blur over the baked map. */
+  /** Passes of a three by three blur over the marched ground shadow. Props are stamped after the
+   *  blur, not before: a tree's shadow is a few texels across and blurring it away was most of the
+   *  reason nothing could be seen on a phone. */
   blurPasses: 2,
   /** Ambient occlusion baked into the vertex colour: how far it looks and how hard it bites. */
   aoRadius: 3,
   aoStrength: 1.8,
   aoFloor: 0.58,
   aoCeiling: 1.08,
-  /** A prop's own contact shadow: how wide, relative to the prop, and how dark. */
-  contactWidth: 1.8,
-  contactDepth: 1.0,
+  /** A prop's own cast shadow: how wide, relative to the prop, how dark at its foot, and how much
+   *  of that is left at the far end of it. Half rather than all, because these accumulate: at full
+   *  depth the first tree takes all the light and a wood of forty of them bakes to a solid black
+   *  blob with no shadow shapes in it at all. */
+  contactWidth: 1.45,
+  contactDepth: 0.5,
+  contactFade: 0.4,
+  /** How much a shadow narrows along its length. Zero would be a stripe, one a wedge. */
+  contactTaper: 0.3,
 }
 
 // ---- props ----------------------------------------------------------------------------------------
@@ -245,14 +276,33 @@ export const PROPS = {
   emergentScale: 1.45,
   /** Undergrowth under a canopy, and scrub on open ground. Detail zoom only. */
   undergrowth: 14,
-  /** Boulders and scattered rock, per tile of each terrain. */
-  rocks: { mountain: 22, highland: 13, downs: 3, dry: 3, marsh: 0, grassland: 0, plains: 0, water: 0 } as Record<TerrainId, number>,
+  /** Boulders and scattered rock, per tile of each terrain. Open country carries some now: a downs
+   *  with nothing on it is a green rectangle, and stone is what says the ground is thin there. */
+  rocks: { mountain: 22, highland: 14, downs: 7, dry: 9, marsh: 0, grassland: 1, plains: 2, water: 0 } as Record<TerrainId, number>,
+  /** Scrub on open ground, per tile: gorse, thorn, a low bush. The coarse tier, so it is there at
+   *  working zoom, which is the default view and the one that was empty. Weighted so that downs is
+   *  scrubbier than plains, dry country is sparser and greyer, and a marsh has clumps rather than
+   *  bushes. */
+  scrub: { grassland: 4, plains: 3, downs: 7, dry: 5, marsh: 4, highland: 3, mountain: 0, water: 0 } as Record<TerrainId, number>,
+  scrubSize: {
+    grassland: [0.05, 0.12], plains: [0.045, 0.10], downs: [0.05, 0.13],
+    dry: [0.04, 0.095], marsh: [0.05, 0.115], highland: [0.04, 0.09],
+  } as Record<string, [number, number]>,
   /** Tufts and pebbles on open ground. Detail zoom only, because at working zoom they are noise. */
-  tufts: { grassland: 16, plains: 13, downs: 12, dry: 7, marsh: 0, highland: 5, mountain: 2, water: 0 } as Record<TerrainId, number>,
+  tufts: { grassland: 26, plains: 21, downs: 22, dry: 12, marsh: 16, highland: 9, mountain: 3, water: 0 } as Record<TerrainId, number>,
+  /** Loose stone and shingle scattered over open ground, in the fine tier. */
+  pebbles: { grassland: 3, plains: 5, downs: 9, dry: 14, marsh: 2, highland: 12, mountain: 16, water: 0 } as Record<TerrainId, number>,
   /** Reeds in a marsh. */
   reeds: 24,
   /** Debris along the waterline. */
-  shoreDebris: 9,
+  shoreDebris: 14,
+  /** The most of a tile's ground its own props can be said to cover, for the sake of the colour the
+   *  terrain falls back to when a tier is culled. Never all of it: a wood floor is still visible. */
+  coverMax: 0.8,
+  /** And how high above the ground the props that are not being drawn would have stood, in tiles.
+   *  The ground samples the light up there instead, or a wood at overview zoom reads as the dark
+   *  floor under the trees while the same wood at detail zoom reads as the lit tops of them. */
+  coverLift: 0.24,
   /** What survives on the ring of tiles around a settlement. Its own tile is cleared outright. */
   settlementThinning: 0.3,
   /** How much a prop's colour wanders from its base, in hue and in value. */
@@ -301,6 +351,39 @@ export const BUILD = {
   predecessorRing: '#7d6a48',
 }
 
+// ---- the early era, drawn rather than built ---------------------------------------------------------
+
+export const SPRITE = {
+  /** How wide on the ground a piece drawn this many pixels wide stands, in tiles. Every piece keeps
+   *  its own proportions against this, so the hall really is taller than the barn. */
+  referenceWidth: 220,
+  tileWidth: 0.72,
+  /** How far the pieces stand from the middle of the settlement, in tiles, with two of them and with
+   *  seven. A settlement is one tile of gameplay and rather more than one tile of place: by the time
+   *  a dozen people live there the buildings are well over the tile's edge, which is the point. */
+  spreadFrom: 0.28,
+  spreadTo: 0.88,
+  /** Two pieces at this population, all of them by this one. */
+  fromPop: 2,
+  allByPop: 12,
+  /** One more building for every this many people past the seventh piece, and no more than this. */
+  extraPer: 5,
+  maxExtra: 5,
+  /** How far a building wanders off its place on the lattice, as a fraction of the spacing. */
+  jitter: 0.3,
+  /** A hair off the ground, so a sprite is not fighting the terrain for the same depth. */
+  lift: 0.03,
+  /** Timber weathers. How far a building's colour wanders in hue and in value. */
+  hueJitter: 0.035,
+  valueJitter: 0.14,
+  /** What a building casts, in tiles: how tall the engine should think it is and how wide. */
+  occluderHeight: 0.26,
+  occluderRadius: 0.17,
+  /** The sheet is drawn already lit, so the map's light is applied to it as a colour and a depth
+   *  rather than as a second lighting pass. This is what full sun does to it. */
+  exposure: 1.04,
+}
+
 // ---- units ------------------------------------------------------------------------------------------
 
 export const UNITS = {
@@ -345,9 +428,12 @@ export const LIGHT = {
   /** Water holds a cast shadow much less than ground does: at full strength a headland lays a slab
    *  of black across the sea beside it. */
   waterShadow: 0.45,
-  /** A prop samples the shadow map a little toward the sun, so it does not stand in the shadow it
-   *  is itself casting. Multiplied by how high above the ground the fragment is. */
-  propShadowLift: 1.1,
+  /** A prop samples the shadow map toward the sun, so it does not stand in the shadow it is itself
+   *  casting. The offset a point at height y needs is y over the tangent of the sun's elevation,
+   *  which at ten degrees is nearly six tiles, so it is capped: past this the prop starts reading
+   *  the light of somewhere else entirely. */
+  propShadowLift: 0.9,
+  propShadowLiftMax: 3.2,
 }
 
 /** The sun as a unit vector, for a season. */
