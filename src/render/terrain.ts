@@ -16,9 +16,10 @@
 import * as THREE from 'three'
 import type { GameState, Tile, TerrainId } from '../sim/state'
 import { tileColour, terrainHeight, waterColours, shoreColour, snowColour, type RGB } from './palette'
-import { seasonLook, hexRgb, SURFACE, SHADOW, LIGHT, CLOUD } from './look'
+import { seasonLook, hexRgb, SURFACE, SHADOW, LIGHT, CLOUD, PROPS } from './look'
 import { LIGHT_GLSL, type LightUniforms } from './shading'
 import type { DetailTextures } from './textures'
+import { groundCover } from './props'
 
 function hash2(x: number, y: number, seed: number): number {
   let h = (x * 374761393 + y * 668265263 + seed * 1274126177) | 0
@@ -48,15 +49,18 @@ function landform(x: number, z: number, seed: number): number {
 
 const TERRAIN_VS = /* glsl */ `
 attribute vec3 vcol;
+attribute vec4 vcover;
 attribute float vao;
 attribute float vrock;
 varying vec3 vColour;
+varying vec4 vCover;
 varying vec3 vNormal2;
 varying vec3 vWorld;
 varying float vAo;
 varying float vRock;
 void main() {
   vColour = vcol;
+  vCover = vcover;
   vNormal2 = normal;
   vWorld = position;
   vAo = vao;
@@ -75,7 +79,9 @@ uniform sampler2D overlay;
 uniform float overlayMix;
 uniform float gridMix;
 uniform float selected;
+uniform float uCover;
 varying vec3 vColour;
+varying vec4 vCover;
 varying vec3 vNormal2;
 varying vec3 vWorld;
 varying float vAo;
@@ -100,9 +106,14 @@ void main() {
   n = normalize(n + slope * bump);
 
   float strength = mix(uGrainStrength, uRockStrength, vRock);
-  vec3 albedo = vColour * (1.0 + (tooth - 0.5) * strength);
+  // where the props that stand here are not being drawn, the ground carries their colour instead,
+  // so that pulling the camera back changes the level of detail and not the palette
+  vec3 base = mix(vColour, vCover.rgb, vCover.a * uCover);
+  vec3 albedo = base * (1.0 + (tooth - 0.5) * strength);
 
-  float shadow = sunReach(vWorld);
+  // where the props are culled, the ground reads the light where their tops would have been
+  vec3 probe = vWorld + uSunHoriz * (vCover.a * uCover * ${PROPS.coverLift.toFixed(3)} * uSunLift);
+  float shadow = sunReach(probe);
   vec3 c = shade(albedo, n, shadow, vAo, cloudShadow(vWorld));
   c = finish(c, vWorld);
 
@@ -182,6 +193,7 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
   const N = gw * gh
   const positions = new Float32Array(N * 3)
   const colours = new Float32Array(N * 3)
+  const cover = new Float32Array(N * 4)
   const ao = new Float32Array(N)
   const rockiness = new Float32Array(N)
   const cell = 1 / S
@@ -291,6 +303,7 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
       const x = xs[vi], z = zs[vi]
       const tx = Math.floor(x), tz = Math.floor(z)
       let r = 0, g = 0, b = 0, wsum = 0, waterW = 0
+      let cr = 0, cg = 0, cb = 0, cm = 0
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const t = tileAt(tx + dx, tz + dz)
         if (!t) continue
@@ -300,12 +313,25 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
         const ww = wgt * wgt
         const c = tileColour(t, seasonNow)
         r += c[0] * ww; g += c[1] * ww; b += c[2] * ww
+        const cov = groundCover(t, seasonNow)
+        cr += cov.colour[0] * ww; cg += cov.colour[1] * ww; cb += cov.colour[2] * ww; cm += cov.mix * ww
         if (t.terrain === 'water') waterW += ww
         wsum += ww
       }
-      if (wsum > 0) { r /= wsum; g /= wsum; b /= wsum; waterW /= wsum }
+      if (wsum > 0) { r /= wsum; g /= wsum; b /= wsum; waterW /= wsum; cr /= wsum; cg /= wsum; cb /= wsum; cm /= wsum }
+      cover[vi * 4] = cr; cover[vi * 4 + 1] = cg; cover[vi * 4 + 2] = cb; cover[vi * 4 + 3] = cm
       const here = tileAt(tx, tz)
       const y = heights[vi]
+      // country is not one colour: a broad field of value and warmth and a finer one over it, so
+      // open ground has weather in it rather than being one flat green from edge to edge
+      if (here && here.terrain !== 'water') {
+        const broad = vnoise(x * SURFACE.patchScale, z * SURFACE.patchScale, seedNum + 613) - 0.5
+        const warm = vnoise(x * SURFACE.patchScale + 53, z * SURFACE.patchScale + 91, seedNum + 811) - 0.5
+        const mote = vnoise(x * SURFACE.moteScale, z * SURFACE.moteScale, seedNum + 227) - 0.5
+        const v = 1 + broad * SURFACE.patchValue + mote * SURFACE.moteValue
+        const t = warm * SURFACE.patchWarmth
+        r *= v * (1 + t); g *= v; b *= v * (1 - t)
+      }
       if (here && here.terrain !== 'water' && shoreDist[tz * w + tx] <= 1) {
         const k = SURFACE.shoreBand * (1 - Math.min(1, nearestWater(x, z, tx, tz, tiles, w, h)))
         r = r * (1 - k) + SHORE[0] * k; g = g * (1 - k) + SHORE[1] * k; b = b * (1 - k) + SHORE[2] * k
@@ -333,8 +359,10 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
   }
   const geo = new THREE.BufferGeometry()
   const colourAttr = new THREE.BufferAttribute(colours, 3)
+  const coverAttr = new THREE.BufferAttribute(cover, 4)
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geo.setAttribute('vcol', colourAttr)
+  geo.setAttribute('vcover', coverAttr)
   geo.setAttribute('vao', new THREE.BufferAttribute(ao, 1))
   geo.setAttribute('vrock', new THREE.BufferAttribute(rockiness, 1))
   geo.setIndex(new THREE.BufferAttribute(index, 1))
@@ -360,6 +388,7 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
       overlayMix: { value: 1 },
       gridMix: { value: 1 },
       selected: { value: -1 },
+      uCover: { value: 0 },
     },
   })
   const mesh = new THREE.Mesh(geo, material)
@@ -401,6 +430,7 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
   const recolour = (_s: GameState, seasonNow: number) => {
     paint(seasonNow)
     colourAttr.needsUpdate = true
+    coverAttr.needsUpdate = true
     const l = seasonLook(seasonNow)
     material.uniforms.uGrainStrength.value = l.grainStrength
     material.uniforms.uRockStrength.value = l.rockStrength

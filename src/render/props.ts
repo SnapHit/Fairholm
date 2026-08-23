@@ -16,7 +16,7 @@
 // Every number and colour comes from src/render/look.ts.
 
 import * as THREE from 'three'
-import type { GameState, ForestId, TerrainId } from '../sim/state'
+import type { GameState, ForestId, TerrainId, Tile } from '../sim/state'
 import { forestCanopy } from './palette'
 import { PROPS, SHADOW, seasonLook, hexRgb } from './look'
 import { surfaceMaterial, type LightUniforms } from './shading'
@@ -116,9 +116,10 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
     const t = tiles[i]
     if (clearance[i] <= 0) continue
     if (t.forest) { trees += PROPS.trees[t.forest]; small += PROPS.undergrowth }
+    else trees += PROPS.scrub[t.terrain] ?? 0
     rocks += PROPS.rocks[t.terrain] ?? 0
     if (t.terrain === 'marsh') rocks += PROPS.reeds
-    small += PROPS.tufts[t.terrain] ?? 0
+    small += (PROPS.tufts[t.terrain] ?? 0) + (PROPS.pebbles[t.terrain] ?? 0)
     if (shoreTile[i]) small += PROPS.shoreDebris
   }
 
@@ -194,6 +195,31 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
       }
     }
 
+    // ---- scrub on open ground ----------------------------------------------------------------------
+    // the thing the last pass missed: density worked inside a wood and did nothing outside one, so
+    // open country was a coloured field with good light on it. These are low, wide and dull, and
+    // they are in the coarse tier, which means they are there at the default zoom
+    const scrubN = Math.round((PROPS.scrub[t.terrain] ?? 0) * thin)
+    if (scrubN > 0 && !t.forest) {
+      const size = PROPS.scrubSize[t.terrain] ?? [0.04, 0.1]
+      const ground = hexRgb(look.ground[t.terrain])
+      const leaf = hexRgb(look.canopy.coastalScrub)
+      // half way to a canopy, so scrub belongs to the ground it stands on rather than to the woods
+      const bush: [number, number, number] = [
+        ground[0] * 0.45 + leaf[0] * 0.55, ground[1] * 0.45 + leaf[1] * 0.55, ground[2] * 0.45 + leaf[2] * 0.55,
+      ]
+      for (let k = 0; k < scrubN; k++) {
+        const seed = i * 23 + k + 6100
+        const x = x0 + 0.05 + hash(seed, 33) * 0.9
+        const z = z0 + 0.05 + hash(seed, 34) * 0.9
+        const r = size[0] + hash(seed, 35) * (size[1] - size[0])
+        const squat = 0.42 + hash(seed, 36) * 0.4
+        if (put(treeSlot, x, z, heightAt(x, z) - r * 0.14, r, r * squat, r * (0.8 + hash(seed, 37) * 0.4), hash(seed, 38) * 3.2, vary(bush, seed))) {
+          occluders.push({ x, z, height: r * squat * 1.1, radius: r * 0.75 })
+        }
+      }
+    }
+
     // ---- boulders and scattered rock -------------------------------------------------------------
     const rockN = Math.round((PROPS.rocks[t.terrain] ?? 0) * thin)
     if (rockN > 0) {
@@ -236,6 +262,18 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
         put(tuftSlot, x, z, heightAt(x, z), r, r * (1.3 + hash(seed, 27) * 1.4), r, hash(seed, 28) * 3.2, vary(blade, seed))
       }
     }
+    const pebbleN = Math.round((PROPS.pebbles[t.terrain] ?? 0) * thin)
+    if (pebbleN > 0) {
+      const ground = hexRgb(look.ground[t.terrain])
+      const grit: [number, number, number] = [ground[0] * 0.7 + 0.22, ground[1] * 0.7 + 0.2, ground[2] * 0.7 + 0.18]
+      for (let k = 0; k < pebbleN; k++) {
+        const seed = i * 29 + k + 4300
+        const x = x0 + 0.04 + hash(seed, 39) * 0.92
+        const z = z0 + 0.04 + hash(seed, 40) * 0.92
+        const r = PROPS.debrisSize[0] + hash(seed, 41) * (PROPS.debrisSize[1] - PROPS.debrisSize[0])
+        put(shardSlot, x, z, heightAt(x, z) + r * 0.18, r, r * (0.5 + hash(seed, 42) * 0.5), r, hash(seed, 43) * 3.2, vary(grit, seed))
+      }
+    }
     if (shoreTile[i]) {
       const shingle = hexRgb(look.shore)
       for (let k = 0; k < Math.round(PROPS.shoreDebris * thin); k++) {
@@ -256,6 +294,43 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
   }
   void SHADOW
   return { coarse, fine, occluders, count: treeSlot.n + rockSlot.n + tuftSlot.n + shardSlot.n }
+}
+
+/** What the props standing on a tile do to the colour of it: how much of the ground they cover, and
+ *  what colour they are on average.
+ *
+ *  This exists so that culling a tier does not repaint the country. Pulling the camera back takes
+ *  twenty thousand props off the map at a stroke, and without this the same ground goes from a wood
+ *  with scrub and stone in it to a flat rectangle of one green, which is the map changing colour
+ *  when the camera moves rather than when the season does. The terrain blends toward this by exactly
+ *  as much as the props that are not being drawn would have covered.
+ *
+ *  Derived from the same constants the props are placed from, so the two cannot drift. */
+export function groundCover(t: Tile, season: number): { mix: number; colour: [number, number, number] } {
+  const look = seasonLook(season)
+  const ground = hexRgb(look.ground[t.terrain])
+  if (t.terrain === 'water') return { mix: 0, colour: ground }
+  let area = 0, r = 0, g = 0, b = 0
+  const add = (n: number, radius: number, c: [number, number, number]) => {
+    if (n <= 0 || radius <= 0) return
+    const a = n * Math.PI * radius * radius
+    area += a; r += c[0] * a; g += c[1] * a; b += c[2] * a
+  }
+  const mid = (s: [number, number]) => (s[0] + s[1]) / 2
+  if (t.forest) {
+    add(PROPS.trees[t.forest], mid(PROPS.canopy[t.forest]), forestCanopy(t.forest, season))
+  } else {
+    const leaf = hexRgb(look.canopy.coastalScrub)
+    add(PROPS.scrub[t.terrain] ?? 0, mid(PROPS.scrubSize[t.terrain] ?? [0.04, 0.1]),
+      [ground[0] * 0.45 + leaf[0] * 0.55, ground[1] * 0.45 + leaf[1] * 0.55, ground[2] * 0.45 + leaf[2] * 0.55])
+  }
+  add(PROPS.rocks[t.terrain] ?? 0, mid(PROPS.rockSize[t.terrain] ?? [0.03, 0.07]),
+    [ground[0] * 0.86 + 0.14, ground[1] * 0.86 + 0.12, ground[2] * 0.86 + 0.12])
+  if (!t.forest) add(PROPS.tufts[t.terrain] ?? 0, mid(PROPS.tuftSize), [ground[0] * 0.82, ground[1] * 0.94, ground[2] * 0.7])
+  add(PROPS.pebbles[t.terrain] ?? 0, mid(PROPS.debrisSize),
+    [ground[0] * 0.7 + 0.22, ground[1] * 0.7 + 0.2, ground[2] * 0.7 + 0.18])
+  if (area <= 0) return { mix: 0, colour: ground }
+  return { mix: Math.min(PROPS.coverMax, area), colour: [r / area, g / area, b / area] }
 }
 
 const NEIGHBOURS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]]
