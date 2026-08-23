@@ -1,9 +1,14 @@
 // Input. Feel brief sections 2 to 4. Three gestures and one modifier: pinch zooms, drag pans,
 // tap selects (always safe), tap-and-hold commits. Moving beyond a few pixels cancels the hold
 // and becomes a pan. A double tap snaps between overview and working zoom. Everything is
-// pointer events on the canvas with touch-action none; the sheets below are ordinary DOM.
+// pointer events on the canvas with touch-action none; the sheets over it are ordinary DOM.
+//
+// The hold's length is HOLD_MS in src/ui/theme.ts, not a literal here, so it can be tuned in one
+// place. The ring under the finger fills across the whole of it, from the first frame of contact,
+// so the player is never waiting without knowing they are waiting.
 
 import { C } from '../sim/constants'
+import { HOLD_MS } from './theme'
 import type { MapCamera } from '../render/camera'
 
 export interface InputHandlers {
@@ -78,7 +83,7 @@ export class Input {
     const tick = () => {
       const p = [...this.pointers.values()][0]
       if (!p || this.pointers.size !== 1 || this.panning) { this.h.onHoldProgress(x, y, -1); return }
-      const k = (performance.now() - this.holdStart) / C.feel.holdMs
+      const k = (performance.now() - this.holdStart) / HOLD_MS
       if (k >= 1) {
         this.holdFired = true
         this.h.onHoldProgress(x, y, -1)
