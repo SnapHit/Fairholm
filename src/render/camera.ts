@@ -114,7 +114,12 @@ export class MapCamera {
     if (v.cz > maxZ + slack) v.cz = maxZ + slack + (v.cz - (maxZ + slack)) * band
   }
 
-  /** Animate momentum and spring back from the limits. Returns true while still moving. */
+  /** Animate momentum and spring back from the limits. Returns true while still moving.
+   *
+   *  While a glide is running the glide owns the camera: springing the position at the same time
+   *  sets the two pulling against each other, and because the glide's target can sit outside the
+   *  soft clamp at the zoom being passed through, neither ever arrives. That kept the draw loop
+   *  running for ever, which held the frame at the moving resolution and never let the map idle. */
   tick(): boolean {
     const v = this.view
     let moving = false
@@ -137,13 +142,18 @@ export class MapCamera {
     const hw = this.width / v.zoom / 2, hh = this.height / v.zoom / 2
     const minX = Math.min(hw, this.mapW / 2), maxX = Math.max(this.mapW - hw, this.mapW / 2)
     const minZ = Math.min(hh, this.mapH / 2), maxZ = Math.max(this.mapH - hh, this.mapH / 2)
+    // the spring has to arrive, not merely approach: without the snap it is always a hair outside
+    // the limit, tick never returns false, the draw loop never ends and the frame is never refined
+    // to full resolution
     const spring = (val: number, lo2: number, hi2: number) => {
-      if (val < lo2) { moving = true; return val + (lo2 - val) * 0.22 }
-      if (val > hi2) { moving = true; return val + (hi2 - val) * 0.22 }
+      if (val < lo2) { const next = val + (lo2 - val) * 0.22; if (lo2 - next < 0.002) return lo2; moving = true; return next }
+      if (val > hi2) { const next = val + (hi2 - val) * 0.22; if (next - hi2 < 0.002) return hi2; moving = true; return next }
       return val
     }
-    v.cx = spring(v.cx, minX, maxX)
-    v.cz = spring(v.cz, minZ, maxZ)
+    if (!this.glideTarget) {
+      v.cx = spring(v.cx, minX, maxX)
+      v.cz = spring(v.cz, minZ, maxZ)
+    }
     this.apply()
     return moving
   }
@@ -166,7 +176,15 @@ export class MapCamera {
   /** Smoothly move toward a target. Returns true while moving. */
   glideTarget: { cx: number; cz: number; zoom: number } | null = null
   glideTo(tile: number, zoom: number) {
-    this.glideTarget = { cx: (tile % this.mapW) + 0.5, cz: Math.floor(tile / this.mapW) + 0.5, zoom }
+    // clamp the target into what the soft clamp will allow at the target zoom, so the glide lands
+    // somewhere the camera is content to stay
+    const z = Math.max(this.minZoom(), Math.min(this.maxZoom(), zoom))
+    const hw = this.width / z / 2, hh = this.height / z / 2
+    const minX = Math.min(hw, this.mapW / 2), maxX = Math.max(this.mapW - hw, this.mapW / 2)
+    const minZ = Math.min(hh, this.mapH / 2), maxZ = Math.max(this.mapH - hh, this.mapH / 2)
+    const cx = Math.max(minX, Math.min(maxX, (tile % this.mapW) + 0.5))
+    const cz = Math.max(minZ, Math.min(maxZ, Math.floor(tile / this.mapW) + 0.5))
+    this.glideTarget = { cx, cz, zoom: z }
   }
   glideTick(): boolean {
     const g = this.glideTarget
