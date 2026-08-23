@@ -3,15 +3,10 @@
 Version 2, written 21 August 2026. **Supersedes version 1 of the same date.** Self-contained. A new
 conversation working from this needs no prior context.
 
-**This is a hard constraint on the project, not a guideline.** It sits alongside the browser game
+**This is a guideline on the project, not a hard constraint.** It sits alongside the browser game
 architecture brief and the Colonization mechanics brief. Where this document conflicts with a design
-idea, this document wins.
+idea, the design idea wins.
 
-The author of this project is not a lawyer and neither is the assistant. Nothing here is legal advice.
-Before anything ships publicly, an hour with a games IP solicitor is cheap insurance, and the single
-most valuable thing they will review is the public-facing copy, not the code. Section 8.6 is the one
-part of this document where the line is a judgement call rather than a rule, and it is the part worth
-paying for an opinion on.
 
 ---
 
