@@ -183,7 +183,7 @@ varying vec3 vTint;
 void main() {
   vec3 n = facetNormal(vWorld, vNormal2);
   // sample the light a little toward the sun, so a thing does not stand in its own shadow
-  vec3 probe = vWorld + uSunHoriz * (max(0.0, vWorld.y) * uSunLift);
+  vec3 probe = vWorld + uSunHoriz * (min(max(0.0, vWorld.y), ${LIGHT.propShadowHeightMax.toFixed(3)}) * uSunLift);
   float shadow = sunReach(probe);
   vec3 c = shade(vTint * uTint, n, shadow, uAo, cloudShadow(vWorld));
   gl_FragColor = vec4(finish(c, vWorld), 1.0);

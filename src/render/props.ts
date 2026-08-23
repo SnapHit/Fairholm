@@ -306,7 +306,20 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
  *  as much as the props that are not being drawn would have covered.
  *
  *  Derived from the same constants the props are placed from, so the two cannot drift. */
+const coverCache = new Map<string, { mix: number; colour: [number, number, number] }>()
+
 export function groundCover(t: Tile, season: number): { mix: number; colour: [number, number, number] } {
+  // the answer depends only on the terrain, the wood standing on it and the season, and it is asked
+  // nine times per vertex when the map is coloured, which on a large map is several million times
+  const key = `${t.terrain}|${t.forest ?? ''}|${season}`
+  const had = coverCache.get(key)
+  if (had) return had
+  const out = computeCover(t, season)
+  coverCache.set(key, out)
+  return out
+}
+
+function computeCover(t: Tile, season: number): { mix: number; colour: [number, number, number] } {
   const look = seasonLook(season)
   const ground = hexRgb(look.ground[t.terrain])
   if (t.terrain === 'water') return { mix: 0, colour: ground }

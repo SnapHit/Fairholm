@@ -152,6 +152,9 @@ for (let season = 0; season < 4; season++) {
     const m = await measure()
     const file = `${OUT}/${TAG ? TAG + '-' : ''}${SEASONS[season]}-${name}.png`
     await page.screenshot({ path: file, clip: { x: 0, y: 0, width: 390, height: 844 } })
+    // and a crop of the middle at native pixels, because a shadow on the ground is the kind of thing
+    // that survives being looked at and does not survive being scaled down
+    await page.screenshot({ path: file.replace('.png', '-crop.png'), clip: { x: 97, y: 300, width: 196, height: 196 } })
     rows.push({ season: SEASONS[season], zoom: name, ...m })
   }
 }

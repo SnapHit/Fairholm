@@ -115,7 +115,7 @@ export const SEASONS: SeasonLook[] = [
     name: 'the turn of the leaf',
     keyColour: '#ffdca4', keyStrength: 1.66, elevationDeg: 13, azimuthDeg: -162,
     ambientColour: '#93a6cc', ambientStrength: 0.34,
-    shadowStrength: 0.80, shadowColour: '#63668c',
+    shadowStrength: 0.75, shadowColour: '#63668c',
     rimStrength: 0.46, rimColour: '#ffe6b4',
     contrast: 1.20, lift: -0.015,
     ground: {
@@ -135,7 +135,7 @@ export const SEASONS: SeasonLook[] = [
     name: 'bare ground',
     keyColour: '#ffd7a2', keyStrength: 1.58, elevationDeg: 10, azimuthDeg: -172,
     ambientColour: '#8aa8d6', ambientStrength: 0.46,
-    shadowStrength: 0.82, shadowColour: '#6880b0',
+    shadowStrength: 0.76, shadowColour: '#6880b0',
     rimStrength: 0.52, rimColour: '#ffe8c4',
     contrast: 1.14, lift: 0.02,
     ground: {
@@ -224,7 +224,7 @@ export const SHADOW = {
   /** The ray march runs on a grid this many times coarser, because a ridge's shadow is broad and the
    *  march is the expensive half. The result is lifted back onto the fine grid before the props are
    *  stamped onto it. */
-  marchDivisor: 3,
+  marchDivisor: 4,
   /** Samples along one ray, and how fast the step between them grows. */
   marchSteps: 26,
   marchGrowth: 1.14,
@@ -377,11 +377,11 @@ export const SPRITE = {
   hueJitter: 0.035,
   valueJitter: 0.14,
   /** What a building casts, in tiles: how tall the engine should think it is and how wide. */
-  occluderHeight: 0.26,
-  occluderRadius: 0.17,
+  occluderHeight: 0.34,
+  occluderRadius: 0.23,
   /** The sheet is drawn already lit, so the map's light is applied to it as a colour and a depth
    *  rather than as a second lighting pass. This is what full sun does to it. */
-  exposure: 1.04,
+  exposure: 0.92,
 }
 
 // ---- units ------------------------------------------------------------------------------------------
@@ -434,6 +434,11 @@ export const LIGHT = {
    *  the light of somewhere else entirely. */
   propShadowLift: 0.9,
   propShadowLiftMax: 3.2,
+  /** And the offset is taken from how tall the prop is, not from how high the ground it stands on
+   *  is. The shader only has the world height, so it is capped at about the tallest prop: without
+   *  this a boulder on a mountain reads the light of somewhere three tiles away and a tuft on a
+   *  marsh reads its own. */
+  propShadowHeightMax: 0.55,
 }
 
 /** The sun as a unit vector, for a season. */

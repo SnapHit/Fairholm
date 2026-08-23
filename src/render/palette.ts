@@ -12,9 +12,23 @@ export type { RGB }
 
 export function hex(h: string): RGB { return hexRgb(h) }
 
+const tileCache = new Map<string, RGB>()
+
 /** Base ground colour of a tile before lighting, for one season. Forest tints toward its canopy a
- *  little so the ground under the props reads darker; the props carry the rest. */
+ *  little so the ground under the props reads darker; the props carry the rest.
+ *
+ *  Memoised on what it actually depends on, because colouring the surface asks nine times per vertex
+ *  and a large map has a quarter of a million of those. */
 export function tileColour(t: Tile, season = 1): RGB {
+  const key = `${t.terrain}|${t.forest ?? ''}|${t.workings ? 1 : 0}|${t.prime ?? ''}|${t.improved ? 1 : 0}|${season}`
+  const had = tileCache.get(key)
+  if (had) return had
+  const out = computeTileColour(t, season)
+  tileCache.set(key, out)
+  return out
+}
+
+function computeTileColour(t: Tile, season: number): RGB {
   const look = seasonLook(season)
   const base = hexRgb(look.ground[t.terrain])
   if (t.forest) {

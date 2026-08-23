@@ -242,7 +242,8 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const t = tileAt(tx + dx, tz + dz)
       if (!t) continue
-      const d = Math.hypot(x - (tx + dx + 0.5), z - (tz + dz + 0.5))
+      const ex = x - (tx + dx + 0.5), ez = z - (tz + dz + 0.5)
+      const d = Math.sqrt(ex * ex + ez * ez)
       const wgt = Math.max(0, 1 - d / (blendR + 0.5))
       if (wgt <= 0) continue
       const ww = wgt * wgt
@@ -299,23 +300,34 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
     const SNOW = snowColour(seasonNow)
     const { shallow, deep } = waterColours(seasonNow)
     const snowFrom = look.snowFrom * SURFACE.height.mountain
+    // every tile's colour and every tile's covered colour, once each. The vertex loop below asks for
+    // these nine times a vertex, and a standard map has seventy thousand vertices
+    const tcol = new Float32Array(tiles.length * 3)
+    const tcov = new Float32Array(tiles.length * 4)
+    for (let i = 0; i < tiles.length; i++) {
+      const c = tileColour(tiles[i], seasonNow)
+      tcol[i * 3] = c[0]; tcol[i * 3 + 1] = c[1]; tcol[i * 3 + 2] = c[2]
+      const cv = groundCover(tiles[i], seasonNow)
+      tcov[i * 4] = cv.colour[0]; tcov[i * 4 + 1] = cv.colour[1]
+      tcov[i * 4 + 2] = cv.colour[2]; tcov[i * 4 + 3] = cv.mix
+    }
     for (let vi = 0; vi < N; vi++) {
       const x = xs[vi], z = zs[vi]
       const tx = Math.floor(x), tz = Math.floor(z)
       let r = 0, g = 0, b = 0, wsum = 0, waterW = 0
       let cr = 0, cg = 0, cb = 0, cm = 0
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-        const t = tileAt(tx + dx, tz + dz)
-        if (!t) continue
-        const d = Math.hypot(x - (tx + dx + 0.5), z - (tz + dz + 0.5))
-        const wgt = Math.max(0, 1 - d / (blendR + 0.5))
+        const nx = tx + dx, nz = tz + dz
+        if (nx < 0 || nz < 0 || nx >= w || nz >= h) continue
+        const ti = nz * w + nx
+        const ex = x - (nx + 0.5), ez = z - (nz + 0.5)
+        const d = Math.sqrt(ex * ex + ez * ez)
+        const wgt = 1 - d / (blendR + 0.5)
         if (wgt <= 0) continue
         const ww = wgt * wgt
-        const c = tileColour(t, seasonNow)
-        r += c[0] * ww; g += c[1] * ww; b += c[2] * ww
-        const cov = groundCover(t, seasonNow)
-        cr += cov.colour[0] * ww; cg += cov.colour[1] * ww; cb += cov.colour[2] * ww; cm += cov.mix * ww
-        if (t.terrain === 'water') waterW += ww
+        r += tcol[ti * 3] * ww; g += tcol[ti * 3 + 1] * ww; b += tcol[ti * 3 + 2] * ww
+        cr += tcov[ti * 4] * ww; cg += tcov[ti * 4 + 1] * ww; cb += tcov[ti * 4 + 2] * ww; cm += tcov[ti * 4 + 3] * ww
+        if (tiles[ti].terrain === 'water') waterW += ww
         wsum += ww
       }
       if (wsum > 0) { r /= wsum; g /= wsum; b /= wsum; waterW /= wsum; cr /= wsum; cg /= wsum; cb /= wsum; cm /= wsum }
