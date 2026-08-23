@@ -1,24 +1,34 @@
-// The interface core. Interaction brief sections 2 to 6, onboarding brief throughout. The queue is
-// the tutorial and the bottom third is where things are done. Every hold action has a control in
-// the bottom third. There are no confirmation dialogs: anything within a turn can be undone.
+// The interface core. Interaction brief sections 2 to 6, onboarding brief throughout, and the
+// settlement screen and layout brief section 1: the map fills the viewport at all times, with two
+// thin strips over it. The queue is a compact bar carrying its top item and a count; tapping it
+// expands the list and resolving or dismissing collapses it again. Sheets slide up over the map and
+// go away by a tap outside them or a swipe down. There are no confirmation dialogs: anything within
+// a turn can be undone.
 
-import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings } from '../sim/state'
+import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings, Settlement, BuildingLine } from '../sim/state'
 import { applyAction, createGame, siteDescriptions, type Action } from '../sim/actions'
 import { deriveQueue, unitLabel } from '../sim/queue'
 import { SYSTEMS } from '../sim/systems'
 import { SEASON_NAMES, season, year } from '../sim/turn'
 import { randomSeed, playRng } from '../sim/rng'
 import { C } from '../sim/constants'
-import { findPath, maxMoves } from '../sim/units'
+import { findPath } from '../sim/units'
 import { Scene } from '../render/scene'
 import { pick, tileUnderPoint } from '../render/picking'
 import { Input } from './input'
 import { MusicPlayer } from './audio'
 import { h, clear, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
+import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
+import { SHEET_DISMISS_PX, installTheme, shouldReflow } from './theme'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
 import { term } from './glossary'
+
+/** Sheets that take the whole display rather than sliding up over part of it. */
+function isFullScreenSheet(spec: SheetSpec): boolean {
+  return spec.kind === 'settlement'
+}
 
 export class App {
   state: GameState
@@ -30,11 +40,17 @@ export class App {
   sheetHistory: SheetSpec[] = []
   undoStack: { snapshot: GameState; label: string }[] = []
   pathPreview: number[] | null = null
+  /** The colonist being placed, while the player is choosing where they should work. */
+  pick: { settlement: number; colonist: number } | null = null
+  /** Whether the queue is showing its list rather than just its top item. */
+  queueExpanded = false
   root: HTMLElement
   canvas: HTMLCanvasElement
   hud: HTMLElement
   sheetEl: HTMLElement
-  bar: HTMLElement
+  sheetBody: HTMLElement
+  scrim: HTMLElement
+  queuebar: HTMLElement
   toastEl: HTMLElement
   ring: HTMLElement
   overlayEl: HTMLElement
@@ -44,17 +60,21 @@ export class App {
   private landingBusy = false
 
   constructor(root: HTMLElement, state: GameState, resumed: boolean) {
+    installTheme()
     this.root = root
     this.state = state
     this.canvas = h('canvas', { id: 'map' }) as HTMLCanvasElement
     this.hud = h('div', { id: 'hud' })
-    this.sheetEl = h('div', { id: 'sheet' })
-    this.bar = h('div', { id: 'bar' })
+    this.scrim = h('div', { id: 'scrim', onClick: () => this.closeSheet() })
+    this.sheetBody = h('div', { class: 'body' })
+    this.sheetEl = h('div', { id: 'sheet' }, h('div', { class: 'grip' }), this.sheetBody)
+    this.queuebar = h('div', { id: 'queuebar' })
     this.toastEl = h('div', { id: 'toast' })
     this.ring = h('div', { id: 'holdring' })
     this.overlayEl = h('div', { id: 'overlay' })
     this.audioStrip = h('div', { id: 'audio' })
-    root.append(this.canvas, this.hud, this.audioStrip, this.bar, this.sheetEl, this.ring, this.toastEl, this.overlayEl)
+    root.append(this.canvas, this.hud, this.audioStrip, this.scrim, this.sheetEl, this.queuebar, this.ring, this.toastEl, this.overlayEl)
+    this.attachSheetSwipe()
     this.scene = new Scene(this.canvas)
     this.music = new MusicPlayer(state.settings.audio)
     this.music.onChange = (a) => { this.state.settings.audio = { ...this.state.settings.audio, ...a }; this.renderAudio() }
@@ -66,7 +86,8 @@ export class App {
       onGesture: (a) => this.scene.setGesture(a),
       onFirstInteraction: () => this.music.unlock(),
     })
-    document.addEventListener('pointerdown', () => this.music.unlock(), { once: true, capture: true })
+    // the first tap anywhere starts the music; every tap after it quietly rescues a refused start
+    document.addEventListener('pointerdown', () => this.music.unlock(), { capture: true })
     new ResizeObserver(() => this.layout()).observe(root)
     this.layout()
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.save() })
@@ -82,15 +103,17 @@ export class App {
   }
 
   // ---- layout ---------------------------------------------------------------------------------
+  /** The map is the whole viewport, portrait and landscape alike. Nothing is parked over it. */
   layout() {
     const w = this.root.clientWidth, hh = this.root.clientHeight
-    const landscape = w > hh * 1.2
-    this.root.classList.toggle('landscape', landscape)
-    const mapW = landscape ? Math.round(w * 0.6) : w
-    const mapH = landscape ? hh : Math.round(hh * 0.58)
-    this.canvas.style.width = mapW + 'px'
-    this.canvas.style.height = mapH + 'px'
-    this.scene.resize(mapW, mapH)
+    this.root.classList.toggle('landscape', w > hh * 1.2)
+    // the settlement screen's flanks move below the ring when the screen is narrow for the reader's
+    // own font size, so nothing is ever squeezed to the point of being cut off
+    const base = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    this.root.classList.toggle('narrow', shouldReflow(w, isFinite(base) ? base : 16))
+    this.canvas.style.width = w + 'px'
+    this.canvas.style.height = hh + 'px'
+    this.scene.resize(w, hh)
   }
 
   // ---- arrival ----------------------------------------------------------------------------------
@@ -106,6 +129,8 @@ export class App {
 
   land(site: number) {
     if (this.landingBusy || this.state.turn !== 0) return
+    // the choice of a landing site is the player's first tap, and the gesture that starts the music
+    this.music.unlock()
     this.landingBusy = true
     this.scene.glideTo(site, C.feel.zoom.working)
     this.scene.animateLanding(this.state, site, () => {
@@ -113,12 +138,13 @@ export class App {
       this.landingBusy = false
       Telemetry.newGame()
       this.sheet = { kind: 'queue' }
+      this.queueExpanded = false
       this.scene.arrivalSite = null
       this.scene.rebuild(this.state, 'dynamic')
       this.turnStartedAt = performance.now()
       this.save()
       this.refresh()
-      this.toast('Ashore. The queue below is everything that needs you.')
+      this.toast('Ashore. The bar below is everything that needs you.')
     })
   }
 
@@ -155,6 +181,7 @@ export class App {
     this.state = u.snapshot
     this.state.rng.play = play
     this.pathPreview = null
+    this.pick = null
     this.scene.rebuild(this.state, 'dynamic')
     this.refresh()
     this.toast('Undone')
@@ -175,7 +202,7 @@ export class App {
     this.scene.applySeason(this.state)
     this.scene.requestDraw()
     this.save()
-    // the queue stays open after a turn; a sheet on a thing that no longer exists closes
+    // a sheet on a thing that no longer exists closes
     if (this.sheet.kind === 'unit' && !this.state.units.some(u => u.id === (this.sheet as { id: number }).id)) this.sheet = { kind: 'queue' }
     this.refresh()
     if (this.state.declaration?.won) this.showEnd(true)
@@ -196,6 +223,7 @@ export class App {
     Save.clearLocal()
     this.state = s
     this.undoStack = []
+    this.pick = null
     this.scene.cam.view.selectedTile = null
     this.scene.cam.view.activeUnit = null
     this.scene.arrivalProgress = 0
@@ -210,11 +238,13 @@ export class App {
       const s = Save.fromSave(save, Date.now())
       this.state = s
       this.undoStack = []
+      this.pick = null
       this.scene.cam.view.selectedTile = null
       this.scene.cam.view.activeUnit = null
       this.scene.rebuild(this.state, 'full')
       this.scene.cam.centreOn(this.state.settlements[0]?.tile ?? this.state.charters[0].landing, C.feel.zoom.working)
       this.sheet = { kind: 'queue' }
+      this.queueExpanded = false
       this.save()
       this.refresh()
       this.toast('Game imported')
@@ -285,11 +315,11 @@ export class App {
       this.afterSelect()
       return
     }
-    // a tap below working zoom on nothing: deselect
+    // a tap below working zoom on nothing: deselect and let the map be the whole screen again
     v.selectedTile = null
     v.activeUnit = null
     this.pathPreview = null
-    if (this.sheet.kind !== 'queue') this.open({ kind: 'queue' })
+    this.closeSheet()
     this.afterSelect()
   }
 
@@ -379,9 +409,11 @@ export class App {
 
   // ---- sheets ----------------------------------------------------------------------------------
   open(spec: SheetSpec) {
+    if (spec.kind === 'queue') this.queueExpanded = true
     if (JSON.stringify(spec) === JSON.stringify(this.sheet)) { this.renderSheet(); return }
     if (this.sheet.kind !== 'queue') this.sheetHistory.push(this.sheet)
     if (this.sheetHistory.length > 12) this.sheetHistory.shift()
+    if (spec.kind !== 'settlement' || (this.sheet.kind === 'settlement' && this.sheet.id !== spec.id)) this.pick = null
     this.sheet = spec
     if (spec.kind === 'glossary') Telemetry.glossaryTap()
     if (spec.kind === 'fold') Telemetry.foldOpened(this.state.turn)
@@ -391,8 +423,23 @@ export class App {
   back() {
     const prev = this.sheetHistory.pop()
     this.sheet = prev ?? { kind: 'queue' }
-    if (this.sheet.kind === 'queue') { this.scene.cam.view.activeUnit = null; this.pathPreview = null; this.afterSelect() }
+    if (this.sheet.kind === 'queue') { this.queueExpanded = true; this.scene.cam.view.activeUnit = null; this.pathPreview = null; this.afterSelect() }
     this.renderSheet()
+  }
+
+  /** Put everything away and give the map the whole screen back. */
+  closeSheet() {
+    this.sheet = { kind: 'queue' }
+    this.sheetHistory = []
+    this.queueExpanded = false
+    this.pick = null
+    this.renderSheet()
+    this.renderQueueBar()
+  }
+
+  /** Whether the sheet is showing at all. At rest it is not, and the map is the whole screen. */
+  private sheetShowing(): boolean {
+    return this.sheet.kind !== 'queue' || this.queueExpanded
   }
 
   focus(tile: number) {
@@ -420,11 +467,100 @@ export class App {
     }
   }
 
+  // ---- the settlement screen ---------------------------------------------------------------------
+  /** Previous or next settlement, from the header's arrows or a swipe across the ring. */
+  gotoSettlement(step: number) {
+    if (this.sheet.kind !== 'settlement') return
+    const own = ownSettlements(this.state)
+    if (own.length < 2) return
+    const at = own.findIndex(x => x.id === (this.sheet as { id: number }).id)
+    const to = own[(at + step + own.length) % own.length]
+    this.pick = null
+    this.sheet = { kind: 'settlement', id: to.id }
+    this.focus(to.tile)
+    this.renderSheet()
+  }
+
+  /** Hold a colonist, so every place they would be useful lights up. Tapping them again lets go. */
+  pickColonist(st: Settlement, colonist: number | null) {
+    this.pick = colonist === null || (this.pick && this.pick.settlement === st.id && this.pick.colonist === colonist)
+      ? null
+      : { settlement: st.id, colonist }
+    this.renderSheet()
+  }
+
+  /** A tap on a ring cell. With someone held, it places them; otherwise it asks who should work it. */
+  settlementTapTile(st: Settlement, cell: RingCell) {
+    if (cell.tile === null) return
+    if (this.pick && this.pick.settlement === st.id) {
+      const good = cell.best?.good
+      if (!cell.available || !good) { this.toast(cell.reason ?? 'Not workable.'); return }
+      this.dispatch({ t: 'assignWorker', settlement: st.id, colonist: this.pick.colonist, job: { kind: 'tile', tile: cell.tile, good } }, 'Set to work')
+      this.pick = null
+      this.renderSheet()
+      return
+    }
+    if (cell.centre) { this.toast('The settlement works its own ground for nothing.'); return }
+    if (!cell.available && !cell.worker) { this.toast(cell.reason ?? 'Nothing to work here.'); return }
+    this.open({ kind: 'assignTile', settlement: st.id, tile: cell.tile })
+  }
+
+  /** A tap on a building slot. Unbuilt slots go into the build order instead. */
+  settlementTapSlot(st: Settlement, slot: BuildingSlot) {
+    if (!slot.built) {
+      const b = slot.option
+      if (!b) return
+      if (slot.gate) { this.toast(slot.gate); return }
+      if (b.imported) this.dispatch({ t: 'buyImported', settlement: st.id, line: b.line }, 'Imported machine bought')
+      else this.dispatch({ t: 'setBuildOrder', settlement: st.id, queue: [...st.buildQueue, { line: b.line, tier: b.tier }] }, `${slot.name} queued`)
+      return
+    }
+    if (slot.capacity === 0) { this.toast(`${slot.name}: ${slot.conversion}.`); return }
+    if (this.pick && this.pick.settlement === st.id) {
+      this.dispatch({ t: 'assignWorker', settlement: st.id, colonist: this.pick.colonist, job: { kind: 'building', line: slot.line } }, 'Set to work')
+      this.pick = null
+      this.renderSheet()
+      return
+    }
+    this.open({ kind: 'assignBuilding', settlement: st.id, line: slot.line })
+  }
+
+  /** Move one colonist to a tile or a building, swapping with whoever is there. */
+  assign(settlement: number, colonist: number, job: { kind: 'tile'; tile: number; good: import('../sim/state').TileGood } | { kind: 'building'; line: BuildingLine } | { kind: 'idle' }, label: string, swapWith?: number) {
+    const st = this.state.settlements[settlement]
+    if (!st) return
+    if (swapWith !== undefined && swapWith !== colonist) {
+      const theirs = st.colonists[colonist]?.job
+      const mine = st.colonists[swapWith]?.job
+      if (theirs && mine) {
+        // move the sitting worker out of the way first, so the tile is free when the other arrives
+        const snapshot = structuredClone(this.state)
+        try {
+          applyAction(this.state, { t: 'assignWorker', settlement, colonist: swapWith, job: { kind: 'idle' } })
+          applyAction(this.state, { t: 'assignWorker', settlement, colonist, job })
+          applyAction(this.state, { t: 'assignWorker', settlement, colonist: swapWith, job: theirs })
+        } catch (e) {
+          this.state = snapshot
+          this.toast((e as Error).message)
+          return
+        }
+        this.undoStack.push({ snapshot, label })
+        if (this.undoStack.length > 8) this.undoStack.shift()
+        this.toast(label, () => this.undo())
+        this.scene.rebuild(this.state, 'dynamic')
+        this.refresh()
+        this.back()
+        return
+      }
+    }
+    if (this.dispatch({ t: 'assignWorker', settlement, colonist, job }, label)) this.back()
+  }
+
   // ---- rendering -------------------------------------------------------------------------------
   refresh() {
     this.queue = deriveQueue(this.state, SYSTEMS)
     this.renderHud()
-    this.renderBar()
+    this.renderQueueBar()
     this.renderSheet()
     this.renderAudio()
   }
@@ -440,36 +576,79 @@ export class App {
     this.hud.append(
       h('div', { class: 'intent', onClick: () => this.open({ kind: 'intent' }) }, s.intent),
       h('div', { class: 'status' },
+        h('button', { class: 'menu', type: 'button', 'aria-label': 'menu', onClick: () => this.open({ kind: 'menu' }) }, '⋯'),
         h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'turn' }) }, `Turn ${s.turn}`),
-        muted(` · year ${year(s.turn)}, ${SEASON_NAMES[season(s.turn)]}`),
+        h('span', { class: 'when muted' }, `year ${year(s.turn)}, ${SEASON_NAMES[season(s.turn)]}`),
         h('span', { class: 'spacer' }),
-        h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'gold' }) }, `${fmt(ch.gold)} gold`),
-        h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'word' }) }, `${fmt(ch.word)} Word`),
+        h('span', { class: 'purse' },
+          h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'gold' }) }, `${fmt(ch.gold)} gold`),
+          h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'word' }) }, `${fmt(ch.word)} Word`),
+        ),
       ),
     )
   }
 
-  renderBar() {
+  /** The queue at rest: one line carrying its top item and a count, and the turn. */
+  renderQueueBar() {
     const s = this.state
-    clear(this.bar)
+    clear(this.queuebar)
+    this.queuebar.style.display = s.turn === 0 ? 'none' : ''
     if (s.turn === 0) return
-    const idle = this.queue.shown.concat(this.queue.folded).filter(g => g.type === 3 || g.type === 4).reduce((a, g) => a + g.items.length, 0)
+    const q = this.queue
+    const total = q.shown.reduce((a, g) => a + g.items.length, 0) + q.folded.reduce((a, g) => a + g.items.length, 0)
+    const top = q.shown[0]
+    const typeClass = top ? ['', 'loss', 'company', 'stuck', 'idle', 'chance'][top.type] : ''
+    const idle = q.shown.concat(q.folded).filter(g => g.type === 3 || g.type === 4).reduce((a, g) => a + g.items.length, 0)
     const label = idle > 0 ? `End turn, ${idle} will idle` : 'End turn'
     const ended = s.declaration?.won || s.declaration?.lost || s.turn >= s.settings.turns
-    this.bar.append(
-      button('Menu', () => this.open({ kind: 'menu' }), 'ghost'),
-      button(this.sheet.kind === 'queue' ? 'Dispatch' : 'Queue', () => this.open(this.sheet.kind === 'queue' ? { kind: 'dispatch' } : { kind: 'queue' }), 'ghost'),
-      h('span', { class: 'spacer' }),
+    this.queuebar.append(
+      h('button', { class: 'top', type: 'button', onClick: () => { if (this.queueExpanded && this.sheet.kind === 'queue') this.closeSheet(); else this.open({ kind: 'queue' }) } },
+        h('span', { class: 'mark ' + typeClass }),
+        h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? top.title : 'A quiet turn'),
+        total > 1 ? h('span', { class: 'count' }, String(total)) : null,
+      ),
       ended ? button('Over', () => this.showEnd(s.declaration?.won ? true : s.declaration?.lost ? false : null), 'primary') : button(label, () => this.endTurn(), 'primary'),
     )
   }
 
   renderSheet() {
-    clear(this.sheetEl)
-    this.sheetEl.scrollTop = 0
-    if (this.sheet.kind === 'landing') { this.sheetEl.append(this.renderLanding()); return }
-    if (this.sheet.kind === 'queue') { this.sheetEl.append(this.renderQueue()); return }
-    this.sheetEl.append(renderSheet(this, this.sheet))
+    const showing = this.sheetShowing()
+    const full = showing && isFullScreenSheet(this.sheet)
+    this.sheetEl.classList.toggle('open', showing)
+    this.sheetEl.classList.toggle('full', full)
+    this.scrim.classList.toggle('show', showing && !full)
+    clear(this.sheetBody)
+    this.sheetBody.scrollTop = 0
+    this.sheetEl.style.transform = ''
+    if (!showing) return
+    if (this.sheet.kind === 'landing') { this.sheetBody.append(this.renderLanding()); return }
+    if (this.sheet.kind === 'queue') { this.sheetBody.append(this.renderQueue()); return }
+    this.sheetBody.append(renderSheet(this, this.sheet))
+  }
+
+  /** A swipe down on the grip puts the sheet away, per section 1 of the layout brief. */
+  private attachSheetSwipe() {
+    const grip = this.sheetEl.querySelector('.grip') as HTMLElement
+    let y0 = 0, id: number | null = null
+    grip.addEventListener('pointerdown', (e: PointerEvent) => {
+      id = e.pointerId; y0 = e.clientY
+      this.sheetEl.classList.add('dragging')
+      try { grip.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+    })
+    grip.addEventListener('pointermove', (e: PointerEvent) => {
+      if (id !== e.pointerId) return
+      const dy = Math.max(0, e.clientY - y0)
+      this.sheetEl.style.transform = `translateY(${dy}px)`
+    })
+    const end = (e: PointerEvent) => {
+      if (id !== e.pointerId) return
+      id = null
+      this.sheetEl.classList.remove('dragging')
+      this.sheetEl.style.transform = ''
+      if (e.clientY - y0 >= SHEET_DISMISS_PX) this.closeSheet()
+    }
+    grip.addEventListener('pointerup', end)
+    grip.addEventListener('pointercancel', end)
   }
 
   renderLanding(): HTMLElement {
@@ -489,6 +668,12 @@ export class App {
     const q = this.queue
     const s = this.state
     const panel = h('div', { class: 'panel' })
+    panel.append(h('div', { class: 'row' },
+      h('span', { class: 'section-title' }, 'The queue'),
+      h('span', { class: 'spacer', style: { flex: '1' } }),
+      button('Dispatch', () => this.open({ kind: 'dispatch' }), 'small ghost'),
+      button('Close', () => this.closeSheet(), 'small ghost'),
+    ))
     if (q.crisis) panel.append(h('div', { class: 'crisis' }, 'More losses than fit. Work from the top.'))
     if (q.shown.length === 0) {
       panel.append(h('div', { class: 'quiet' }, h('div', { class: 'card-title' }, 'A quiet turn'), h('div', { class: 'card-body' }, 'Nothing needs you. End the turn when you are ready.')))
@@ -514,16 +699,22 @@ export class App {
     if (g.explain) card.append(h('div', { class: 'explain' }, g.explain))
     const actions = h('div', { class: 'card-actions' })
     if (single) {
-      for (const c of single.choices) actions.append(button(c.label, () => { this.dispatch(c.action as Action, c.label); }, 'small'))
+      for (const c of single.choices) actions.append(button(c.label, () => { this.resolved(() => this.dispatch(c.action as Action, c.label)) }, 'small'))
       actions.append(button(single.opens || single.settlement !== undefined || single.unit !== undefined || single.tile !== undefined ? 'Open' : 'Dismiss', () => {
         if (single.opens || single.settlement !== undefined || single.unit !== undefined || single.tile !== undefined) this.openItem(single)
-        else this.dispatch({ t: 'dismiss', key: single.key })
+        else this.resolved(() => this.dispatch({ t: 'dismiss', key: single.key }))
       }, 'small ghost'))
     } else {
       actions.append(button(`Open ${g.items.length}`, () => this.open({ kind: 'group', group: g.group }), 'small ghost'))
     }
     card.append(actions)
     return card
+  }
+
+  /** Resolving or dismissing collapses the queue back to its bar, so the map comes straight back. */
+  private resolved(act: () => void) {
+    act()
+    if (this.sheet.kind === 'queue') { this.queueExpanded = false; this.renderSheet(); this.renderQueueBar() }
   }
 
   /** Wrap known glossary terms in tappable spans. */

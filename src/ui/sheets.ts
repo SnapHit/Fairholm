@@ -12,6 +12,12 @@ import { maxMoves, cargoCapacity, equipCost, isHull, unitAttack, unitDefence } f
 import { signatoryList } from '../sim/grievance'
 import { term, TERMS } from './glossary'
 import { h, button, row, muted, fmt, signed, plural } from './dom'
+import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS } from '../render/tiles'
+import {
+  GOOD_WORDS, ringCells, tileCandidates, buildingCandidates, standingWords, jobWords, goodWord,
+  takesWorkers, type Candidate,
+} from './selectors'
+import { settlementScreen, tileGoodOrder } from './settlement'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
 import type { App } from './app'
@@ -19,7 +25,11 @@ import type { Action } from '../sim/actions'
 
 export type SheetSpec =
   | { kind: 'queue' } | { kind: 'landing' } | { kind: 'fold' } | { kind: 'group'; group: string }
-  | { kind: 'settlement'; id: number } | { kind: 'workers'; settlement: number; colonist: number }
+  | { kind: 'settlement'; id: number } | { kind: 'settlementDetail'; id: number }
+  | { kind: 'workers'; settlement: number; colonist: number }
+  | { kind: 'assignTile'; settlement: number; tile: number; good?: TileGood }
+  | { kind: 'assignBuilding'; settlement: number; line: BuildingLine }
+  | { kind: 'goodActions'; settlement: number; good: GoodId }
   | { kind: 'build'; settlement: number } | { kind: 'orders'; settlement: number }
   | { kind: 'market'; settlement: number } | { kind: 'consign'; settlement: number; good: GoodId }
   | { kind: 'buy'; settlement: number; good: GoodId } | { kind: 'equip'; settlement: number }
@@ -29,10 +39,12 @@ export type SheetSpec =
   | { kind: 'signatories' } | { kind: 'predecessor'; id: number } | { kind: 'rivals' } | { kind: 'declaration' }
   | { kind: 'menu' } | { kind: 'newgame' } | { kind: 'intent' } | { kind: 'settings' }
 
-const GOOD_NAMES: Record<GoodId, string> = { food: 'Food', timber: 'Timber', gold: 'Gold', horses: 'Horses', ore: 'Ore', metal: 'Metal', tooling: 'Tooling', arms: 'Arms', flax: 'Flax', linen: 'Linen', hemp: 'Hemp', cordage: 'Cordage', madder: 'Madder', dye: 'Dye', bloom: 'Bloom', attar: 'Attar', cores: 'Cores', instruments: 'Instruments' }
-const TERRAIN_NAMES: Record<string, string> = { grassland: 'Grassland', plains: 'Plains', downs: 'Downs', marsh: 'Marsh', highland: 'Highland', mountain: 'Mountain', dry: 'Dry ground', water: 'Water' }
-const FOREST_NAMES: Record<string, string> = { lightWoodland: 'light woodland', deepTimber: 'deep timber', highlandForest: 'highland forest', coastalScrub: 'coastal scrub' }
-const PRIME_NAMES: Record<string, string> = { richSoil: 'rich soil', pasture: 'pasture', stand: 'a fine stand', lode: 'a lode', seam: 'a gold seam', flaxField: 'a flax field', hempField: 'a hemp field', madderBed: 'a madder bed', bloomMeadow: 'bloom meadow', shoal: 'a shoal' }
+// One place each of these becomes a word: the goods in src/ui/selectors.ts, the ground in
+// src/render/tiles.ts. A new good or terrain with no entry is then obvious rather than undefined.
+const GOOD_NAMES: Record<string, string> = GOOD_WORDS
+const TERRAIN_NAMES: Record<string, string> = TERRAIN_WORDS
+const FOREST_NAMES: Record<string, string> = FOREST_WORDS
+const PRIME_NAMES: Record<string, string> = PRIME_WORDS
 const PURPOSES: Purpose[] = ['food', 'timber', 'ore', 'gold', 'horses', 'flax', 'hemp', 'madder', 'bloom', 'industry', 'civic']
 
 function header(app: App, title: (HTMLElement | string)[] | string, sub?: string): HTMLElement {
@@ -74,7 +86,11 @@ function notYet(app: App, what: string): HTMLElement {
 export function renderSheet(app: App, spec: SheetSpec): HTMLElement {
   const s = app.state
   switch (spec.kind) {
-    case 'settlement': return settlementSheet(app, s, s.settlements[spec.id])
+    case 'settlement': return settlementScreen(app, s, s.settlements[spec.id])
+    case 'settlementDetail': return settlementDetailSheet(app, s, s.settlements[spec.id])
+    case 'assignTile': return assignTileSheet(app, s, s.settlements[spec.settlement], spec.tile, spec.good)
+    case 'assignBuilding': return assignBuildingSheet(app, s, s.settlements[spec.settlement], spec.line)
+    case 'goodActions': return goodActionsSheet(app, s, s.settlements[spec.settlement], spec.good)
     case 'workers': return workersSheet(app, s, s.settlements[spec.settlement], spec.colonist)
     case 'build': return buildSheet(app, s, s.settlements[spec.settlement])
     case 'orders': return ordersSheet(app, s, s.settlements[spec.settlement])
@@ -107,7 +123,9 @@ export function renderSheet(app: App, spec: SheetSpec): HTMLElement {
 }
 
 // ---- settlement ------------------------------------------------------------------------------------
-function settlementSheet(app: App, s: GameState, st: Settlement): HTMLElement {
+// The settlement screen itself is in src/ui/settlement.ts. This is the long form behind it: every
+// number in one scrolling list, for when the screen's shorthand is not enough.
+function settlementDetailSheet(app: App, s: GameState, st: Settlement): HTMLElement {
   if (!st || st.owner !== 0) return h('div', { class: 'panel' }, header(app, 'Not yours'))
   const pop = st.colonists.length
   const prod = previewProduction(s, st)
@@ -178,6 +196,107 @@ function renameSheet(app: App, s: GameState, st: Settlement): HTMLElement {
   const input = h('input', { type: 'text', value: st.name, maxlength: 24 }) as HTMLInputElement
   return h('div', { class: 'panel' }, header(app, 'Name the settlement'), input,
     row(button('Keep', () => { if (app.dispatch({ t: 'renameSettlement', settlement: st.id, name: input.value.trim() || st.name }, 'Renamed')) app.back() }, 'primary')))
+}
+
+// ---- assignment, without drag and drop -----------------------------------------------------------
+// Settlement screen brief section 3. Two paths, both one tap to start. This is the first: tap the
+// place, then tap the person. The second, tap the person then the place, lives on the settlement
+// screen itself. Reassignment is the same gesture and offers a move or a swap.
+
+function candidateRow(app: App, st: Settlement, c: Candidate, unit: string, act: (swapWith?: number) => void, holders: { index: number; label: string }[]): HTMLElement {
+  const right: (HTMLElement | string)[] = []
+  if (holders.length === 0) right.push(button('Put here', () => act(), 'tiny'))
+  else for (const hd of holders) right.push(button(c.colonist.job.kind === 'idle' ? `Take ${hd.label}'s place` : `Swap with ${hd.label}`, () => act(hd.index), 'tiny'))
+  return h('div', { class: 'line' },
+    h('span', { class: 'l' }, h('b', {}, standingWords(c.colonist)), muted(` · now ${c.now}`)),
+    h('span', { class: 'r' }, `${c.amount} ${unit}`, ' ', ...right),
+  )
+}
+
+function assignTileSheet(app: App, s: GameState, st: Settlement, tile: number, good?: TileGood): HTMLElement {
+  if (!st || st.owner !== 0) return h('div', { class: 'panel' }, header(app, 'Not yours'))
+  const cell = ringCells(s, st).find(x => x.tile === tile)
+  if (!cell) return h('div', { class: 'panel' }, header(app, 'Out of reach'))
+  const offers = tileGoodOrder(s, tile, cell.offers).filter(g => tileYield(s, tile, g, null) > 0)
+  const chosen: TileGood | undefined = good ?? cell.worker?.good ?? offers[0]
+  const holderIdx = st.colonists.findIndex(c => c.job.kind === 'tile' && c.job.tile === tile)
+  const panel = h('div', { class: 'panel' }, header(app, 'Who works this ground', cell.words))
+  if (!chosen) { panel.append(h('p', { class: 'muted' }, 'Nothing grows or is dug here.')); return panel }
+  if (cell.reason && !cell.available) panel.append(h('p', { class: 'warn' }, cell.reason))
+  if (offers.length > 1) {
+    panel.append(section('For what', h('div', { class: 'chips' }, offers.map(g => h('button', {
+      class: 'chip' + (g === chosen ? ' on' : ''), type: 'button',
+      onClick: () => app.open({ kind: 'assignTile', settlement: st.id, tile, good: g }),
+    }, `${GOOD_NAMES[g]} ${tileYield(s, tile, g, null)}`)))))
+  }
+  const holders: { index: number; label: string }[] = holderIdx >= 0 ? [{ index: holderIdx, label: standingWords(st.colonists[holderIdx]) }] : []
+  if (holderIdx >= 0) {
+    panel.append(section('Working it now', line(
+      [h('b', {}, standingWords(st.colonists[holderIdx])), muted(` · ${jobWords(s, st, st.colonists[holderIdx])}`)],
+      button('Leave it empty', () => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: holderIdx, job: { kind: 'idle' } }, 'Set idle')) app.back() }, 'tiny ghost'),
+    )))
+  }
+  const rows = tileCandidates(s, st, tile, chosen)
+  panel.append(section('Best here first', ...(rows.length ? rows.map(c => candidateRow(app, st, c, GOOD_NAMES[chosen].toLowerCase(), (swapWith) => {
+    app.assign(st.id, c.index, { kind: 'tile', tile, good: chosen }, `Set to ${chosen}`, swapWith)
+  }, holders)) : [muted('Nobody else is here.')])))
+  return panel
+}
+
+function assignBuildingSheet(app: App, s: GameState, st: Settlement, l: BuildingLine): HTMLElement {
+  if (!st || st.owner !== 0) return h('div', { class: 'panel' }, header(app, 'Not yours'))
+  const tier = st.buildings[l]
+  if (tier === 0) return h('div', { class: 'panel' }, header(app, 'Not built here'))
+  const def = C.buildings.lines[l]
+  const name = buildingName({ line: l, tier: tier as 1 | 2 | 3 })
+  const inside: { index: number; label: string }[] = []
+  st.colonists.forEach((c, i) => { if (c.job.kind === 'building' && c.job.line === l) inside.push({ index: i, label: standingWords(c) }) })
+  const full = inside.length >= C.labour.workersPerBuilding
+  const panel = h('div', { class: 'panel' }, header(app, `Who works the ${name.toLowerCase()}`, def.output ? `${def.input ? GOOD_NAMES[def.input].toLowerCase() + ' to ' : ''}${def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output].toLowerCase()}` : describeLine(l)))
+  if (!takesWorkers(l)) { panel.append(h('p', { class: 'muted' }, 'This one needs nobody.')); return panel }
+  if (def.input && st.stock[def.input] <= 0) panel.append(h('p', { class: 'warn' }, `No ${GOOD_NAMES[def.input].toLowerCase()} in store, so it makes nothing this turn.`))
+  if (inside.length) {
+    panel.append(section('Inside now', ...inside.map(w => line(
+      [h('b', {}, w.label), muted(` · ${jobWords(s, st, st.colonists[w.index])}`)],
+      button('Send out', () => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: w.index, job: { kind: 'idle' } }, 'Set idle')) app.back() }, 'tiny ghost'),
+    ))))
+  }
+  const rows = buildingCandidates(s, st, l)
+  const unit = def.output ? (def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output].toLowerCase()) : 'a turn'
+  panel.append(section(full ? 'Full: someone must trade places' : 'Best here first',
+    ...(rows.length ? rows.map(c => candidateRow(app, st, c, unit, (swapWith) => {
+      app.assign(st.id, c.index, { kind: 'building', line: l }, `Set to ${name}`, swapWith)
+    }, full ? inside : [])) : [muted('Nobody else is here.')])))
+  return panel
+}
+
+function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HTMLElement {
+  if (!st || st.owner !== 0) return h('div', { class: 'panel' }, header(app, 'Not yours'))
+  const cap = storageCapacity(st)
+  const traded = C.market.goods[g].traded
+  const ok = canConsign(s, st)
+  const o = st.orders
+  const others = s.settlements.filter(x => x.owner === 0 && x.id !== st.id)
+  const panel = h('div', { class: 'panel' }, header(app, [T(app, g, GOOD_NAMES[g])], `${st.stock[g]} of ${cap} held at ${st.name}${traded ? ` · ${sellPrice(s, g)} a unit` : ''}`))
+  if (g !== 'food' && st.stock[g] > cap) panel.append(h('p', { class: 'warn' }, 'Above the storage cap, so the excess spoils at the end of the turn.'))
+  const acts = h('div', { class: 'row' })
+  if (traded && ok.ok && st.stock[g] > 0) acts.append(button('Consign', () => app.open({ kind: 'consign', settlement: st.id, good: g }), 'primary'))
+  if (traded && ok.ok) acts.append(button('Buy', () => app.open({ kind: 'buy', settlement: st.id, good: g }), 'small'))
+  acts.append(button('Market', () => app.open({ kind: 'market', settlement: st.id }), 'small ghost'))
+  panel.append(acts)
+  if (!ok.ok && ok.reason) panel.append(muted(ok.reason))
+  // hold and send are the settlement's surplus rule, not a rule for this good alone: the simulation
+  // keeps one rule per settlement, so saying otherwise here would be a lie
+  panel.append(section('What this settlement does with its surplus',
+    h('p', { class: 'muted' }, `Everything above ${o.surplus.threshold} in store, this good included.`),
+    h('div', { class: 'chips' },
+      h('button', { class: 'chip' + (o.surplus.destination.kind === 'hold' ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { ...o.surplus, destination: { kind: 'hold' } } }, 'Surplus: hold') }, 'hold it'),
+      h('button', { class: 'chip' + (o.surplus.destination.kind === 'consign' ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { ...o.surplus, destination: { kind: 'consign' } } }, 'Surplus: consign') }, 'consign it'),
+      others.map(x => h('button', { class: 'chip' + (o.surplus.destination.kind === 'ship' && o.surplus.destination.settlement === x.id ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { ...o.surplus, destination: { kind: 'ship', settlement: x.id } } }, `Surplus: ship to ${x.name}`) }, `send to ${x.name}`)),
+    ),
+    button('All the standing orders', () => app.open({ kind: 'orders', settlement: st.id }), 'small ghost'),
+  ))
+  return panel
 }
 
 function workersSheet(app: App, s: GameState, st: Settlement, idx: number): HTMLElement {
