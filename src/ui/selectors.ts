@@ -254,7 +254,8 @@ export function destinationsFor(s: GameState, st: Settlement, colonist: number):
   if (!c) return { tiles, lines }
   for (const cell of ringCells(s, st)) {
     if (!cell.tile || !cell.available || !cell.best) continue
-    if (cell.worker && cell.worker.index === colonist) continue
+    // somewhere someone already works is not a free destination; a swap is offered by tapping it
+    if (cell.worker) continue
     if (tileYield(s, cell.tile, cell.best.good, c) > 0) tiles.add(cell.tile)
   }
   for (const line of BUILDING_LINES) {

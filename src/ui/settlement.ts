@@ -128,14 +128,16 @@ export function settlementScreen(app: App, s: GameState, st: Settlement): HTMLEl
   const ring = h('div', { class: 'st-ring' }, cells.map(c => ringCell(app, st, c, c.tile !== null && dests.tiles.has(c.tile))))
   attachRingSwipe(app, ring)
 
+  // only a building that exists and has room can take the colonist being held
+  const lit = (b: BuildingSlot) => b.built && dests.lines.has(b.line)
   const core = h('div', { class: 'st-core' },
-    h('div', { class: 'st-flank' }, flankLeft.map(b => buildingSlotEl(app, st, b, dests.lines.has(b.line)))),
+    h('div', { class: 'st-flank' }, flankLeft.map(b => buildingSlotEl(app, st, b, lit(b)))),
     ring,
-    h('div', { class: 'st-flank' }, flankRight.map(b => buildingSlotEl(app, st, b, dests.lines.has(b.line)))),
+    h('div', { class: 'st-flank' }, flankRight.map(b => buildingSlotEl(app, st, b, lit(b)))),
   )
 
   const body = h('div', { class: 'st-body' }, core)
-  if (overflow.length) body.append(h('div', { class: 'st-overflow' }, overflow.map(b => buildingSlotEl(app, st, b, dests.lines.has(b.line)))))
+  if (overflow.length) body.append(h('div', { class: 'st-overflow' }, overflow.map(b => buildingSlotEl(app, st, b, lit(b)))))
 
   // ---- idle, only when someone is idle -----------------------------------------------------------
   const idle = st.colonists.map((c, i) => ({ c, i })).filter(x => x.c.job.kind === 'idle')

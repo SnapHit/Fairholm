@@ -495,7 +495,9 @@ export class App {
     if (this.pick && this.pick.settlement === st.id) {
       const good = cell.best?.good
       if (!cell.available || !good) { this.toast(cell.reason ?? 'Not workable.'); return }
-      this.dispatch({ t: 'assignWorker', settlement: st.id, colonist: this.pick.colonist, job: { kind: 'tile', tile: cell.tile, good } }, 'Set to work')
+      // somewhere someone already works: ask rather than fail, so the swap is one more tap
+      if (cell.worker && cell.worker.index !== this.pick.colonist) { this.open({ kind: 'assignTile', settlement: st.id, tile: cell.tile }); return }
+      this.dispatch({ t: 'assignWorker', settlement: st.id, colonist: this.pick.colonist, job: { kind: 'tile', tile: cell.tile, good } }, `Set to ${good}`)
       this.pick = null
       this.renderSheet()
       return
@@ -517,7 +519,8 @@ export class App {
     }
     if (slot.capacity === 0) { this.toast(`${slot.name}: ${slot.conversion}.`); return }
     if (this.pick && this.pick.settlement === st.id) {
-      this.dispatch({ t: 'assignWorker', settlement: st.id, colonist: this.pick.colonist, job: { kind: 'building', line: slot.line } }, 'Set to work')
+      if (slot.workers.length >= slot.capacity) { this.open({ kind: 'assignBuilding', settlement: st.id, line: slot.line }); return }
+      this.dispatch({ t: 'assignWorker', settlement: st.id, colonist: this.pick.colonist, job: { kind: 'building', line: slot.line } }, `Set to ${slot.name}`)
       this.pick = null
       this.renderSheet()
       return

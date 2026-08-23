@@ -325,8 +325,13 @@ input[type=text] {
 }
 .cell:active, .slot:active { filter: brightness(1.15); }
 .cell.dim { opacity: 0.4; }
-.cell.can-take, .slot.can-take { outline: calc(var(--line-hair) * 2) solid var(--accent); outline-offset: calc(var(--line-hair) * -2); }
-.cell.picked, .slot.picked { outline: calc(var(--line-hair) * 2) solid var(--ink); outline-offset: calc(var(--line-hair) * -2); }
+/* the highlight is a layer over the cell's own contents, because a ring cell's terrain is an
+   absolutely positioned child and would paint over an outline */
+.cell.can-take::after, .slot.can-take::after, .cell.picked::after, .slot.picked::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border-radius: inherit; border: calc(var(--line-hair) * 2) solid var(--accent);
+}
+.cell.picked::after, .slot.picked::after { border-color: var(--ink); }
 
 /* ring cells carry real terrain, drawn from the map's own palette and tile data */
 .cell .terrain { position: absolute; inset: 0; }
