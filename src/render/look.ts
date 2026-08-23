@@ -191,7 +191,7 @@ export const SURFACE = {
   grainBump: 0.65,
   rockBump: 1.35,
   /** Fine noise in the fragment shader, under the textures. */
-  filmStrength: 0.035,
+  filmStrength: 0.1,
   filmScale: 190,
 }
 
@@ -220,12 +220,12 @@ export const SHADOW = {
   blurPasses: 2,
   /** Ambient occlusion baked into the vertex colour: how far it looks and how hard it bites. */
   aoRadius: 3,
-  aoStrength: 1.0,
-  aoFloor: 0.62,
+  aoStrength: 1.8,
+  aoFloor: 0.58,
   aoCeiling: 1.08,
   /** A prop's own contact shadow: how wide, relative to the prop, and how dark. */
-  contactWidth: 1.35,
-  contactDepth: 0.9,
+  contactWidth: 1.8,
+  contactDepth: 1.0,
 }
 
 // ---- props ----------------------------------------------------------------------------------------

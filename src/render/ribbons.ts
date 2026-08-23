@@ -3,7 +3,8 @@
 
 import * as THREE from 'three'
 import type { GameState } from '../sim/state'
-import { RIVER, ROAD } from './palette'
+import { riverColour, roadColour } from './palette'
+import { surfaceMaterial, type LightUniforms } from './shading'
 
 function hash(i: number, k: number): number {
   let h = (i * 2654435761 + k * 40503) | 0
@@ -37,14 +38,13 @@ function ribbon(points: THREE.Vector3[], width: number, pos: number[], idx: numb
   }
 }
 
-function makeMesh(pos: number[], idx: number[], col: number[]): THREE.Mesh {
+function makeMesh(pos: number[], idx: number[], col: number[], light: LightUniforms): THREE.Mesh {
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
   geo.setIndex(idx)
   geo.computeVertexNormals()
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true })
-  const m = new THREE.Mesh(geo, mat)
+  const m = new THREE.Mesh(geo, surfaceMaterial(light, 1, true))
   m.frustumCulled = false
   return m
 }
@@ -55,14 +55,14 @@ function paint(col: number[], from: number, to: number, c: [number, number, numb
 
 /** Rivers and roads in one mesh and one draw call. Roads change with play, so the whole mesh is
  * rebuilt on a dynamic rebuild; it is small. */
-export function buildRibbons(s: GameState, heightAt: (x: number, z: number) => number): THREE.Mesh {
+export function buildRibbons(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, season: number): THREE.Mesh {
   const pos: number[] = [], idx: number[] = [], col: number[] = []
   addRivers(s, heightAt, pos, idx)
-  paint(col, 0, pos.length / 3, RIVER)
+  paint(col, 0, pos.length / 3, riverColour(season))
   const before = pos.length / 3
   addRoads(s, heightAt, pos, idx)
-  paint(col, before, pos.length / 3, ROAD)
-  return makeMesh(pos, idx, col)
+  paint(col, before, pos.length / 3, roadColour(season))
+  return makeMesh(pos, idx, col, light)
 }
 
 function addRivers(s: GameState, heightAt: (x: number, z: number) => number, pos: number[], idx: number[]) {

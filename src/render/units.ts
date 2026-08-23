@@ -1,10 +1,18 @@
-// Units. Art direction brief section 7: small, static, instanced, with a clear plan-view shape and a
-// soft ground shadow. A hauler reads as a rectangle, an outrider is elongated, a militia block is
-// square, a battery is a squat wedge. Owner colour is carried on the unit.
+// Units. Art direction brief section 7: small, static, instanced, with a clear plan-view shape. A
+// hauler reads as a rectangle, an outrider is elongated, a militia block is square, a battery is a
+// squat wedge. Owner colour is carried on the unit.
+//
+// The ground shadow is no longer a disc of its own geometry. Every unit hands the shadow bake an
+// occluder instead, so its shadow lies away from the sun with everything else's and costs no draw
+// call. Art brief section 7 asked for a soft shadow to lift a unit off the surface; this is that,
+// pointing the right way.
 
 import * as THREE from 'three'
 import type { GameState, Unit, UnitKind } from '../sim/state'
 import { hex, type RGB } from './palette'
+import { UNITS } from './look'
+import { surfaceMaterial, flatMaterial, type LightUniforms } from './shading'
+import type { Occluder } from './shadow'
 
 type Form = 'disc' | 'square' | 'long' | 'wedge' | 'rect' | 'hull' | 'company'
 
@@ -35,9 +43,10 @@ function geometryFor(f: Form): THREE.BufferGeometry {
 export interface UnitBuild {
   group: THREE.Group
   positions: Map<number, [number, number]>
+  occluders: Occluder[]
 }
 
-export function buildUnits(s: GameState, heightAt: (x: number, z: number) => number): UnitBuild {
+export function buildUnits(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms): UnitBuild {
   const w = s.world.width
   const group = new THREE.Group()
   const positions = new Map<number, [number, number]>()
@@ -57,15 +66,12 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
     positions.set(u.id, [x, z])
   }
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color()
-  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff })
-  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x1a1610 })
-  const total = s.units.length
-  const shadow = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.2, 0.004, 12), shadowMat, Math.max(1, total))
-  let si = 0
+  const mat = surfaceMaterial(light, 1)
+  const occluders: Occluder[] = []
   for (const [f, list] of byForm) {
     const mesh = new THREE.InstancedMesh(geometryFor(f), mat, list.length)
     list.forEach((e, i) => {
-      const y = f === 'hull' ? 0.04 : heightAt(e.x, e.z) + 0.04
+      const y = f === 'hull' ? UNITS.lift * 0.8 : heightAt(e.x, e.z) + UNITS.lift
       p.set(e.x, y, e.z)
       q.identity()
       sc.set(1, 1, 1)
@@ -77,26 +83,18 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
       else if (e.unit.kind === 'raider' && !e.unit.flagged) col.setRGB(0.3, 0.3, 0.3)
       else col.setRGB(oc[0], oc[1], oc[2])
       mesh.setColorAt(i, col)
-      // shadow, offset toward the sun's far side
-      p.set(e.x + 0.05, y - 0.035, e.z + 0.05)
-      sc.set(f === 'long' || f === 'hull' ? 1.25 : 1, 1, f === 'long' || f === 'hull' ? 0.75 : 1)
-      m.compose(p, q, sc)
-      shadow.setMatrixAt(si++, m)
+      occluders.push({ x: e.x, z: e.z, height: 0.1, radius: 0.13 })
     })
     mesh.instanceMatrix.needsUpdate = true
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     mesh.frustumCulled = false
     group.add(mesh)
   }
-  shadow.count = si
-  shadow.instanceMatrix.needsUpdate = true
-  shadow.frustumCulled = false
-  group.add(shadow)
-  return { group, positions }
+  return { group, positions, occluders }
 }
 
 /** The arrival: a lander down and steaming offshore, a boat making for the coast. */
-export function buildArrival(s: GameState, site: number | null, progress: number): THREE.Group {
+export function buildArrival(s: GameState, site: number | null, progress: number, light: LightUniforms): THREE.Group {
   const group = new THREE.Group()
   const w = s.world.width
   const home = s.world.landingSites[0] ?? s.charters[0].landing
@@ -114,11 +112,11 @@ export function buildArrival(s: GameState, site: number | null, progress: number
     const score = water * 2 - Math.hypot(dx, dz) * 0.5
     if (score > best) { best = score; sx = nx + 0.5; sz = nz + 0.5 }
   }
-  const lander = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.12, 8), new THREE.MeshLambertMaterial({ color: 0x2a2a2e }))
+  const lander = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.12, 8), surfaceMaterial(light, 1, false, 0x2a2a2e))
   lander.position.set(sx, 0.05, sz)
   group.add(lander)
   for (let i = 0; i < 3; i++) {
-    const plume = new THREE.Mesh(new THREE.CylinderGeometry(0.2 + i * 0.18, 0.24 + i * 0.2, 0.02, 10), new THREE.MeshBasicMaterial({ color: 0xf2ece0 }))
+    const plume = new THREE.Mesh(new THREE.CylinderGeometry(0.2 + i * 0.18, 0.24 + i * 0.2, 0.02, 10), flatMaterial(0xf2ece0))
     plume.position.set(sx + 0.25 + i * 0.3, 0.09 + i * 0.01, sz - 0.15 - i * 0.22)
     group.add(plume)
   }
@@ -129,11 +127,11 @@ export function buildArrival(s: GameState, site: number | null, progress: number
   const bx = sx + (tx - sx) * (0.18 + 0.82 * t), bz = sz + (tz - sz) * (0.18 + 0.82 * t)
   const boatGeo = new THREE.CylinderGeometry(0.05, 0.12, 0.05, 4)
   boatGeo.rotateY(Math.PI / 4); boatGeo.scale(1.8, 1, 1)
-  const boat = new THREE.Mesh(boatGeo, new THREE.MeshLambertMaterial({ color: 0xe9e2cc }))
+  const boat = new THREE.Mesh(boatGeo, surfaceMaterial(light, 1, false, 0xe9e2cc))
   boat.position.set(bx, 0.04, bz)
   boat.rotation.y = -Math.atan2(tz - sz, tx - sx)
   group.add(boat)
-  const wake = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.16), new THREE.MeshBasicMaterial({ color: 0xd9e6e3 }))
+  const wake = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.16), flatMaterial(0xd9e6e3))
   wake.rotation.x = -Math.PI / 2
   const back = 0.55
   wake.position.set(bx - Math.cos(-boat.rotation.y) * back, 0.015, bz - Math.sin(-boat.rotation.y) * back)

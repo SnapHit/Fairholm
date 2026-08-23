@@ -1,22 +1,35 @@
 // The renderer. Architecture brief section 5 and art direction brief section 9. Draws on demand:
 // once after a state change or a settled camera, continuously only while a gesture, momentum,
 // glide or the arrival animation is in flight. DPR drops while moving and refines when settled.
-// Props cull hysteretically with zoom and nothing is rebuilt during a gesture; a state change
-// during a gesture is deferred until it ends. A lost WebGL context is survived by rebuilding.
+// Props cull hysteretically with zoom in two tiers and nothing is rebuilt during a gesture; a state
+// change during a gesture is deferred until it ends. A lost WebGL context is survived by rebuilding.
+//
+// What is baked, and when, per architecture brief section 3:
+//   world     terrain mesh, vertex colours, baked occlusion, props, the shadow map's base
+//   season    vertex colours, prop colours, the light, the shadow map's base, the clear colour
+//   turn      ribbons, settlements, units, and the shadow map's dynamic layer
+//   frame     nothing but the draw itself and the drifting cloud
+//
+// There are no three.js lights in this scene. Every material is one custom shader in shading.ts, so
+// the ground, a canopy, a roof and a unit are lit by the same warm key and the same cool sky.
 
 import * as THREE from 'three'
 import type { GameState } from '../sim/state'
 import { C } from '../sim/constants'
 import { MapCamera } from './camera'
-import { buildTerrain, seasonUniforms, setOverlayTile, clearOverlay, type TerrainBuild } from './terrain'
+import { buildTerrain, setOverlayTile, clearOverlay, type TerrainBuild } from './terrain'
 import { buildRibbons } from './ribbons'
 import { buildProps } from './props'
 import { buildSettlements } from './settlements'
 import { buildUnits, buildArrival, makeRing } from './units'
 import { season } from '../sim/turn'
-import { hex, tileColour, type RGB } from './palette'
+import { hex, tileColour, clearColour, type RGB } from './palette'
 import { workableTiles, tileYield, tileOffers } from '../sim/labour'
 import { seedNumber } from './seed'
+import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
+import { ShadowBake, type Occluder } from './shadow'
+import { detailTextures, type DetailTextures } from './textures'
+import { seasonLook, sunVector, PROPS, SHADOW } from './look'
 
 export class Scene {
   renderer: THREE.WebGLRenderer
@@ -26,6 +39,8 @@ export class Scene {
   terrain: TerrainBuild | null = null
   ribbons: THREE.Mesh | null = null
   props: THREE.Group | null = null
+  propsFine: THREE.Group | null = null
+  propCount = 0
   settlements: THREE.Group | null = null
   units: THREE.Group | null = null
   unitPositions = new Map<number, [number, number]>()
@@ -35,7 +50,15 @@ export class Scene {
   arrivalAnimating = false
   selRing: THREE.Mesh
   unitRing: THREE.Mesh
-  sun: THREE.DirectionalLight
+  /** One set of light uniforms, shared by every material on the map. */
+  light: LightUniforms = makeLightUniforms()
+  detail: DetailTextures
+  shadow: ShadowBake | null = null
+  private staticOccluders: Occluder[] = []
+  private lastSeason = -1
+  /** Which tiles people live on. Props are cleared around those, so founding a settlement has to
+   *  rebuild them; the world's props are otherwise built once and left alone. */
+  private lastClearKey = ''
   gestureActive = false
   private loopRunning = false
   private pendingState: GameState | null = null
@@ -43,6 +66,10 @@ export class Scene {
   private refineTimer: number | null = null
   private drawQueued = false
   private propsVisible = true
+  private fineVisible = false
+  /** Verification only: hold the level of detail where it is, so a frame can be shot with a tier
+   *  switched off. Never set in play. */
+  lockLod = false
   private lastState: GameState | null = null
   private lastWorldKey = ''
   private contextLost = false
@@ -58,10 +85,8 @@ export class Scene {
     this.renderer.setClearColor(new THREE.Color(...hex(C.art.palette.deepWater)))
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.cam = new MapCamera(1, 1)
-    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.2)
-    this.sun.position.set(-0.7, 0.55, 0.45)
-    this.scene.add(this.sun)
-    this.scene.add(new THREE.AmbientLight(0xcfd8e6, 1.1))
+    this.detail = detailTextures(() => this.requestDraw())
+    applyLook(this.light, seasonLook(1))
     this.selRing = makeRing(0xf4efe2, 0.52)
     this.unitRing = makeRing(0xffffff, 0.3)
     this.scene.add(this.selRing, this.unitRing)
@@ -87,12 +112,17 @@ export class Scene {
     const needWorld = kind === 'full' || worldKey !== this.lastWorldKey || !this.terrain
     if (needWorld) {
       this.disposeWorld()
-      this.terrain = buildTerrain(s, seedNumber(s.seed))
+      const sn = season(s.turn)
+      this.lastSeason = sn
+      applyLook(this.light, seasonLook(sn))
+      this.terrain = buildTerrain(s, seedNumber(s.seed), this.light, this.detail, sn)
       this.scene.add(this.terrain.mesh, this.terrain.water)
-      const pb = buildProps(s, this.terrain.heightAt)
-      this.props = pb.group
-      this.props.visible = this.propsVisible
-      this.scene.add(this.props)
+      this.lastClearKey = s.settlements.map(x => x.tile).join(',') + '|' + s.predecessors.map(x => x.tile).join(',')
+      this.buildPropLayers(s, sn)
+      this.shadow = new ShadowBake(s.world.width, s.world.height)
+      this.light.uShadowMap.value = this.shadow.texture
+      this.bakeShadowBase(s)
+      this.setClear(sn)
       this.cam.setMap(s.world.width, s.world.height)
       this.lastWorldKey = worldKey
     }
@@ -101,22 +131,62 @@ export class Scene {
     this.requestDraw()
   }
 
+  private buildPropLayers(s: GameState, sn: number) {
+    if (!this.terrain) return
+    if (this.props) { this.scene.remove(this.props); disposeGroup(this.props) }
+    if (this.propsFine) { this.scene.remove(this.propsFine); disposeGroup(this.propsFine) }
+    const pb = buildProps(s, this.terrain.heightAt, this.light, sn)
+    this.props = pb.coarse
+    this.propsFine = pb.fine
+    this.propCount = pb.count
+    this.staticOccluders = pb.occluders
+    this.props.visible = this.propsVisible
+    this.propsFine.visible = this.fineVisible
+    this.scene.add(this.props, this.propsFine)
+  }
+
+  /** The ground's own shadow plus everything permanent standing on it. Per world and per season. */
+  private bakeShadowBase(s: GameState) {
+    if (!this.shadow || !this.terrain) return
+    const sun = sunVector(seasonLook(this.lastSeason))
+    // the sea is a surface at zero, not the bed under it: without the clamp the land throws a long
+    // shadow across the water as though the water were not there
+    const h = this.terrain.heightAt
+    this.shadow.bakeBase((x, z) => Math.max(0, h(x, z)) * SHADOW.terrainScale, sun, this.staticOccluders)
+  }
+
+  private setClear(sn: number) {
+    const c = clearColour(sn)
+    this.renderer.setClearColor(new THREE.Color(c[0], c[1], c[2]))
+  }
+
   private rebuildDynamic(s: GameState) {
     if (!this.terrain) return
     const h = this.terrain.heightAt
+    const sn = this.lastSeason >= 0 ? this.lastSeason : season(s.turn)
+    // a settlement clears the ground it stands on, so a new one means the props change
+    const clearKey = s.settlements.map(x => x.tile).join(',') + '|' + s.predecessors.map(x => x.tile).join(',')
+    if (clearKey !== this.lastClearKey) {
+      this.lastClearKey = clearKey
+      this.buildPropLayers(s, sn)
+      this.bakeShadowBase(s)
+    }
     if (this.ribbons) { this.scene.remove(this.ribbons); this.ribbons.geometry.dispose(); (this.ribbons.material as THREE.Material).dispose() }
-    this.ribbons = buildRibbons(s, h)
+    this.ribbons = buildRibbons(s, h, this.light, sn)
     this.scene.add(this.ribbons)
     if (this.settlements) { this.scene.remove(this.settlements); disposeGroup(this.settlements) }
-    this.settlements = buildSettlements(s, h, this.propsVisible ? 'full' : 'simple')
+    const sb = buildSettlements(s, h, this.propsVisible ? 'full' : 'simple', this.light, sn)
+    this.settlements = sb.group
     this.scene.add(this.settlements)
     if (this.units) { this.scene.remove(this.units); disposeGroup(this.units) }
-    const ub = buildUnits(s, h)
+    const ub = buildUnits(s, h, this.light)
     this.units = ub.group
     this.unitPositions = ub.positions
     this.scene.add(this.units)
     if (s.turn === 0) this.showArrival(s)
     else if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival); this.arrival = null }
+    // whatever moved this turn puts its shadow back on top of the baked base
+    if (this.shadow) this.shadow.stampDynamic(sunVector(seasonLook(sn)), [...sb.occluders, ...ub.occluders])
     this.updateOverlay(s)
     this.updateRings(s)
   }
@@ -131,23 +201,31 @@ export class Scene {
     }
     if (this.ribbons) { this.scene.remove(this.ribbons); this.ribbons.geometry.dispose(); this.ribbons = null }
     if (this.props) { this.scene.remove(this.props); disposeGroup(this.props); this.props = null }
+    if (this.propsFine) { this.scene.remove(this.propsFine); disposeGroup(this.propsFine); this.propsFine = null }
+    if (this.shadow) { this.shadow.dispose(); this.shadow = null }
   }
 
+  /** The season turns four times a year and takes the whole palette with it: the light, the ground,
+   *  the canopies, the water and the length of every shadow. A bake, not a tint, and only when the
+   *  season index actually moves. */
   applySeason(s: GameState) {
     if (!this.terrain) return
-    const su = seasonUniforms(season(s.turn))
-    this.terrain.material.uniforms.sunDir.value = su.sun
-    this.terrain.material.uniforms.saturation.value = su.saturation
-    this.terrain.material.uniforms.grade.value = su.grade
-    this.terrain.waterMaterial.uniforms.saturation.value = su.saturation
-    this.terrain.waterMaterial.uniforms.grade.value = su.grade
-    this.sun.position.set(su.sun.x, su.sun.y, su.sun.z)
+    const sn = season(s.turn)
+    if (sn === this.lastSeason) return
+    this.lastSeason = sn
+    applyLook(this.light, seasonLook(sn))
+    this.terrain.recolour(s, sn)
+    this.setClear(sn)
+    this.buildPropLayers(s, sn)
+    this.bakeShadowBase(s)
+    this.rebuildDynamic(s)
+    this.requestDraw()
   }
 
   /** Arrival: the lander offshore, the boat. Progress animates after the site is chosen. */
   showArrival(s: GameState) {
     if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival) }
-    this.arrival = buildArrival(s, this.arrivalSite, this.arrivalProgress)
+    this.arrival = buildArrival(s, this.arrivalSite, this.arrivalProgress, this.light)
     this.scene.add(this.arrival)
   }
 
@@ -248,12 +326,18 @@ export class Scene {
     this.requestDraw()
   }
 
-  /** LOD with hysteresis: cull props below lodCull, restore above lodRestore. Visibility only, never a rebuild. */
+  /** Two hysteretic tiers, art brief section 10. Trees and boulders from working zoom up; tufts,
+   *  undergrowth and shingle only at detail zoom, where they are the difference between a lit
+   *  surface and a place. Visibility only, never a rebuild. */
   private updateLod() {
+    if (this.lockLod) return
     const z = this.cam.view.zoom
-    if (this.propsVisible && z < C.feel.lodCull) this.propsVisible = false
-    else if (!this.propsVisible && z > C.feel.lodRestore) this.propsVisible = true
+    if (this.propsVisible && z < PROPS.coarseCull) this.propsVisible = false
+    else if (!this.propsVisible && z > PROPS.coarseRestore) this.propsVisible = true
+    if (this.fineVisible && z < PROPS.fineCull) this.fineVisible = false
+    else if (!this.fineVisible && z > PROPS.fineRestore) this.fineVisible = true
     if (this.props) this.props.visible = this.propsVisible
+    if (this.propsFine) this.propsFine.visible = this.propsVisible && this.fineVisible
   }
 
   /** Begin or end a gesture. Continuous drawing while active. */
@@ -291,7 +375,10 @@ export class Scene {
     this.loopRunning = true
     if (this.refineTimer !== null) { clearTimeout(this.refineTimer); this.refineTimer = null }
     const frame = () => {
-      const moving = this.gestureActive || this.cam.tick() || this.cam.glideTick() || this.arrivalAnimating
+      // both, every frame: a short-circuit here starves the glide whenever the camera is springing
+      const settling = this.cam.tick()
+      const gliding = this.cam.glideTick()
+      const moving = this.gestureActive || settling || gliding || this.arrivalAnimating
       this.draw(true)
       if (moving) requestAnimationFrame(frame)
       else {
@@ -315,9 +402,8 @@ export class Scene {
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0
     this.lastFrame = now
     this.cloudTime += dt * 0.02
+    this.light.uCloudTime.value = this.cloudTime
     if (this.terrain) {
-      this.terrain.material.uniforms.cloudTime.value = this.cloudTime
-      this.terrain.waterMaterial.uniforms.cloudTime.value = this.cloudTime
       this.terrain.material.uniforms.gridMix.value = this.cam.view.zoom >= C.feel.tileTapFloor ? 1 : 0
     }
     if (this.lastState) this.updateRings(this.lastState)
@@ -332,7 +418,21 @@ export class Scene {
   warm() { if (this.lastState) { this.renderer.compile(this.scene, this.cam.camera); this.draw(true) } }
 
   pixelsPerTile(): number { return this.cam.view.zoom }
-  colourOfTile(s: GameState, i: number): RGB { return tileColour(s.world.tiles[i]) }
+
+  /** Read the frame back as RGBA pixels, bottom row first. For verification: a WebGL canvas is
+   *  cleared once it has been presented, so looking at what was drawn needs a render target. */
+  readFrame(w: number, h: number): Uint8Array {
+    const rt = new THREE.WebGLRenderTarget(w, h)
+    const prev = this.renderer.getRenderTarget()
+    this.renderer.setRenderTarget(rt)
+    this.renderer.render(this.scene, this.cam.camera)
+    const buf = new Uint8Array(w * h * 4)
+    this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
+    this.renderer.setRenderTarget(prev)
+    rt.dispose()
+    return buf
+  }
+  colourOfTile(s: GameState, i: number): RGB { return tileColour(s.world.tiles[i], this.lastSeason) }
 }
 
 function disposeGroup(g: THREE.Object3D) {

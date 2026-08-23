@@ -1,147 +1,263 @@
-// Props, seen from above. Art direction brief section 5. A tree from directly overhead is a rough
-// disc of canopy, so no trunk is needed. Two or three canopy forms per forest type, instanced,
-// opaque, twelve to twenty triangles each. Variation comes from per-instance scale, rotation and
-// colour jitter. Culled entirely below working zoom, hysteretically, by scene.ts.
+// Props, seen from above. Art direction brief section 5, and the thing the first build got wrong:
+// good light on an empty surface is still an empty surface. There are now tens of thousands of these
+// rather than a few hundred, which instancing makes nearly free, and they arrive at three scales.
+//
+//  large   the ground itself, in terrain.ts
+//  medium  trees, boulders, reeds, the settlement kit
+//  small   undergrowth, tufts, pebbles, shoreline debris
+//
+// The small tier only appears at detail zoom, where it is the difference between a lit surface and a
+// place; at working zoom it would be noise, and below working zoom everything here is culled.
+//
+// Forms are opaque and low poly, never alpha cards. A canopy is a two-ring dome so that a raking sun
+// crosses several facets of it rather than one, which is what makes it read as a tree from directly
+// overhead. Every canopy, rock and tuft carries its own scale, rotation and hue.
+//
+// Every number and colour comes from src/render/look.ts.
 
 import * as THREE from 'three'
-import type { GameState, ForestId } from '../sim/state'
+import type { GameState, ForestId, TerrainId } from '../sim/state'
 import { forestCanopy } from './palette'
+import { PROPS, SHADOW, seasonLook, hexRgb } from './look'
+import { surfaceMaterial, type LightUniforms } from './shading'
+import type { Occluder } from './shadow'
 
 function hash(a: number, b: number): number {
   let h = (a * 374761393 + b * 668265263) | 0
-  h = (h ^ (h >>> 13)) * 1274126177
+  h = Math.imul(h ^ (h >>> 13), 1274126177)
   h = h ^ (h >>> 16)
   return ((h >>> 0) % 10000) / 10000
 }
 
-const DENSITY: Record<ForestId, number> = { lightWoodland: 4, deepTimber: 7, highlandForest: 5, coastalScrub: 4 }
-const CANOPY: Record<ForestId, [number, number]> = { lightWoodland: [0.16, 0.24], deepTimber: [0.2, 0.3], highlandForest: [0.14, 0.22], coastalScrub: [0.1, 0.16] }
-
 export interface PropBuild {
-  group: THREE.Group
+  /** Visible from working zoom up: trees, boulders, reeds. */
+  coarse: THREE.Group
+  /** Visible at detail zoom only: undergrowth, tufts, pebbles, shore debris. */
+  fine: THREE.Group
+  /** Everything worth casting a shadow, for the bake. */
+  occluders: Occluder[]
   count: number
 }
 
-function canopyGeometry(sides: number): THREE.BufferGeometry {
-  // a low dome: a cone with a flattened top reads as a canopy under a raking light
-  const g = new THREE.ConeGeometry(1, 0.9, sides, 1)
-  g.translate(0, 0.35, 0)
+/** A canopy: a low dome of two rings, open underneath because nothing ever sees under it. */
+function canopyGeometry(): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(1, 7, 3, 0, Math.PI * 2, 0, Math.PI * 0.46)
+  g.scale(1, 0.62, 1)
+  g.translate(0, 0.02, 0)
   return g
 }
 
-export function buildProps(s: GameState, heightAt: (x: number, z: number) => number): PropBuild {
-  const w = s.world.width, tiles = s.world.tiles
-  const group = new THREE.Group()
-  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff })
-  const matRock = new THREE.MeshLambertMaterial({ color: 0xffffff })
+/** A tuft: a squat four-sided spike, which from above is four small planes at different angles. */
+function tuftGeometry(): THREE.BufferGeometry {
+  const g = new THREE.ConeGeometry(1, 1.5, 4, 1, true)
+  g.translate(0, 0.6, 0)
+  return g
+}
 
-  // count instances first
-  let trees = 0, rocks = 0, reeds = 0, workings = 0
-  for (let i = 0; i < tiles.length; i++) {
-    const t = tiles[i]
-    if (t.forest) trees += DENSITY[t.forest]
-    if (t.terrain === 'mountain') rocks += 4
-    else if (t.terrain === 'highland') rocks += 2
-    if (t.terrain === 'marsh') reeds += 5
-    if (t.workings) workings++
+function rockGeometry(): THREE.BufferGeometry {
+  return new THREE.DodecahedronGeometry(1, 0)
+}
+
+/** A shard: flatter and sharper than a boulder, for scree and shoreline shingle. */
+function shardGeometry(): THREE.BufferGeometry {
+  const g = new THREE.TetrahedronGeometry(1, 0)
+  g.scale(1, 0.55, 1)
+  return g
+}
+
+interface Slot {
+  mesh: THREE.InstancedMesh
+  n: number
+}
+
+function slot(geo: THREE.BufferGeometry, mat: THREE.Material, capacity: number): Slot {
+  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, capacity))
+  mesh.frustumCulled = false
+  return { mesh, n: 0 }
+}
+
+export function buildProps(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, season: number): PropBuild {
+  const w = s.world.width, hgt = s.world.height, tiles = s.world.tiles
+  // a settlement clears its own ground and thins what stands around it. Without this the roofs are
+  // simply hidden under a wood, and a place people live reads as a place they do not
+  const clearance = new Float32Array(tiles.length).fill(1)
+  const clear = (tile: number) => {
+    clearance[tile] = 0
+    const x = tile % w, z = Math.floor(tile / w)
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, nz = z + dz
+      if (nx < 0 || nz < 0 || nx >= w || nz >= hgt) continue
+      clearance[nz * w + nx] = Math.min(clearance[nz * w + nx], PROPS.settlementThinning)
+    }
+    clearance[tile] = 0
   }
-  const treeMesh = new THREE.InstancedMesh(canopyGeometry(7), mat, Math.max(1, trees))
-  const treeMeshes = [treeMesh, treeMesh]
-  const rockMesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), matRock, Math.max(1, rocks + reeds))
-  const reedMesh = rockMesh
-  const ringGeo = new THREE.TorusGeometry(0.28, 0.05, 5, 10)
-  ringGeo.rotateX(-Math.PI / 2)
-  const workMesh = new THREE.InstancedMesh(ringGeo, matRock, Math.max(1, workings))
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3()
-  const col = new THREE.Color()
-  const counts = [0, 0]
-  let rc = 0, wc = 0
+  for (const st of s.settlements) clear(st.tile)
+  for (const pr of s.predecessors) clear(pr.tile)
+  const look = seasonLook(season)
+  const coarse = new THREE.Group(), fine = new THREE.Group()
+  const matCoarse = surfaceMaterial(light, 1)
+  const matFine = surfaceMaterial(light, 0.9)
+  const occluders: Occluder[] = []
+
+  // ---- count first, so every instanced mesh is exactly the size it needs ------------------------
+  let trees = 0, rocks = 0, small = 0
+  const shoreTile = new Uint8Array(tiles.length)
   for (let i = 0; i < tiles.length; i++) {
     const t = tiles[i]
+    if (t.terrain === 'water') continue
     const x0 = i % w, z0 = Math.floor(i / w)
+    for (const [dx, dz] of NEIGHBOURS) {
+      const nx = x0 + dx, nz = z0 + dz
+      if (nx < 0 || nz < 0 || nx >= w || nz >= hgt) continue
+      if (tiles[nz * w + nx].terrain === 'water') { shoreTile[i] = 1; break }
+    }
+  }
+  for (let i = 0; i < tiles.length; i++) {
+    const t = tiles[i]
+    if (clearance[i] <= 0) continue
+    if (t.forest) { trees += PROPS.trees[t.forest]; small += PROPS.undergrowth }
+    rocks += PROPS.rocks[t.terrain] ?? 0
+    if (t.terrain === 'marsh') rocks += PROPS.reeds
+    small += PROPS.tufts[t.terrain] ?? 0
+    if (shoreTile[i]) small += PROPS.shoreDebris
+  }
+
+  const treeSlot = slot(canopyGeometry(), matCoarse, trees)
+  const rockSlot = slot(rockGeometry(), matCoarse, rocks)
+  const tuftSlot = slot(tuftGeometry(), matFine, small)
+  const shardSlot = slot(shardGeometry(), matFine, small)
+
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3()
+  const up = new THREE.Vector3(0, 1, 0)
+  const col = new THREE.Color()
+
+  /** A colour wandered off its base in hue and in value, so no two are the same. */
+  const vary = (base: [number, number, number], seed: number) => {
+    const hueShift = (hash(seed, 91) - 0.5) * PROPS.hueJitter
+    const value = 1 + (hash(seed, 92) - 0.5) * PROPS.valueJitter
+    col.setRGB(base[0], base[1], base[2])
+    const hsl = { h: 0, s: 0, l: 0 }
+    col.getHSL(hsl)
+    col.setHSL((hsl.h + hueShift + 1) % 1, Math.max(0, Math.min(1, hsl.s * (1 + hueShift * 2))), Math.max(0, Math.min(1, hsl.l * value)))
+    return col
+  }
+
+  const put = (sl: Slot, x: number, z: number, y: number, rx: number, ry: number, rz: number, spin: number, colour: THREE.Color) => {
+    if (sl.n >= sl.mesh.count) return false
+    p.set(x, y, z)
+    q.setFromAxisAngle(up, spin)
+    sc.set(rx, ry, rz)
+    m.compose(p, q, sc)
+    sl.mesh.setMatrixAt(sl.n, m)
+    sl.mesh.setColorAt(sl.n, colour)
+    sl.n++
+    return true
+  }
+
+  for (let i = 0; i < tiles.length; i++) {
+    const t = tiles[i]
+    const thin = clearance[i]
+    if (t.terrain === 'water' || thin <= 0) continue
+    const x0 = i % w, z0 = Math.floor(i / w)
+
+    // ---- trees: dense inside a wood, thinning where it meets open ground -----------------------
     if (t.forest) {
-      const n = DENSITY[t.forest]
-      const base = forestCanopy(t.forest)
-      const [lo, hi] = CANOPY[t.forest]
-      // thin at forest edges so the boundary is soft
+      const f: ForestId = t.forest
+      const n = PROPS.trees[f]
+      const base = forestCanopy(f, season)
+      const [lo, hi] = PROPS.canopy[f]
       let edges = 0
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const [dx, dz] of NEIGHBOURS) {
         const nx = x0 + dx, nz = z0 + dz
-        if (nx < 0 || nz < 0 || nx >= w || nz >= s.world.height) continue
+        if (nx < 0 || nz < 0 || nx >= w || nz >= hgt) continue
         if (!tiles[nz * w + nx].forest) edges++
       }
-      const keep = n - Math.min(n - 2, edges)
+      const keep = Math.round(n * (1 - 0.16 * edges) * thin)
       for (let k = 0; k < keep; k++) {
-        const mesh = treeMesh
-        const idx = counts[0]++
-        if (idx >= mesh.count) continue
-        const x = x0 + 0.12 + hash(i * 7 + k, 1) * 0.76
-        const z = z0 + 0.12 + hash(i * 7 + k, 2) * 0.76
-        const r = lo + hash(i * 7 + k, 3) * (hi - lo)
-        p.set(x, heightAt(x, z), z)
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash(i * 7 + k, 4) * Math.PI * 2)
-        sc.set(r, r * 0.7, r)
-        m.compose(p, q, sc)
-        mesh.setMatrixAt(idx, m)
-        const j = (hash(i * 7 + k, 5) - 0.5) * 0.16
-        col.setRGB(Math.max(0, base[0] + j), Math.max(0, base[1] + j * 1.2), Math.max(0, base[2] + j * 0.6))
-        mesh.setColorAt(idx, col)
+        const seed = i * 31 + k
+        const x = x0 + 0.04 + hash(seed, 1) * 0.92
+        const z = z0 + 0.04 + hash(seed, 2) * 0.92
+        const emergent = k % PROPS.emergentEvery === 0
+        const r = (lo + hash(seed, 3) * (hi - lo)) * (emergent ? PROPS.emergentScale : 1)
+        const tall = 0.75 + hash(seed, 6) * 0.7
+        if (put(treeSlot, x, z, heightAt(x, z) - r * 0.1, r, r * tall, r * (0.88 + hash(seed, 7) * 0.24), hash(seed, 4) * Math.PI * 2, vary(base, seed))) {
+          occluders.push({ x, z, height: r * tall * 1.1, radius: r * 0.8 })
+        }
+      }
+      // undergrowth under the canopy, at detail zoom
+      for (let k = 0; k < Math.round(PROPS.undergrowth * thin); k++) {
+        const seed = i * 17 + k + 5000
+        const x = x0 + 0.05 + hash(seed, 8) * 0.9
+        const z = z0 + 0.05 + hash(seed, 9) * 0.9
+        const r = PROPS.tuftSize[0] + hash(seed, 10) * (PROPS.tuftSize[1] - PROPS.tuftSize[0]) * 1.4
+        put(tuftSlot, x, z, heightAt(x, z), r, r * (1.1 + hash(seed, 11)), r, hash(seed, 12) * 3.2, vary(base, seed + 3))
       }
     }
-    if (t.terrain === 'mountain' || t.terrain === 'highland') {
-      const n = t.terrain === 'mountain' ? 4 : 2
-      for (let k = 0; k < n; k++) {
-        if (rc >= rockMesh.count) break
-        const x = x0 + 0.15 + hash(i * 5 + k, 6) * 0.7, z = z0 + 0.15 + hash(i * 5 + k, 7) * 0.7
-        const r = 0.05 + hash(i * 5 + k, 8) * (t.terrain === 'mountain' ? 0.11 : 0.06)
-        p.set(x, heightAt(x, z) + r * 0.3, z)
-        q.setFromEuler(new THREE.Euler(hash(i, 9) * 2, hash(i, 10) * 3, hash(k, 11)))
-        sc.set(r, r * 0.7, r)
-        m.compose(p, q, sc)
-        rockMesh.setMatrixAt(rc, m)
-        const g = 0.5 + hash(i * 5 + k, 12) * 0.18
-        col.setRGB(g + 0.05, g, g - 0.04)
-        rockMesh.setColorAt(rc, col)
-        rc++
+
+    // ---- boulders and scattered rock -------------------------------------------------------------
+    const rockN = Math.round((PROPS.rocks[t.terrain] ?? 0) * thin)
+    if (rockN > 0) {
+      const size = PROPS.rockSize[t.terrain] ?? [0.03, 0.07]
+      const ground = hexRgb(look.ground[t.terrain])
+      for (let k = 0; k < rockN; k++) {
+        const seed = i * 13 + k + 900
+        const x = x0 + 0.05 + hash(seed, 13) * 0.9
+        const z = z0 + 0.05 + hash(seed, 14) * 0.9
+        const r = size[0] + hash(seed, 15) * (size[1] - size[0])
+        const stone: [number, number, number] = [ground[0] * 0.86 + 0.14, ground[1] * 0.86 + 0.12, ground[2] * 0.86 + 0.12]
+        if (put(rockSlot, x, z, heightAt(x, z) + r * 0.2, r, r * (0.5 + hash(seed, 16) * 0.5), r * (0.8 + hash(seed, 17) * 0.4), hash(seed, 18) * 3.2, vary(stone, seed))) {
+          if (r > 0.06) occluders.push({ x, z, height: r * 0.9, radius: r })
+        }
       }
     }
+
+    // ---- reeds in a marsh --------------------------------------------------------------------------
     if (t.terrain === 'marsh') {
-      // reed clumps share the rock mesh: the same form, flattened and green
-      for (let k = 0; k < 5; k++) {
-        if (rc >= reedMesh.count) break
-        const x = x0 + 0.1 + hash(i * 3 + k, 13) * 0.8, z = z0 + 0.1 + hash(i * 3 + k, 14) * 0.8
-        const r = 0.04 + hash(i * 3 + k, 15) * 0.05
-        p.set(x, heightAt(x, z), z)
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash(i, k) * 3)
-        sc.set(r, r * 0.5, r)
-        m.compose(p, q, sc)
-        reedMesh.setMatrixAt(rc, m)
-        col.setRGB(0.42, 0.56, 0.3)
-        reedMesh.setColorAt(rc, col)
-        rc++
+      const reed = hexRgb(look.canopy.coastalScrub)
+      for (let k = 0; k < Math.round(PROPS.reeds * thin); k++) {
+        const seed = i * 7 + k + 400
+        const x = x0 + 0.05 + hash(seed, 19) * 0.9
+        const z = z0 + 0.05 + hash(seed, 20) * 0.9
+        const r = PROPS.reedSize[0] + hash(seed, 21) * (PROPS.reedSize[1] - PROPS.reedSize[0])
+        put(rockSlot, x, z, heightAt(x, z), r, r * (2.2 + hash(seed, 22) * 1.6), r, hash(seed, 23) * 3.2, vary(reed, seed))
       }
     }
-    if (t.workings && wc < workMesh.count) {
-      const x = x0 + 0.5, z = z0 + 0.5
-      p.set(x, heightAt(x, z) + 0.01, z)
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash(i, 16) * 3)
-      sc.set(1, 1, 1)
-      m.compose(p, q, sc)
-      workMesh.setMatrixAt(wc, m)
-      col.setRGB(0.42, 0.36, 0.3)
-      workMesh.setColorAt(wc, col)
-      wc++
+
+    // ---- tufts on open ground, and shingle along the waterline -------------------------------------
+    const tuftN = Math.round((PROPS.tufts[t.terrain] ?? 0) * thin)
+    if (tuftN > 0 && !t.forest) {
+      const ground = hexRgb(look.ground[t.terrain])
+      const blade: [number, number, number] = [ground[0] * 0.82, ground[1] * 0.94, ground[2] * 0.7]
+      for (let k = 0; k < tuftN; k++) {
+        const seed = i * 11 + k + 1700
+        const x = x0 + 0.04 + hash(seed, 24) * 0.92
+        const z = z0 + 0.04 + hash(seed, 25) * 0.92
+        const r = PROPS.tuftSize[0] + hash(seed, 26) * (PROPS.tuftSize[1] - PROPS.tuftSize[0])
+        put(tuftSlot, x, z, heightAt(x, z), r, r * (1.3 + hash(seed, 27) * 1.4), r, hash(seed, 28) * 3.2, vary(blade, seed))
+      }
+    }
+    if (shoreTile[i]) {
+      const shingle = hexRgb(look.shore)
+      for (let k = 0; k < Math.round(PROPS.shoreDebris * thin); k++) {
+        const seed = i * 19 + k + 2600
+        const x = x0 + 0.05 + hash(seed, 29) * 0.9
+        const z = z0 + 0.05 + hash(seed, 30) * 0.9
+        const r = PROPS.debrisSize[0] + hash(seed, 31) * (PROPS.debrisSize[1] - PROPS.debrisSize[0])
+        put(shardSlot, x, z, heightAt(x, z) + r * 0.2, r, r * 0.6, r, hash(seed, 32) * 3.2, vary(shingle, seed))
+      }
     }
   }
-  treeMesh.count = counts[0]
-  rockMesh.count = rc
-  workMesh.count = wc
-  void treeMeshes
-  for (const mesh of [treeMesh, rockMesh, workMesh]) {
-    mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-    mesh.frustumCulled = false
-    group.add(mesh)
+
+  for (const [sl, group] of [[treeSlot, coarse], [rockSlot, coarse], [tuftSlot, fine], [shardSlot, fine]] as [Slot, THREE.Group][]) {
+    sl.mesh.count = sl.n
+    sl.mesh.instanceMatrix.needsUpdate = true
+    if (sl.mesh.instanceColor) sl.mesh.instanceColor.needsUpdate = true
+    if (sl.n > 0) group.add(sl.mesh)
   }
-  return { group, count: counts[0] + rc + wc }
+  void SHADOW
+  return { coarse, fine, occluders, count: treeSlot.n + rockSlot.n + tuftSlot.n + shardSlot.n }
 }
+
+const NEIGHBOURS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+
+export type { TerrainId }

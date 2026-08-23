@@ -9,8 +9,8 @@ import { C } from '../sim/constants'
 import type { GameState, TerrainId, ForestId, PrimeId } from '../sim/state'
 import { season } from '../sim/turn'
 import { neighbours8 } from '../sim/worldgen'
-import { tileColour, forestCanopy, DEEP_WATER, RIVER, ROAD, type RGB } from './palette'
-import { seasonUniforms } from './terrain'
+import { tileColour, forestCanopy, waterColours, riverColour, roadColour, type RGB } from './palette'
+import { seasonLook, sunVector, hexRgb, LIGHT } from './look'
 
 export interface TileLook {
   /** The ground colour the map paints for this tile this season, as a css colour. */
@@ -38,43 +38,45 @@ function css(c: RGB): string {
   return `rgb(${b(c[0])}, ${b(c[1])}, ${b(c[2])})`
 }
 
-/** The grade the terrain shader applies: a flat-lit surface, then the season's saturation and tint. */
+/** The map's own light, worked out on the processor for a surface facing straight up, so a swatch in
+ *  the settlement ring reads at the same weight and the same season as level ground on the map. */
 function graded(base: RGB, s: GameState): RGB {
-  const su = seasonUniforms(season(s.turn))
-  // the shader's lighting for a surface facing straight up, so a swatch reads at the same weight
-  // as level ground on the map does
-  const light = 0.48 + 0.62 * su.sun.y + 0.08 * 0.3
-  const c: RGB = [base[0] * light, base[1] * light, base[2] * light]
-  const l = c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114
-  return [
-    l + (c[0] - l) * su.saturation + su.grade.x,
-    l + (c[1] - l) * su.saturation + su.grade.y,
-    l + (c[2] - l) * su.saturation + su.grade.z,
-  ]
+  const look = seasonLook(season(s.turn))
+  const sun = sunVector(look)
+  const key = hexRgb(look.keyColour)
+  const fill = hexRgb(look.ambientColour)
+  const diff = Math.pow(Math.max(0, sun[1]), LIGHT.diffuseGamma)
+  const out: RGB = [0, 0, 0]
+  for (let i = 0; i < 3; i++) {
+    const lit = key[i] * look.keyStrength * diff + fill[i] * look.ambientStrength
+    out[i] = Math.max(0, (base[i] * lit - 0.5) * look.contrast + 0.5 + look.lift)
+  }
+  return out
 }
 
 /** How one tile looks, for a swatch outside the map. */
 export function tileLook(s: GameState, index: number): TileLook {
   const t = s.world.tiles[index]
+  const sn = season(s.turn)
   const water = t.terrain === 'water'
-  let base = tileColour(t)
+  let base = tileColour(t, sn)
   let deep = false
   if (water) {
     deep = !neighbours8(s.world.width, s.world.height, index).some(n => s.world.tiles[n].terrain !== 'water')
-    if (deep) base = DEEP_WATER
+    if (deep) base = waterColours(sn).deep
   }
   return {
     colour: css(graded(base, s)),
-    canopy: t.forest ? css(graded(forestCanopy(t.forest), s)) : null,
+    canopy: t.forest ? css(graded(forestCanopy(t.forest, sn), s)) : null,
     terrain: t.terrain,
     forest: t.forest,
     prime: t.prime,
     water,
     deep,
     river: t.river,
-    riverColour: css(graded(RIVER, s)),
+    riverColour: css(graded(riverColour(sn), s)),
     road: t.road,
-    roadColour: css(graded(ROAD, s)),
+    roadColour: css(graded(roadColour(sn), s)),
     improved: t.improved,
     workings: t.workings,
   }
