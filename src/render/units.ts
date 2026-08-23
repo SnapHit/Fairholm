@@ -67,6 +67,11 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
   }
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color()
   const mat = surfaceMaterial(light, 1)
+  // the early era settlements are billboards, which cannot be depth sorted against a form, so they
+  // are drawn before everything transparent. A unit standing in a settlement has to come after them
+  mat.transparent = true
+  mat.depthWrite = true
+  group.renderOrder = 2
   const occluders: Occluder[] = []
   for (const [f, list] of byForm) {
     const mesh = new THREE.InstancedMesh(geometryFor(f), mat, list.length)
@@ -143,7 +148,10 @@ export function buildArrival(s: GameState, site: number | null, progress: number
 export function makeRing(colour: number, r: number): THREE.Mesh {
   const g = new THREE.TorusGeometry(r, 0.035, 6, 32)
   g.rotateX(-Math.PI / 2)
-  const ring = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colour }))
+  // over everything, including the settlement billboards, because a selection has to be visible
+  // wherever it lands
+  const ring = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colour, transparent: true, depthTest: false }))
+  ring.renderOrder = 10
   ring.visible = false
   return ring
 }

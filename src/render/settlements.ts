@@ -1,6 +1,11 @@
-// Settlements are a kit of roofs. Art direction brief section 6: from above a settlement is roofs, so
-// the kit is roof forms, and the three eras are three material treatments of the same kit. Modern in
-// design, pre-industrial in material: clean rectangles on a surveyed grid.
+// Settlements, from the middle era on, are a kit of roofs. Art direction brief section 6: from above
+// a settlement is roofs, so the kit is roof forms, and worked stone and brick are two material
+// treatments of it. Modern in design, pre-industrial in material: clean rectangles on a surveyed grid.
+//
+// The early era is no longer built from this kit. It is drawn, from the sheet in sprites.ts, and the
+// kit stays here for the two eras that follow. What is still built for every era is everything that
+// is not a building: the rampart, the bastions, the banner and the wharf, which are the things that
+// say what a place does.
 //
 // The correction this file carries over the first build is that a roof is now a roof. A flat box seen
 // from directly overhead is one rectangle of one value and reads as a floor tile. A pitched roof is
@@ -13,9 +18,10 @@
 
 import * as THREE from 'three'
 import type { GameState, Settlement } from '../sim/state'
-import { hexRgb, BUILD, seasonLook } from './look'
+import { hexRgb, BUILD, SPRITE, seasonLook } from './look'
 import { surfaceMaterial, type LightUniforms } from './shading'
 import type { Occluder } from './shadow'
+import { buildSpriteLayer, layOut, type SpritePlacement } from './sprites'
 
 function hash(a: number, b: number): number {
   let h = (a * 374761393 + b * 668265263) | 0
@@ -65,15 +71,26 @@ interface Piece { x: number; z: number; sx: number; sy: number; sz: number; rot:
 
 export interface SettlementBuild {
   group: THREE.Group
+  /** Everything a settlement is when you can see it: the buildings, the rampart, the wharf. */
+  close: THREE.Group
+  /** What a settlement is when you cannot: one mark in owner colour, art brief section 10. */
+  far: THREE.Group
   occluders: Occluder[]
 }
 
-export function buildSettlements(s: GameState, heightAt: (x: number, z: number) => number, lod: 'full' | 'simple', light: LightUniforms, season: number): SettlementBuild {
+export function buildSettlements(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, atlas: THREE.IUniform, season: number): SettlementBuild {
   const w = s.world.width
   const group = new THREE.Group()
+  const close = new THREE.Group()
+  const far = new THREE.Group()
+  group.add(close, far)
+  // both tiers are built, and the zoom picks between them by visibility. Rebuilding on a zoom change
+  // would put a build in the middle of a gesture, which is the one thing the renderer never does
+  const marks: Piece[] = []
   const look = seasonLook(season)
   const roofs: Piece[] = []
   const boxes: Piece[] = []
+  const places: SpritePlacement[] = []
   const occluders: Occluder[] = []
 
   const push = (list: Piece[], p: Piece) => { list.push(p) }
@@ -85,7 +102,16 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     const kit = BUILD.eras[Math.min(ERA_COUNT - 1, era)]
     const roofA = hexRgb(kit.roofA), roofB = hexRgb(kit.roofB)
     const built = Object.values(st.buildings).filter(v => v > 0).length
-    const n = Math.max(3, Math.min(BUILD.maxBuildings, Math.round(2 + pop * 0.5 + built * 0.5)))
+    // the early era is drawn. Below the zoom where props are culled nothing here is drawn at all and
+    // the banner below is the whole settlement, per art brief section 10
+    const drawn = era === 0
+    if (drawn) {
+      for (const place of layOut(st.id, pop + built * 0.5, cx, cz, heightAt)) {
+        places.push(place)
+        occluders.push({ x: place.x, z: place.z, height: SPRITE.occluderHeight, radius: SPRITE.occluderRadius })
+      }
+    }
+    const n = drawn ? 0 : Math.max(3, Math.min(BUILD.maxBuildings, Math.round(2 + pop * 0.5 + built * 0.5)))
     // a surveyed lattice, spacing set so a full kit fits inside the tile. Fewer and larger, because
     // a settlement is one tile wide and sixteen small roofs in it are a texture, not a place
     const cols = n <= 4 ? 2 : 3
@@ -117,7 +143,7 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     // chimneys mean industry
     const industry = (st.buildings.smelter > 0 ? 1 : 0) + (st.buildings.toolworks > 0 ? 1 : 0) + (st.buildings.armoury > 0 ? 1 : 0)
       + (st.buildings.still > 0 ? 1 : 0) + (st.buildings.finishing > 0 ? 1 : 0) + (st.buildings.dyeWorks > 0 ? 1 : 0)
-    if (lod === 'full') {
+    if (!drawn) {
       const smoke = hexRgb(BUILD.chimney)
       for (let k = 0; k < industry; k++) {
         const x = cx - 0.3 + hash(st.id * 17 + k, 9) * 0.6, z = cz - 0.3 + hash(st.id * 17 + k, 10) * 0.6
@@ -145,9 +171,11 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
         occluders.push({ x, z, height: 0.09, radius: 0.1 })
       }
     }
-    // the owner's banner, the one place an owner colour appears on the ground
+    // the owner's banner, the one place an owner colour appears on the ground. At overview zoom it
+    // is the settlement: a mark in owner colour, which is what art brief section 10 asks for
     const oc = hexRgb(s.charters[st.owner]?.colour ?? '#ffffff')
-    push(boxes, { x: cx - 0.4, z: cz - 0.4, sx: 0.1, sy: 0.13, sz: 0.1, rot: 0, c: oc, base: 0 })
+    push(boxes, { x: cx, z: cz - 0.62, sx: 0.07, sy: 0.2, sz: 0.07, rot: 0, c: oc, base: 0 })
+    push(marks, { x: cx, z: cz, sx: 0.34, sy: 0.13, sz: 0.34, rot: 0, c: oc, base: 0 })
     // a wharf reaching onto the water
     if (st.buildings.wharf > 0) {
       const deck = hexRgb(BUILD.wharf)
@@ -184,7 +212,7 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), pv = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color()
   const mat = surfaceMaterial(light, 1)
   const up = new THREE.Vector3(0, 1, 0)
-  const fill = (list: Piece[], geo: THREE.BufferGeometry, centred: boolean) => {
+  const fill = (list: Piece[], geo: THREE.BufferGeometry, centred: boolean, into: THREE.Group = close) => {
     if (!list.length) return
     const mesh = new THREE.InstancedMesh(geo, mat, list.length)
     list.forEach((r, i) => {
@@ -200,10 +228,13 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     mesh.instanceMatrix.needsUpdate = true
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
     mesh.frustumCulled = false
-    group.add(mesh)
+    into.add(mesh)
   }
   fill(roofs, gableGeometry(BUILD.pitch), false)
   fill(boxes, new THREE.BoxGeometry(1, 1, 1), true)
+  fill(marks, new THREE.BoxGeometry(1, 1, 1), true, far)
+  const sprites = buildSpriteLayer(places, light, atlas)
+  if (sprites.mesh) close.add(sprites.mesh)
 
-  return { group, occluders }
+  return { group, close, far, occluders }
 }

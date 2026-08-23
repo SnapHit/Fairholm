@@ -29,6 +29,7 @@ import { seedNumber } from './seed'
 import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
 import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
+import { settlementAtlas } from './sprites'
 import { seasonLook, sunVector, PROPS, SHADOW } from './look'
 
 export class Scene {
@@ -42,6 +43,8 @@ export class Scene {
   propsFine: THREE.Group | null = null
   propCount = 0
   settlements: THREE.Group | null = null
+  private settlementClose: THREE.Group | null = null
+  private settlementFar: THREE.Group | null = null
   units: THREE.Group | null = null
   unitPositions = new Map<number, [number, number]>()
   arrival: THREE.Group | null = null
@@ -53,6 +56,8 @@ export class Scene {
   /** One set of light uniforms, shared by every material on the map. */
   light: LightUniforms = makeLightUniforms()
   detail: DetailTextures
+  /** The early era settlement sheet, shared by every settlement on the map. */
+  atlas: THREE.IUniform
   shadow: ShadowBake | null = null
   private staticOccluders: Occluder[] = []
   private lastSeason = -1
@@ -86,6 +91,7 @@ export class Scene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.cam = new MapCamera(1, 1)
     this.detail = detailTextures(() => this.requestDraw())
+    this.atlas = settlementAtlas(() => this.requestDraw())
     applyLook(this.light, seasonLook(1))
     this.selRing = makeRing(0xf4efe2, 0.52)
     this.unitRing = makeRing(0xffffff, 0.3)
@@ -175,8 +181,12 @@ export class Scene {
     this.ribbons = buildRibbons(s, h, this.light, sn)
     this.scene.add(this.ribbons)
     if (this.settlements) { this.scene.remove(this.settlements); disposeGroup(this.settlements) }
-    const sb = buildSettlements(s, h, this.propsVisible ? 'full' : 'simple', this.light, sn)
+    const sb = buildSettlements(s, h, this.light, this.atlas, sn)
     this.settlements = sb.group
+    this.settlementClose = sb.close
+    this.settlementFar = sb.far
+    this.settlementClose.visible = this.propsVisible
+    this.settlementFar.visible = !this.propsVisible
     this.scene.add(this.settlements)
     if (this.units) { this.scene.remove(this.units); disposeGroup(this.units) }
     const ub = buildUnits(s, h, this.light)
@@ -338,6 +348,11 @@ export class Scene {
     else if (!this.fineVisible && z > PROPS.fineRestore) this.fineVisible = true
     if (this.props) this.props.visible = this.propsVisible
     if (this.propsFine) this.propsFine.visible = this.propsVisible && this.fineVisible
+    // a settlement below this zoom is one mark in owner colour and nothing else
+    if (this.settlementClose) this.settlementClose.visible = this.propsVisible
+    if (this.settlementFar) this.settlementFar.visible = !this.propsVisible
+    // and the ground takes on the colour of the props it is no longer wearing
+    if (this.terrain) this.terrain.material.uniforms.uCover.value = this.propsVisible ? 0 : 1
   }
 
   /** Begin or end a gesture. Continuous drawing while active. */
