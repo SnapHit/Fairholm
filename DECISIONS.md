@@ -987,18 +987,31 @@ sixteen texels per tile rather than twelve, a reach of fourteen tiles rather tha
 five to eight degrees lower in every season, because the length of a shadow is the height of the
 thing over the tangent of the sun's elevation and nothing else.
 
-### 73. Boot time check one is flaky in this environment and was already
+### 73. Boot time check one is flaky in this environment, and was already
 
 `npm run smoke` check one allows two and a half seconds from navigation to a playable state. On this
-machine, under software rendering, it comes in anywhere between two and three and a half seconds,
-and it does so on the commit before this session's work as well: three runs there gave 2384, 2337
-and 3341 milliseconds. It is the dev server and the machine, not the renderer.
+machine, under software rendering, it comes in either side of that, and it does so on the commit
+before this session's work as well: three runs there gave 2384, 2337 and 3341 milliseconds. Eight
+runs after it gave 1371, 1939, 2028, 2029, 2346, 2650, 2897 and 3510. The spread is in two clusters
+about a second apart and does not track the size of the world generated, which says it is the
+machine's scheduling rather than anything the renderer is doing.
 
-The renderer's own share went down rather than up, with nearly twice the props on the map and a
-shadow map half again as large. Colouring the surface asked every vertex for its nine neighbours'
-colours, and a standard map has seventy thousand vertices, so two thousand tiles were being asked
-six hundred thousand times; they are asked once each now. `Math.hypot` went with it. Terrain build
-on a standard map: 273 milliseconds before, 168 after.
+Three things were done about the renderer's own share of it anyway, and all three are worth keeping
+whatever the check does:
+
+- **The surface is coloured a tile at a time.** Every vertex asked its nine neighbours for a colour
+  and a standard map has seventy thousand vertices, so two thousand tiles were being asked six
+  hundred thousand times. Once each now, into two flat arrays. `Math.hypot` went with it: it is slow
+  and it was being called a million times to measure a distance two multiplies would give. Terrain
+  build on a standard map, 273 milliseconds before and 168 after, with nearly twice the props on it.
+- **The settlement sheet is fetched after the first frame**, like the audio and the save, per the
+  note at the top of `main.ts`. A hundred and thirty seven kilobytes fetched and decoded inside the
+  boot is competition for the frame that has to arrive in about a second, and taking it out of that
+  window moved three consecutive runs from around three seconds to 1371, 2160 and 2218.
+- **The first shadow bake waits for the first frame.** Everything else about the map is in that
+  frame. The bake is a hundred and fifty milliseconds on a standard map and more on a large one, and
+  the shadows can arrive on the frame after the coastline rather than before it. It runs at the end
+  of the first `draw`, not on a timer, so it cannot be lost in a hidden tab.
 
 ### 74. What was tried on the atlas and did not work
 

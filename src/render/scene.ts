@@ -60,6 +60,12 @@ export class Scene {
   atlas: THREE.IUniform
   shadow: ShadowBake | null = null
   private staticOccluders: Occluder[] = []
+  /** Whatever moved this turn, kept so the shadow bake can put it back on top of a fresh base. */
+  private dynamicOccluders: Occluder[] = []
+  /** The first bake of a world waits until a frame has been drawn. Everything else about the map is
+   *  in that frame; the shadows are the one part worth a hundred and fifty milliseconds of the
+   *  second the whole thing is supposed to take, and they can arrive on the frame after. */
+  private bakePending = false
   private lastSeason = -1
   /** Which tiles people live on. Props are cleared around those, so founding a settlement has to
    *  rebuild them; the world's props are otherwise built once and left alone. */
@@ -127,7 +133,7 @@ export class Scene {
       this.buildPropLayers(s, sn)
       this.shadow = new ShadowBake(s.world.width, s.world.height)
       this.light.uShadowMap.value = this.shadow.texture
-      this.bakeShadowBase(s)
+      this.bakePending = true
       this.setClear(sn)
       this.cam.setMap(s.world.width, s.world.height)
       this.lastWorldKey = worldKey
@@ -196,7 +202,8 @@ export class Scene {
     if (s.turn === 0) this.showArrival(s)
     else if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival); this.arrival = null }
     // whatever moved this turn puts its shadow back on top of the baked base
-    if (this.shadow) this.shadow.stampDynamic(sunVector(seasonLook(sn)), [...sb.occluders, ...ub.occluders])
+    this.dynamicOccluders = [...sb.occluders, ...ub.occluders]
+    if (this.shadow && !this.bakePending) this.shadow.stampDynamic(sunVector(seasonLook(sn)), this.dynamicOccluders)
     this.updateOverlay(s)
     this.updateRings(s)
   }
@@ -424,6 +431,13 @@ export class Scene {
     if (this.lastState) this.updateRings(this.lastState)
     this.renderer.render(this.scene, this.cam.camera)
     if (this.onFrame) this.onFrame()
+    // the deferred first bake, now that there is a coastline on the screen
+    if (this.bakePending && this.lastState && this.terrain && this.shadow) {
+      this.bakePending = false
+      this.bakeShadowBase(this.lastState)
+      this.shadow.stampDynamic(sunVector(seasonLook(this.lastSeason)), this.dynamicOccluders)
+      this.requestDraw()
+    }
   }
 
   /** Nudge the clouds a little between turns so a quiet turn still moves. */

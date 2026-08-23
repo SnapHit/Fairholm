@@ -39,7 +39,10 @@ export function settlementAtlas(onArrive?: () => void): THREE.IUniform {
   const blank = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1)
   blank.needsUpdate = true
   cached = { value: blank }
-  new THREE.TextureLoader().load(
+  // after the first frame, like the audio and the save, per main.ts. A hundred and thirty seven
+  // kilobytes fetched and decoded during the boot is a hundred and thirty seven kilobytes of
+  // competition for the frame that has to arrive in about a second
+  const start = () => new THREE.TextureLoader().load(
     'textures/settlement-early.png',
     (tex) => {
       // no colour space conversion: every other shader on the map writes its colours straight out
@@ -58,6 +61,8 @@ export function settlementAtlas(onArrive?: () => void): THREE.IUniform {
     undefined,
     () => { /* a sheet that will not load costs the early era its picture and nothing else */ },
   )
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(start))
+  else start()
   return cached
 }
 
