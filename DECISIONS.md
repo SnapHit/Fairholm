@@ -340,6 +340,11 @@ game.
 
 ### 29. Sheets take the bottom 42 per cent in portrait and the right 40 per cent in landscape
 
+**Superseded by decision 33.** The map now fills the viewport at all times and sheets slide over it.
+What follows is the original entry, kept because the reasoning is still the argument against the
+change and someone may want to weigh it again.
+
+
 **What.** `src/ui/app.ts` (`layout`), `src/ui/style.css`.
 
 **Symptom if wrong.** On a short phone the map is under three hundred pixels tall and working zoom
@@ -427,6 +432,289 @@ black. **Confidence: high.** Pinned by the smoke script.
 
 ---
 
+## The settlement screen and the layout, session of 23 August 2026
+
+Settlement screen and layout brief, version 2, and section 6 of the feel brief. This session changed
+only `/src/ui`, the stylesheet, `index.html` and one new read-only helper in `/src/render`. Nothing in
+`/src/sim` was touched, so several of the calls below are the interface working around a gap in the
+simulation rather than closing it. Those are marked.
+
+### 33. The map fills the viewport at all times; the queue is a bar over it
+
+**What.** `#map` is `position: absolute; inset: 0` in both orientations and `App.layout` sizes the
+canvas to the whole root. Over it sit two thin strips: the intent and state at the top, the queue bar
+at the bottom. Every sheet slides up over the map and goes away by a tap outside it or a swipe down
+on its grip. Measured at rest on a 390 by 844 screen the map is 100 per cent of the height and the
+two strips cover 13.6 per cent of it. `src/ui/app.ts`, `src/ui/style.css`. **Supersedes decision 29.**
+
+**Why.** Section 1 of the brief: "everything reachable lives in the bottom third" was a rule about
+thumb reach, not a rule that a third of the display is spent on furniture.
+
+**Symptom if wrong.** The player cannot find a control they used to see, or the strips creep back
+into a panel. **Change:** the strips are `#hud` and `#queuebar`; both are one flex row.
+**Confidence: high.**
+
+### 34. Resolving or dismissing collapses the queue back to its bar
+
+**What.** `App.resolved` puts the queue away after any choice made from an expanded queue card. One
+tap on the bar brings it back. `src/ui/app.ts`.
+
+**Why.** The brief's own section 9 names this as its riskiest claim: if a busy turn keeps the list
+open, the bar becomes a panel by another route. Collapsing is the version that keeps the promise.
+
+**Symptom if wrong.** Working through six items on a bad turn takes six extra taps and feels like
+being shooed out of the room. **Change:** collapse only when the queue empties, one line in
+`resolved`. **Confidence: low.** This is the call most likely to be reversed by play.
+
+### 35. The queue bar stays over every sheet, including the settlement screen
+
+**What.** `#queuebar` sits above `#sheet` in the stack and every sheet reserves `--bar-h` of bottom
+padding. So "End turn" is one tap from anywhere, and a quiet turn is still one tap.
+`src/ui/style.css`.
+
+**Why.** Acceptance check five. Putting the bar behind the sheets would have made the settlement
+screen a place you must leave before you can finish the turn.
+
+**Symptom if wrong.** The bar reads as clutter on the settlement screen, or a player ends a turn by
+accident while assigning workers. **Change:** hide `#queuebar` while `#sheet.full` is open.
+**Confidence: medium.**
+
+### 36. Every stylistic decision lives in `src/ui/theme.ts`
+
+**What.** One file holds every colour, space, radius, type size, weight, border, shadow, duration and
+grid dimension, as a token map written onto the document root by `installTheme()`, plus the handful
+of numbers the gesture code needs by name. `src/ui/style.css` contains no literal values at all; it
+is structure and `var()` references. Changing the whole look means editing that one file.
+
+**Why.** The brief asks for it as a hard requirement, and it is the same discipline `C` already
+applies to the simulation's numbers.
+
+**Symptom if wrong.** A colour or a size appears in the stylesheet or in a component. That is a bug,
+not a style. **Change:** move it into `TOKENS`. **Confidence: high.**
+
+**One cost.** The stylesheet loads before the module that installs the tokens, so on a cold load
+there is a frame in which the custom properties are undefined. `index.html` carries
+`<meta name="color-scheme" content="dark">` so that frame is dark rather than white. The page has no
+content at that point.
+
+### 37. The type scale is in rem, and the reflow is decided in code, not in a media query
+
+**What.** `--text-*` are rem, so all text follows the reader's own font size. Whether the flanking
+building columns sit beside the ring or below it is decided by `shouldReflow(width, rootFontPx)` in
+`src/ui/theme.ts`, called from `App.layout`, which sets a `narrow` class on `#app`.
+
+**Why.** A media query cannot see the root font size: `em` inside one is always the initial 16px. A
+larger system font needs the wider stacked slots sooner, and the only way to know that is to measure.
+Verified: at a 20px root on a 390 point screen the layout stacks and the building slots go from 56 to
+122 points wide, and nothing is cut off.
+
+**Symptom if wrong.** The layout flips between the two forms while resizing, or reflows too eagerly
+on a large phone. **Change:** `REFLOW_PX`. **Confidence: medium.**
+
+### 38. The ring gives way before the flanks; 88 points is a ceiling, not a floor
+
+**What.** The flanks are a fixed `--slot-w` (56) and the ring takes what is left, capped at
+`88 * 3`. At 390 points the ring cell comes out at 82 rather than 88; at 430 and at every stacked
+width it is 88.
+
+**Why.** The brief's arithmetic, 264 plus 56 plus 56 equals 376 in 390, leaves 14 points for two
+gaps, two margins and two safe-area insets. Something had to give, and section 8 of the brief lists
+this exact split as a thing to tune by playing. 82 is still nearly double the 44 point tap floor.
+
+**Symptom if wrong.** The ring feels cramped on a 390 point phone. **Change:** `RING_CELL_PX` and
+`SLOT_W_PX` in the theme; the layout follows. **Confidence: medium.**
+
+### 39. A flanking slot is as tall as a row of the ring, not 56 points square
+
+**What.** `.st-flank` is `grid-template-rows: repeat(3, 1fr)` inside a row whose height the ring
+sets, so B1 lines up with the ring's first row, B2 with the second and B3 with the third.
+
+**Why.** That is what the brief's diagram shows; 56 is the flank's width. Square slots left a third
+of the flank empty and gave the names one line instead of two.
+
+**Confidence: high.**
+
+### 40. Ring cells draw the map's own ground, as colour and gradients, not as an image
+
+**What.** `src/render/tiles.ts` is a read-only helper returning a tile's season-graded colour and its
+features. The ring paints the colour as a background and the features as CSS gradients built from the
+same palette: forest as canopy blobs, a river as a band, a road as a dashed track, worked ground as
+furrows, a prime as a dot. `tileLook` applies the terrain shader's own lighting for a surface facing
+straight up, so a swatch reads at the same weight as level ground on the map.
+
+**Why.** Section 6, point 1 of the brief: the ring inherits every improvement to the palette or the
+season without a second art pipeline. A canvas or an image set would have been that second pipeline.
+
+**Symptom if wrong.** The ring and the map disagree about what a tile looks like after a renderer
+change. **Change:** `graded()` in `src/render/tiles.ts` is the only place the two could drift.
+**Confidence: medium.** The lighting constant is a stand-in for a real surface normal.
+
+### 41. A 56 point slot cannot carry everything the brief asks of it
+
+**What.** The brief asks a building slot for its name, its tier, two worker slots, what it converts,
+its output this turn and a warning mark. At 56 points wide and 11px type that is about six characters
+a line. The slot carries the name over two lines, the conversion over two, the crew dots and the
+output on one, and the warning as a corner mark; the tier is implicit in the name, because the three
+tiers have different names. Long names still truncate: "Carpenter's shop" reads as "Carpente shop".
+The full name and the warning are on the element's label and in the sheet a tap away, and under a
+larger font the layout stacks and the names fit whole.
+
+**Why.** Reported rather than worked around: this is the brief's second arithmetic problem after
+section 9's. **Change:** widen `SLOT_W_PX` to about 72 and let the ring fall to about 75, or reflow
+at every width. **Confidence: high** that it is a real limit; **low** on which way to resolve it.
+
+### 42. Per-building output is derived in the interface, not exposed by the simulation
+
+**What.** `previewProduction` returns totals per good. The slot needs them per building, so
+`buildingOutputs` in `src/ui/selectors.ts` mirrors that function's building branch and returns the
+same numbers split by the line that makes them.
+
+**Why.** The instruction for this session was not to change `/src/sim` to suit the view. This is a
+read-only selector, as directed.
+
+**Symptom if wrong.** The slot's number and the settlement's total disagree after a change to
+`previewProduction`. **Change:** the two functions must move together; the comment in `selectors.ts`
+says so. **Confidence: medium.** A `previewProduction` that returned both shapes would be better and
+belongs in the simulation session.
+
+### 43. "Near failure" for an imported machine is derived from the constants, not a new threshold
+
+**What.** `machineNearFailure` warns when the machine is starved of instruments, or when the age term
+of its failure chance has overtaken its base term: `years * importedFailPerYear >= importedFailBase`.
+
+**Why.** Every number lives in `C`, and this session may not add to `C`. Expressing the threshold as
+a relation between two existing constants keeps it tunable from the simulation without inventing an
+interface constant. **Confidence: medium.**
+
+### 44. A ring cell is dimmed for three reasons; water without a wharf is not one of them
+
+**What.** Dimmed and unavailable: worked by another settlement, ground another charter holds,
+predecessor territory, or nothing grows or is dug there. The brief also lists "water without a wharf".
+The simulation does not gate water: `tileOffers` gives water three food and `assignWorker` accepts it,
+and the old workers sheet carried a wharf check that was disabled in place (`|| true`). Gating it in
+the interface alone would have produced a greyed tile with a worker standing on it, because
+`autoAssign` would still use it.
+
+**Why.** Reported rather than papered over. **Change:** the gate belongs in `assignWorker` and
+`defaultJob`, in the simulation session. **Confidence: high** that this is the right way round.
+
+Of the three that are dimmed, only "worked by another settlement" is enforced by the simulation. The
+other two are the interface telling the truth about ground it should not take; `autoAssign` could
+still place someone there.
+
+### 45. Assignment is two taps either way round, and a swap is three actions in one undo step
+
+**What.** Tap a tile or a slot and a sheet lists everyone, best first, with what each would make
+there. Tap an idle colonist and every useful destination lights up; tap one to place them. Tapping an
+occupied place offers a swap with the person in it, or a straight take-over when the newcomer is
+idle. `App.assign` runs the swap as three `assignWorker` actions inside one snapshot, so it is one
+line of undo and the simulation never sees two people on one tile.
+
+**Why.** Section 3 of the brief, and no drag and drop anywhere. The three-step swap is because
+`assignWorker` refuses a tile that is already worked, quite rightly.
+
+**Symptom if wrong.** A failed middle step leaves someone idle. `App.assign` restores the snapshot on
+a throw. **Confidence: high.**
+
+### 46. Hold and send are the settlement's surplus rule, and the goods strip says so
+
+**What.** Tapping a good offers consign and buy for that good, and then the settlement's surplus rule
+with hold, consign and send to a named settlement. The brief reads as though hold and send were per
+good; the simulation keeps one surplus rule per settlement and has no action that ships a chosen good
+once. Rather than imply otherwise, the sheet is headed "What this settlement does with its surplus".
+
+**Why.** Saying it applies to one good would be a lie the save would not keep. **Change:** a
+`shipGoods` action in the simulation would let the brief's version be built. **Confidence: high.**
+
+### 47. The old settlement sheet survives as "Everything here"
+
+**What.** The long scrolling settlement sheet is now `settlementDetail`, reachable from the new
+screen's "Also" row. Nothing that used to be reachable stopped being reachable.
+
+**Why.** The new screen is a summary. Passages, grievance totals, the clerk count and the full
+production list still need somewhere to live, and losing them to a redesign would have been a
+regression. **Confidence: high.**
+
+### 48. Music starts on the first tap, and every tap after it quietly tries again
+
+**What.** `MusicPlayer.unlock` is called from a capturing `pointerdown` on the document that is no
+longer `once`, and directly from `App.land`, which is the landing tap itself. The first call streams
+track one and fades it in over two seconds; later calls resume a player that a browser refused.
+A quarter-second watchdog retries a paused track, and an `error` or `stalled` on the current element
+moves to the next track rather than sitting silent. `src/ui/audio.ts`.
+
+**Why.** The brief's five second target, and the report that music only played after "next track".
+
+**What was actually found.** The reported failure did not reproduce in a headless Chromium on this
+build: with the old code, track one already started on the landing tap and reached 1.5 seconds of
+playback about two seconds after it. Measured on the new code, the element is 1.9 seconds in and
+audible about 1.9 seconds after the tap, well inside five. So the cause of the failure on the real
+device is still unknown, and everything above is defence rather than a fix for a diagnosed bug: the
+plausible causes it now covers are a refused `play()` on the first gesture, a source that fails to
+load, and a track that stalls. `RISKS.md` section 1 item 10 stands: this has still never been heard.
+**Confidence: low** that the original cause is understood; **high** that the player is now hard to
+leave silent.
+
+### 49. The hold is 450 milliseconds and lives in the theme; `C.feel.holdMs` is now unread
+
+**What.** `HOLD_MS` in `src/ui/theme.ts`, read by `src/ui/input.ts`. The ring still fills from the
+first frame of contact across the whole 450, moving past `C.feel.holdCancelPx` still turns it into a
+pan, and an early release still does nothing.
+
+**Why.** 250 fired by accident. The instruction was to put the value in the theme or constants layer,
+and `/src/sim` was out of bounds this session.
+
+**The debt this leaves.** `C.feel.holdMs` is now a constant nothing reads, which is exactly the kind
+of trap `RISKS.md` section 3 catalogues. Delete it in the simulation session, or move `HOLD_MS` back
+into `C.feel` and have the theme read it. The other gesture numbers (`holdCancelPx`, `tapMaxMs`,
+`tapMaxPx`, `doubleTapMs`) still come from `C`, so there is exactly one of these, and this is it.
+**Confidence: high** on the value; **high** that the split is temporary.
+
+Note that the tap window is `C.feel.tapMaxMs + 200`, which is 460. A press released between 450 and
+460 milliseconds now fires the hold rather than the tap, and one released earlier is a tap, which
+selects. Selecting is always safe, so "releasing early cancels with no effect" holds for the hold's
+own effect.
+
+### 50. The settlement screen is a full screen, not a bottom sheet
+
+**What.** `isFullScreenSheet` in `src/ui/app.ts` gives the settlement screen the whole display, with
+the brief's own header and its close control. Every other sheet is a bottom sheet over the map.
+
+**Why.** The brief's diagram has a header with a close control and a screen's worth of content. A
+72 per cent sheet would have put the goods strip below the fold on every visit.
+**Confidence: high.**
+
+### 51. The menu moved to the top strip and the dispatch into the expanded queue
+
+**What.** The old bar carried Menu, Dispatch and End turn. The queue bar carries the top queue item
+and End turn. Menu is a "⋯" at the start of the state line; Dispatch is a control in the expanded
+queue.
+
+**Why.** The bottom third is for what is used every turn. Neither of those is.
+**Confidence: medium** on the menu's new home, which is deliberately outside the thumb zone, like the
+speaker.
+
+### 52. `scripts/shots.mjs` looks at the layout; `scripts/smoke.mjs` still answers the ten checks
+
+**What.** A second Playwright script screenshots the map at rest, the settlement screen at 320, 390
+and 430, an assignment in both directions, a second settlement, a larger system font and landscape,
+and asserts that nothing overflows and that the music is audible within five seconds of the first tap
+by watching `currentTime` advance. `scripts/smoke.mjs` keeps the ten acceptance checks and was
+updated for the new selectors; check nine now also asserts the map is edge to edge in both
+orientations. Both take `OUT` for the screenshot directory and `CHROMIUM` for a browser path.
+
+**Confidence: high.**
+
+### 53. `index.html` gains a colour scheme and an empty icon
+
+**What.** `<meta name="color-scheme" content="dark">` so the first frame is dark before the tokens
+are installed, and `<link rel="icon" href="data:,">` so the browser stops asking for a favicon that
+does not exist and logging a 404 on every load. The `theme-color` value now matches the interface's
+base surface rather than the water.
+
+**Confidence: high.**
+
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).
@@ -441,3 +729,10 @@ black. **Confidence: high.** Pinned by the smoke script.
 - Signatory seven (cheaper batteries) has no effect; `equipCost` does not read signatories.
 - The Roboto Light size 10 document preference applies to documents, not to this repository's
   Markdown.
+- A wharf gate on working water tiles (decision 44); the simulation does not have one.
+- An action that ships one chosen good to a named settlement (decision 46); only the settlement-wide
+  surplus rule exists.
+- A per-building shape from `previewProduction` (decision 42); the interface derives it.
+- Deleting `C.feel.holdMs`, which nothing reads any more (decision 49).
+- Landscape gets the same one-column settlement screen as portrait, centred. A two-column landscape
+  arrangement, ring beside buildings, was not attempted.
