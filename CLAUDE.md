@@ -112,6 +112,10 @@ specification section 6 before touching a constant.
 
 `npm run smoke` exercises all ten in a headless mobile Chromium; do it on a real phone as well.
 
+## Deployments
+
+Commit and push directly to main. Do not create a branch or open a pull request unless I explicitly ask for one.
+
 ## Writing conventions
 
 Australian spelling. Sentence case in titles. No em or en dashes anywhere, in code comments or
