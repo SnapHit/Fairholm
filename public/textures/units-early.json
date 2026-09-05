@@ -1,0 +1,18 @@
+{
+ "texture": "units-early.png",
+ "size": [
+  256,
+  224
+ ],
+ "note": "frontal figures, ground anchor at feet, no baked shadow",
+ "pieces": {
+  "colonist": {
+   "x": 8,
+   "y": 8,
+   "w": 84,
+   "h": 200,
+   "anchorX": 42,
+   "anchorY": 199
+  }
+ }
+}
