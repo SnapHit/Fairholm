@@ -29,8 +29,18 @@ import { seedNumber } from './seed'
 import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
 import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
-import { settlementAtlas } from './sprites'
+import { spriteSheet, buildBillboards, manifestFrom, type AtlasManifest } from './billboards'
+import { SETTLEMENT_ATLAS } from './settlement-atlas'
+import UNITS_ATLAS_JSON from '../../public/textures/units-early.json'
 import { seasonLook, sunVector, PROPS, SHADOW } from './look'
+
+/** Where each sheet stands in the list handed to billboards.ts. */
+const SHEET_SETTLEMENTS = 0
+const SHEET_UNITS = 1
+// the people's sheet ships with its manifest beside it in public/textures, and that manifest is
+// the whole of what the renderer knows about it: a new figure on the sheet under its kind's name
+// needs nothing here
+const UNITS_ATLAS = manifestFrom(UNITS_ATLAS_JSON, 'units-early.json')
 
 export class Scene {
   renderer: THREE.WebGLRenderer
@@ -56,8 +66,14 @@ export class Scene {
   /** One set of light uniforms, shared by every material on the map. */
   light: LightUniforms = makeLightUniforms()
   detail: DetailTextures
-  /** The early era settlement sheet, shared by every settlement on the map. */
-  atlas: THREE.IUniform
+  /** The two sheets everything drawn rather than built is drawn from: the early era buildings and
+   *  the people. Their order here is the order billboards.ts is handed them in. */
+  sheets: THREE.IUniform[]
+  private sheetManifests: AtlasManifest[]
+  /** Every picture standing on the map, in one mesh, sorted back to front with the settlements. */
+  private billboards: THREE.InstancedMesh | null = null
+  private unitClose: THREE.Group | null = null
+  private unitFar: THREE.Group | null = null
   shadow: ShadowBake | null = null
   private staticOccluders: Occluder[] = []
   /** Whatever moved this turn, kept so the shadow bake can put it back on top of a fresh base. */
@@ -97,7 +113,8 @@ export class Scene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.cam = new MapCamera(1, 1)
     this.detail = detailTextures(() => this.requestDraw())
-    this.atlas = settlementAtlas(() => this.requestDraw())
+    this.sheetManifests = [SETTLEMENT_ATLAS, UNITS_ATLAS]
+    this.sheets = this.sheetManifests.map(m => spriteSheet(m, () => this.requestDraw()))
     applyLook(this.light, seasonLook(1))
     this.selRing = makeRing(0xf4efe2, 0.52)
     this.unitRing = makeRing(0xffffff, 0.3)
@@ -187,18 +204,23 @@ export class Scene {
     this.ribbons = buildRibbons(s, h, this.light, sn)
     this.scene.add(this.ribbons)
     if (this.settlements) { this.scene.remove(this.settlements); disposeGroup(this.settlements) }
-    const sb = buildSettlements(s, h, this.light, this.atlas, sn)
+    const sb = buildSettlements(s, h, this.light, SHEET_SETTLEMENTS, sn)
     this.settlements = sb.group
     this.settlementClose = sb.close
     this.settlementFar = sb.far
-    this.settlementClose.visible = this.propsVisible
-    this.settlementFar.visible = !this.propsVisible
     this.scene.add(this.settlements)
     if (this.units) { this.scene.remove(this.units); disposeGroup(this.units) }
-    const ub = buildUnits(s, h, this.light)
+    const ub = buildUnits(s, h, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS)
     this.units = ub.group
+    this.unitClose = ub.close
+    this.unitFar = ub.far
     this.unitPositions = ub.positions
     this.scene.add(this.units)
+    // every picture on the map in one layer, so a person in front of a barn is drawn in front of it
+    if (this.billboards) { this.scene.remove(this.billboards); this.billboards.geometry.dispose(); (this.billboards.material as THREE.Material).dispose() }
+    this.billboards = buildBillboards([...sb.billboards, ...ub.billboards], this.light, this.sheets, this.sheetManifests.map(m => m.size))
+    if (this.billboards) this.scene.add(this.billboards)
+    this.applyTierVisibility()
     if (s.turn === 0) this.showArrival(s)
     else if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival); this.arrival = null }
     // whatever moved this turn puts its shadow back on top of the baked base
@@ -355,10 +377,18 @@ export class Scene {
     else if (!this.fineVisible && z > PROPS.fineRestore) this.fineVisible = true
     if (this.props) this.props.visible = this.propsVisible
     if (this.propsFine) this.propsFine.visible = this.propsVisible && this.fineVisible
-    // a settlement below this zoom is one mark in owner colour and nothing else
+    this.applyTierVisibility()
+  }
+
+  /** What the coarse tier being on or off means for everything that is not a prop: a settlement or
+   *  a drawn unit below that zoom is one mark in owner colour and nothing else, and the ground takes
+   *  on the colour of the props it is no longer wearing. */
+  private applyTierVisibility() {
     if (this.settlementClose) this.settlementClose.visible = this.propsVisible
     if (this.settlementFar) this.settlementFar.visible = !this.propsVisible
-    // and the ground takes on the colour of the props it is no longer wearing
+    if (this.unitClose) this.unitClose.visible = this.propsVisible
+    if (this.unitFar) this.unitFar.visible = !this.propsVisible
+    if (this.billboards) this.billboards.visible = this.propsVisible
     if (this.terrain) this.terrain.material.uniforms.uCover.value = this.propsVisible ? 0 : 1
   }
 

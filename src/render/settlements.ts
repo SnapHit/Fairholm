@@ -21,7 +21,8 @@ import type { GameState, Settlement } from '../sim/state'
 import { hexRgb, BUILD, SPRITE, seasonLook } from './look'
 import { surfaceMaterial, type LightUniforms } from './shading'
 import type { Occluder } from './shadow'
-import { buildSpriteLayer, layOut, type SpritePlacement } from './sprites'
+import { layOut } from './sprites'
+import type { Billboard } from './billboards'
 
 function hash(a: number, b: number): number {
   let h = (a * 374761393 + b * 668265263) | 0
@@ -71,14 +72,18 @@ interface Piece { x: number; z: number; sx: number; sy: number; sz: number; rot:
 
 export interface SettlementBuild {
   group: THREE.Group
-  /** Everything a settlement is when you can see it: the buildings, the rampart, the wharf. */
+  /** Everything a settlement is when you can see it: the rampart, the wharf, the kit where the era
+   *  has one. The early era's buildings are not here; they are the billboards below, which the scene
+   *  draws in one layer with every other picture on the map so that they can be sorted together. */
   close: THREE.Group
   /** What a settlement is when you cannot: one mark in owner colour, art brief section 10. */
   far: THREE.Group
+  billboards: Billboard[]
   occluders: Occluder[]
 }
 
-export function buildSettlements(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, atlas: THREE.IUniform, season: number): SettlementBuild {
+/** `sheet` is the index the settlement sheet is handed to buildBillboards at. */
+export function buildSettlements(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, sheet: number, season: number): SettlementBuild {
   const w = s.world.width
   const group = new THREE.Group()
   const close = new THREE.Group()
@@ -90,7 +95,7 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
   const look = seasonLook(season)
   const roofs: Piece[] = []
   const boxes: Piece[] = []
-  const places: SpritePlacement[] = []
+  const billboards: Billboard[] = []
   const occluders: Occluder[] = []
 
   const push = (list: Piece[], p: Piece) => { list.push(p) }
@@ -110,8 +115,8 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     // the banner below is the whole settlement, per art brief section 10
     const drawn = era === 0
     if (drawn) {
-      for (const place of layOut(st.id, pop + built * 0.5, cx, cz, heightAt, onLand)) {
-        places.push(place)
+      for (const place of layOut(st.id, pop + built * 0.5, cx, cz, heightAt, onLand, sheet)) {
+        billboards.push(place)
         occluders.push({ x: place.x, z: place.z, height: SPRITE.occluderHeight, radius: SPRITE.occluderRadius })
       }
     }
@@ -237,8 +242,6 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
   fill(roofs, gableGeometry(BUILD.pitch), false)
   fill(boxes, new THREE.BoxGeometry(1, 1, 1), true)
   fill(marks, new THREE.BoxGeometry(1, 1, 1), true, far)
-  const sprites = buildSpriteLayer(places, light, atlas)
-  if (sprites.mesh) close.add(sprites.mesh)
 
-  return { group, close, far, occluders }
+  return { group, close, far, billboards, occluders }
 }

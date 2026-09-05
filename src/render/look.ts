@@ -11,7 +11,7 @@
 // tint of it; each season is a palette of its own.
 
 import { C } from '../sim/constants'
-import type { TerrainId, ForestId } from '../sim/state'
+import type { TerrainId, ForestId, UnitKind } from '../sim/state'
 
 export type RGB = [number, number, number]
 
@@ -384,10 +384,64 @@ export const SPRITE = {
   exposure: 0.92,
 }
 
+// ---- the people, drawn ------------------------------------------------------------------------------
+
+export const UNIT_SPRITE = {
+  /** Which drawing a kind of unit is, where the sheet does not already have a piece of that name. A
+   *  piece named for the kind wins without any entry here, so a new figure arriving on the sheet is
+   *  a manifest change and nothing else; this is for the kinds that borrow another's. */
+  pieces: { improver: 'colonist' } as Partial<Record<UnitKind, string>>,
+  /** How tall a drawing this many pixels tall stands on the ground, in tiles. A little over half a
+   *  tile for a figure: forty-odd device pixels at working zoom, which is where a person has to read
+   *  as a person and not as a smudge.
+   *
+   *  Every piece keeps its own proportions against the reference, the way the settlement sheet does,
+   *  so a drawing shorter than a person on the same sheet stands shorter on the ground. That is what
+   *  makes a new piece a manifest change and nothing more: a cannon drawn two thirds of a figure's
+   *  height is two thirds of a figure's height on the map, without a table of exceptions here. */
+  referenceHeight: 200,
+  tileHeight: 0.52,
+  /** A hair off the ground, so a figure is not fighting the terrain for the same depth. */
+  lift: 0.03,
+  /** What full sun does to the drawing. It is drawn flat and pale, so it can take the light a
+   *  little harder than the buildings, which arrived already lit. */
+  exposure: 0.94,
+  /** How much brighter the figure's sunward side is than its far side. A standing form catches
+   *  the low sun on one flank; this is that, on a drawing that has no flanks of its own. */
+  sunSide: 0.3,
+  /** What a figure casts, in tiles: how tall the engine should think it is and how wide. As tall as
+   *  it stands, so its shadow lies as far as a small tree's does, and wider than a person really is.
+   *  A shadow's length is its height over the tangent of the sun, so a figure's is spread over
+   *  nearly two tiles, and at a true shoulder's width that is two texels of the shadow map and
+   *  invisible beside a boulder that puts the same darkness into a quarter of the distance. */
+  occluderHeight: 0.5,
+  occluderRadius: 0.14,
+  /** The owner's mark: a ring on the ground under the feet, in charter colour. The drawing is cream
+   *  and tan and a tint would ruin it, and at this size a ring reads better than a coloured coat. */
+  /** The owner's mark under the feet. Dark rather than pale, and only mostly opaque: in bone at full
+   *  strength it was brighter than the figure it belongs to and read as a selection highlight rather
+   *  than as a mark on the ground. Enough segments that it is a circle and not a polygon. */
+  ring: { inner: 0.088, outer: 0.125, lift: 0.12, opacity: 0.85, strength: 0.66, segments: 40 },
+  /** Below overview zoom a figure is a mark, the same disc the unit was before it was drawn,
+   *  a little larger so it still reads at sixteen pixels a tile. */
+  markerScale: 1.35,
+}
+
 // ---- units ------------------------------------------------------------------------------------------
 
 export const UNITS = {
   lift: 0.05,
+  /** How far apart units on one tile stand, in tiles. Wider than it was, because a drawn figure is
+   *  a fifth of a tile across and has a ring under it a third across, and at the old spacing three
+   *  people on a tile stood in each other's rings. */
+  stackSpacing: 0.32,
+  /** How far units on a settlement's own tile shift, so they are not standing among its buildings. */
+  settlementNudge: [0.14, 0.2] as [number, number],
+  /** And how far from the middle of its tile a unit may end up, whatever the fan and the nudge come
+   *  to. A unit's drawn position is also the position a tap is measured against, so a unit that
+   *  wanders out of its own tile is a unit you cannot tap where it lives and can tap where it does
+   *  not. Under a half, so it stays inside. */
+  stackReach: 0.4,
   shadowColour: '#161208',
   shadowOpacity: 0.5,
   shadowOffset: 0.07,
