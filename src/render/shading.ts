@@ -177,6 +177,7 @@ precision highp float;
 ${LIGHT_GLSL}
 uniform float uAo;
 uniform vec3 uTint;
+uniform float uOpacity;
 varying vec3 vWorld;
 varying vec3 vNormal2;
 varying vec3 vTint;
@@ -186,18 +187,24 @@ void main() {
   vec3 probe = vWorld + uSunHoriz * (min(max(0.0, vWorld.y), ${LIGHT.propShadowHeightMax.toFixed(3)}) * uSunLift);
   float shadow = sunReach(probe);
   vec3 c = shade(vTint * uTint, n, shadow, uAo, cloudShadow(vWorld));
-  gl_FragColor = vec4(finish(c, vWorld), 1.0);
+  gl_FragColor = vec4(finish(c, vWorld), uOpacity);
 }
 `
 
 /** A material for anything standing on the ground: props, roofs, ribbons, units. One per group so
- *  each can carry its own ambient occlusion floor, all sharing the light. */
-export function surfaceMaterial(light: LightUniforms, ao = 1, vertexColors = false, tint: THREE.ColorRepresentation = 0xffffff): THREE.ShaderMaterial {
+ *  each can carry its own ambient occlusion floor, all sharing the light.
+ *
+ *  Opacity is here rather than in a material of its own because a thing that is partly there is
+ *  still lit by the same sun as everything else: an owner's ring on the ground has to sit in the
+ *  light, not float above it. Below one it also sets `transparent`, which puts the material in the
+ *  pass where its render order decides what it goes under. */
+export function surfaceMaterial(light: LightUniforms, ao = 1, vertexColors = false, tint: THREE.ColorRepresentation = 0xffffff, opacity = 1): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VS,
     fragmentShader: SURFACE_FS,
-    uniforms: { ...light, uAo: { value: ao }, uTint: { value: new THREE.Color(tint) } },
+    uniforms: { ...light, uAo: { value: ao }, uTint: { value: new THREE.Color(tint) }, uOpacity: { value: opacity } },
     vertexColors,
+    transparent: opacity < 1,
   })
 }
 
