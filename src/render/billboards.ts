@@ -186,16 +186,21 @@ void main() {
   sh *= 1.0 - cloudShadow(vFoot) * ${CLOUD.strength.toFixed(3)};
   float diff = pow(max(0.0, uSunDir.y * (1.0 - ${LIGHT.wrap.toFixed(3)}) + ${LIGHT.wrap.toFixed(3)}), ${LIGHT.diffuseGamma.toFixed(2)});
   vec3 key = uKeyColour * uKeyStrength * diff;
-  vec3 lit = key * sh + mix(uShadowColour, uAmbientColour, sh) * uAmbientStrength;
+  // a standing form is brighter on the side the sun is on. uSunHoriz points toward the sun, and the
+  // camera puts world x to the right of the screen, so a fragment on the same side of the drawing's
+  // middle as the sun's x is the lit one and the other is the shaded one.
+  //
+  // The side moves the key and leaves the fill, which is what shade() does with a normal. Scaling
+  // the finished colour instead would be a grey multiply: the shaded half of the figure would keep
+  // exactly the hue of its lit half while every other surface on the map turns cool going into
+  // shadow, and side by side with a timber wall that is what gives a drawing away
+  float side = (vLocal.x - 0.5) * 2.0 * uSunHoriz.x * vStyle.y;
+  vec3 lit = key * sh * (1.0 + side) + mix(uShadowColour, uAmbientColour, sh) * uAmbientStrength;
   // normalised on what full sun comes to, so the drawing keeps its own values in the open and only
   // loses them where the map says the light has gone
   vec3 full = key + uAmbientColour * uAmbientStrength;
   float norm = max(0.001, dot(full, vec3(0.2126, 0.7152, 0.0722)));
-  // a standing form is brighter on the side the sun is on. uSunHoriz points toward the sun, and
-  // the camera puts world x to the right of the screen, so a fragment on the same side of the
-  // drawing's middle as the sun's x is the lit one and the other is the shaded one
-  float side = (vLocal.x - 0.5) * 2.0 * uSunHoriz.x * vStyle.y * sh;
-  vec3 c = texel.rgb * vTint * (lit / norm) * vStyle.x * (1.0 + side);
+  vec3 c = texel.rgb * vTint * (lit / norm) * vStyle.x;
   gl_FragColor = vec4(finish(c, vFoot), texel.a);
 }
 `

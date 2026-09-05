@@ -1062,6 +1062,12 @@ for a sheet that already has its own modelling and 0.3 for one that has none: a 
 catches a low sun on one flank, and without it the figure reads as a flat cut-out standing in a lit
 landscape. The side it lightens follows the sun's screen x, so it turns with the season.
 
+It moves the key and leaves the fill, which is what `shade` does with a normal. Scaling the finished
+colour instead, which is what it did first, is a grey multiply: the shaded half of a figure keeps
+exactly the hue of its lit half while every other surface on the map turns cool going into shadow,
+and standing next to a timber wall whose shaded side drops thirteen degrees in hue, that is the thing
+that gives a drawing away as a drawing.
+
 ### 77. Owner colour is a ring on the ground, and it goes under the feet
 
 The figure is cream and tan. Tinting it with a charter's crimson would destroy the drawing, and at
