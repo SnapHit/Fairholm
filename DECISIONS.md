@@ -1031,6 +1031,150 @@ What is left is a handful of shadow darkened checker squares inside drop shadows
 anyway. At working zoom they are five pixels across inside a shadow. They are not visible.
 
 
+## The people, drawn, session of 5 September 2026
+
+### 75. One billboard layer for everything drawn, not one per kind of thing
+
+The settlement buildings had a sprite layer of their own. The obvious way to add the people was a
+second one. That is wrong, and the reason is not tidiness.
+
+A billboard has no depth. The only sort that works on it is the painter's, back to front down the
+screen, and people and buildings overlap: a colonist walks in front of a barn and behind a longhouse.
+Two layers means two independent sorts and no way to interleave them, so the people would be either
+always in front of every building or always behind every one. One layer, every picture in it, sorted
+by world z once when the turn is built, and instances draw in index order.
+
+`src/render/billboards.ts` is that layer. It holds the sheet loading, the quad, the shader and the
+build; `sprites.ts` keeps the settlement composition and `units.ts` gains the unit composition, and
+both now return a list of billboards for the scene to merge and hand over. Two sheets are drawn from
+in one call: a per instance attribute says which, and both are sampled so the mip level is chosen
+outside the branch. A third sheet is a third sampler and a wider attribute.
+
+### 76. What the light does to a picture is a per instance thing
+
+The building sheet arrives already lit, from the upper left, which is why decision 66 turned the
+scene's sun to meet it. The units sheet does not: it is a flat frontal drawing with no baked shadow
+and no light direction in it, so none of that applies and the sun was left alone.
+
+That difference is now carried per instance rather than per shader. `exposure` is what full sun does
+to the drawing. `sunSide` is how much brighter its sunward side is than its far side, which is zero
+for a sheet that already has its own modelling and 0.3 for one that has none: a standing figure
+catches a low sun on one flank, and without it the figure reads as a flat cut-out standing in a lit
+landscape. The side it lightens follows the sun's screen x, so it turns with the season.
+
+### 77. Owner colour is a ring on the ground, and it goes under the feet
+
+The figure is cream and tan. Tinting it with a charter's crimson would destroy the drawing, and at
+forty-five device pixels a coloured coat would not read as a coat anyway. It is a thin ring on the
+ground under the feet instead, in charter colour, lit by the same sun as everything else.
+
+Two things had to be got right and both were wrong first time.
+
+It has to be drawn *under* the figure. The unit group is pushed after the billboards so that a
+militia block standing in a settlement is not hidden by a building, and the ring inherited that, so
+the ring's near arc crossed the boots and the figure read as a person standing inside a hoop. The
+ring is its own mesh at render order minus two, drawn before the billboards, writing no depth.
+
+It has to be quiet. At the first size and full strength, in bone, it measured brighter than the
+figure's own brightest pixels, and read as a selection highlight rather than as a mark of ownership.
+It is thinner now, darker than the charter colour it carries, and at 0.85 opacity, which is why
+`surfaceMaterial` has an opacity: a thing that is only partly there is still lit by the same sun, so
+this belongs in the shared material rather than in a flat one of its own.
+
+It reads the light where it lies, which took a second fix. Every other surface samples the shadow map
+a little toward the sun so a thing standing up does not stand in its own shadow, and the offset comes
+from world height because the shader has no other measure of how tall a thing is. A mark lying on the
+ground is not tall, and on high ground that offset had the ring reading the light of somewhere over a
+tile away: it stayed one value while the ground under it changed threefold, glowing in shade and
+going muddy in sun. The ring's material now points at its own zero for that one uniform, leaving
+every other material pointing at the shared one.
+
+And it keeps its depth test, unlike the figures, which was the part that took three goes. Without the
+test it painted over the foliage standing in front of it and read as a decal laid on the picture
+rather than as paint on the ground. With the test, and at the first lift of a hundredth of a tile, it
+disappeared: `heightAt` snaps to the nearest vertex of a jittered mesh rather than interpolating, so
+the height under the feet is already wrong by up to half a cell of slope, and a flat disc a quarter
+of a tile across lies partly inside any ground that is not flat. It now sits at the highest of nine
+samples across its own footprint, plus the spread of those samples again as an estimate of the error
+between them, plus a flat lift. Checked by putting a figure on grassland, downs, dry, marsh, highland
+and mountain and looking: it reads on all six. On a mountain it is largely hidden behind boulders,
+which is the depth test doing exactly what it was turned on for.
+
+### 78. Only the colonist and the improver are drawn, and the seam is sized by the drawing
+
+There is one figure on the sheet and five kinds of land unit. The colonist is the colonist. The
+improver borrows it, through an alias table in the theme layer. Militia, outriders and batteries keep
+the forms they have had all along; nothing is stretched or recoloured to stand in for them, because a
+recoloured colonist standing in for a cannon is worse than a wedge that has never claimed to be one.
+
+The lookup is by the kind's own name first and the alias second, so when a real improver drawing
+arrives under the name `improver` it wins and the alias falls silent without an edit.
+
+The size seam is the part worth recording. Every figure could have been scaled to one height in
+tiles, and that is what the first cut did, which would have made a cannon exactly as tall as a
+person. Each piece is now scaled against a reference height the way the settlement pieces are scaled
+against a reference width, so a drawing two thirds of a figure's height on the same sheet stands two
+thirds of a figure's height on the ground. Adding a piece stays a manifest change: a new name in the
+json, drawn to the same scale, and it is a unit.
+
+### 79. The manifest is imported, not fetched, and it is checked
+
+The sheet's json is imported from `/public` at build time rather than fetched at run time. The
+renderer needs the piece sizes to lay a unit out before the image has arrived, and a fetch would mean
+either a wait or a first frame with the geometry wrong. The cost is that a new manifest needs a
+rebuild, which is true of every other asset in the project.
+
+It is validated rather than trusted, in `manifestFrom`. The sheets are a drop point for artwork made
+elsewhere, and a manifest with a missing anchor should say which piece and which field at load rather
+than draw nothing and say nothing.
+
+### 80. Two things the reviewers caught that looking would not have
+
+Kept because both were invisible in a screenshot and would have shipped.
+
+**The figure was lit from the wrong side.** The sheet is flat, so the shader adds a side: brighter
+toward the sun, darker away from it. The sign was inverted, so every figure was lit from screen right
+while every building and every tree was lit from screen left, and the coat carried a near-white rim
+down the edge that should have been its darkest. It is measurable and it is not obvious: a judge
+comparing the figure's left half against its right half found it, and four people looking at the
+picture had not.
+
+**Widening the stack pushed units out of their own tile.** Units on one tile fan out so they read as
+several, and the fan had to widen once each figure had a ring under it. The fan is added to a nudge
+that shifts units clear of a settlement's buildings, and at the wider spacing the third unit on a
+settlement tile stood a tile and a bit east of its own tile's centre. That position is not only where
+the unit is drawn: it is what a tap is measured against in `picking.ts`. So the third unit in a
+settlement would have been untappable where it lived and tappable where it did not. The fan and the
+nudge are now clamped inside the tile, which also fixes the same overflow at seven units, which was
+there before this change.
+
+### 81. What did not work the way the brief assumed
+
+- **"It casts a real shadow onto the ground like a tree does."** It does, and for a while it could
+  not be seen, for a reason that is not the figure's. A settlement's own buildings stamp enough
+  overlapping shadow to take the shadow map to nothing across the whole tile and its neighbours, and
+  this settlement also sits in a pocket of wood. A figure standing there casts into ground that has
+  no light left to remove. Measured along the shadow line, the map reads zero for two tiles in every
+  direction. So the shot rig now walks a figure out onto open ground, which is the only place the
+  question can be answered, and there the map reads zero for the first half tile from the feet and
+  seventy-eight of two hundred and fifty-five at eight tenths of a tile: a real shadow, lying with
+  the trees'. The figure's occluder is also wider than a person is, because a shadow's length is its
+  height over the tangent of the sun and a figure's is spread over nearly two tiles, which at a true
+  shoulder's width is two texels of the shadow map and invisible beside a boulder that puts the same
+  darkness into a quarter of the distance.
+- **"Cull to a marker below overview zoom."** There was no such switch to hook into for units. The
+  settlements had one, added last session, and the units did not: they were drawn identically at
+  every zoom. The tier now exists for them, sharing the settlements' threshold, and the visibility
+  switching for both moved into one place in the scene because it was already being set in two.
+- **The figure needed the units to stand further apart.** Three units on one tile fanned out by 0.16
+  tiles, which was fine for discs a quarter of a tile across and not fine once each of them had a
+  ring a third of a tile across. They stand 0.34 apart now.
+- **The payload has crossed a megabyte.** 1,003 kB raw excluding audio, against a budget of one
+  megabyte, of which the units sheet is 20 kB and the rest is three.js and the game. Over the wire it
+  is about 420 kB gzipped, which is what actually ships and is well inside. Recorded rather than
+  fixed: nothing in this session's scope would move it, and the figure to reduce is the bundle.
+
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

@@ -182,6 +182,14 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
     // foliage in front of it and read as a decal
     const ringMat = surfaceMaterial(light, 1, false, 0xffffff, UNIT_SPRITE.ring.opacity)
     ringMat.depthWrite = false
+    // and it reads the light where it lies. Every other surface samples the shadow map a little
+    // toward the sun so that a thing standing up does not stand in its own shadow, and the offset
+    // is taken from world height because the shader has no other measure of how tall a thing is.
+    // A mark lying on the ground is not tall, and on high ground that offset had it reading the
+    // light of somewhere over a tile away: it stayed one value while the ground under it changed
+    // threefold. Replacing the shared uniform's reference on this material alone leaves every other
+    // material pointing at the real one
+    ringMat.uniforms.uSunLift = { value: 0 }
     const rings = new THREE.InstancedMesh(ringGeometry(), ringMat, drawn.length)
     rings.renderOrder = -2
     const marks = new THREE.InstancedMesh(geometryFor('disc'), mat, drawn.length)
