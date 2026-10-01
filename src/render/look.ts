@@ -249,11 +249,12 @@ export const SHADOW = {
   aoFloor: 0.58,
   aoCeiling: 1.08,
   /** A prop's own cast shadow: how wide, relative to the prop, how dark at its foot, and how much
-   *  of that is left at the far end of it. Half rather than all, because these accumulate: at full
-   *  depth the first tree takes all the light and a wood of forty of them bakes to a solid black
-   *  blob with no shadow shapes in it at all. */
+   *  of that is left at the far end of it. One shadow is composed as a whole before it is taken out
+   *  of the light, so this is the darkness a lone tree's shadow actually reaches at its foot; before
+   *  that the discs of one trail added up and a half here came to black. Different things still
+   *  add, so a wood is darker than a tree. */
   contactWidth: 1.45,
-  contactDepth: 0.5,
+  contactDepth: 0.86,
   contactFade: 0.4,
   /** How much a shadow narrows along its length. Zero would be a stripe, one a wedge. */
   contactTaper: 0.3,
@@ -354,31 +355,40 @@ export const BUILD = {
 // ---- the early era, drawn rather than built ---------------------------------------------------------
 
 export const SPRITE = {
-  /** How wide on the ground a piece drawn this many pixels wide stands, in tiles. Every piece keeps
-   *  its own proportions against this, so the hall really is taller than the barn. */
-  referenceWidth: 220,
-  tileWidth: 0.72,
-  /** How far the pieces stand from the middle of the settlement, in tiles, with two of them and with
-   *  seven. A settlement is one tile of gameplay and rather more than one tile of place: by the time
-   *  a dozen people live there the buildings are well over the tile's edge, which is the point. */
-  spreadFrom: 0.28,
-  spreadTo: 0.88,
-  /** Two pieces at this population, all of them by this one. */
-  fromPop: 2,
-  allByPop: 12,
-  /** One more building for every this many people past the seventh piece, and no more than this. */
-  extraPer: 5,
-  maxExtra: 5,
-  /** How far a building wanders off its place on the lattice, as a fraction of the spacing. */
-  jitter: 0.3,
+  /** The scale of the sheet, in world terms. The cabin (the lodge piece) is drawn with its wall
+   *  seventy pixels tall under the ground anchor, and a cabin's wall is about a person tall, so a
+   *  colonist beside it stands at the eave. The drawing looks down at the cabin from about thirty
+   *  degrees, which shortens a standing height by its cosine, so the drawn wall is that much less
+   *  than a person: a wall one person tall is 0.87 of a person on the sheet. The roof above the wall
+   *  is whatever the drawing says it is, which puts the ridge a little over the brief's 1.4 people
+   *  once the roof's depth is counted in. */
+  eave: { piece: 'lodge', px: 70, people: 0.87 },
+  /** How many buildings stand: this many to begin with, one more at each of these populations, and
+   *  never more than the most. Four large buildings are a place; seven small ones were a texture. */
+  fromCount: 2,
+  growAt: [3, 6],
+  maxCount: 4,
+  /** A place this large lives in a longhouse rather than a cabin. */
+  longhouseAt: 8,
+  /** Where the buildings stand around the middle of the tile, in tiles, far ones first so the hall
+   *  stands behind the rest, and which of the places a settlement of one to four buildings takes. */
+  slots: [[-0.42, -0.38], [0.5, -0.3], [-0.46, 0.34], [0.46, 0.42]] as [number, number][],
+  slotOrder: [[3], [0, 3], [0, 1, 3], [0, 1, 2, 3]] as number[][],
+  /** How far a building wanders off its place, in tiles. */
+  jitter: 0.12,
   /** A hair off the ground, so a sprite is not fighting the terrain for the same depth. */
   lift: 0.03,
   /** Timber weathers. How far a building's colour wanders in hue and in value. */
   hueJitter: 0.035,
   valueJitter: 0.14,
-  /** What a building casts, in tiles: how tall the engine should think it is and how wide. */
-  occluderHeight: 0.34,
-  occluderRadius: 0.23,
+  /** What a building casts, as the engine's occluder: a share of its drawn height, because the
+   *  drawn height has the roof's depth in it, and a share of its drawn width across. A settlement's
+   *  buildings stamp as one group, so where their shadows overlap the ground is no darker than
+   *  under one of them; see shadow.ts. */
+  occluderHeightShare: 0.55,
+  occluderWidthShare: 0.3,
+  /** How tall a building is for the purpose of finding its own light, in tiles. */
+  probeHeight: 0.34,
   /** The sheet is drawn already lit, so the map's light is applied to it as a colour and a depth
    *  rather than as a second lighting pass. This is what full sun does to it. */
   exposure: 0.92,

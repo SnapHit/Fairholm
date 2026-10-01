@@ -21,6 +21,10 @@ export interface Occluder {
   height: number
   /** Half width of the thing casting, in tiles. */
   radius: number
+  /** Occluders in one group shade together rather than one on top of another: where their shadows
+   *  overlap the ground is as dark as the darkest of them, not the sum. A settlement's buildings are
+   *  one group, because four roofs stamped on top of one another were a pool of total shade. */
+  group?: number
 }
 
 export class ShadowBake {
@@ -29,6 +33,8 @@ export class ShadowBake {
   readonly th: number
   private base: Uint8Array
   private work: Uint8Array
+  /** Where one shadow is composed before it is taken out of the light; see stampGroup. */
+  private scratch: Float32Array
   private mapW: number
   private mapH: number
   private per = SHADOW.texelsPerTile
@@ -40,6 +46,7 @@ export class ShadowBake {
     this.th = Math.max(1, Math.round(mapH * this.per))
     this.base = new Uint8Array(this.tw * this.th).fill(255)
     this.work = new Uint8Array(this.tw * this.th).fill(255)
+    this.scratch = new Float32Array(this.tw * this.th)
     this.texture = new THREE.DataTexture(this.work, this.tw, this.th, THREE.RedFormat)
     this.texture.magFilter = THREE.LinearFilter
     this.texture.minFilter = THREE.LinearFilter
@@ -105,7 +112,7 @@ export class ShadowBake {
     // blur the marched ground first, then stamp: a tree's shadow is a few texels across and a blur
     // over the top of it is most of what made the props' shadows invisible on a phone
     blur(base, tw, th, SHADOW.blurPasses)
-    for (const o of statics) this.stamp(base, o, sx, sz, tanE)
+    for (const o of statics) this.stampGroup(base, [o], sx, sz, tanE)
     this.work.set(base)
     this.texture.needsUpdate = true
   }
@@ -117,23 +124,58 @@ export class ShadowBake {
     const sx = sun[0] / hl, sz = sun[2] / hl
     const tanE = Math.max(0.08, sun[1] / hl)
     this.work.set(this.base)
-    for (const o of movers) this.stamp(this.work, o, sx, sz, tanE)
+    const groups = new Map<number, Occluder[]>()
+    for (const o of movers) {
+      if (o.group === undefined) { this.stampGroup(this.work, [o], sx, sz, tanE); continue }
+      const list = groups.get(o.group)
+      if (list) list.push(o)
+      else groups.set(o.group, [o])
+    }
+    for (const list of groups.values()) this.stampGroup(this.work, list, sx, sz, tanE)
     this.texture.needsUpdate = true
   }
 
-  /** One occluder's shadow: a soft trail of discs lying away from the sun, as long as the thing is
-   *  tall and fading along its length, with the darkest part where it meets the ground. */
-  private stamp(buf: Uint8Array, o: Occluder, sx: number, sz: number, tanE: number) {
+  /** One shadow, or one group's shadows laid down together. A shadow is a soft trail of discs lying
+   *  away from the sun, as long as the thing is tall and fading along its length, with the darkest
+   *  part where it meets the ground. The discs are composed in the scratch by taking the deepest
+   *  bite at each texel rather than adding, so a shadow is as dark as its depth says and no darker
+   *  where the discs of one trail happen to overlap, which was most of what made them black; then the
+   *  whole is taken out of the light once. Different things still add, so a wood is darker than a
+   *  tree, and a group's things do not, so a settlement is no darker than one of its buildings. */
+  private stampGroup(buf: Uint8Array, list: Occluder[], sx: number, sz: number, tanE: number) {
     const per = this.per
-    const len = Math.min(SHADOW.reachTiles, o.height / tanE)
-    const discs = Math.max(2, Math.min(26, Math.round(len * per * 0.9)))
-    for (let k = 0; k <= discs; k++) {
-      const t = k / discs
-      const wx = o.x - sx * len * t
-      const wz = o.z - sz * len * t
-      const r = o.radius * SHADOW.contactWidth * (1 - SHADOW.contactTaper * t)
-      const depth = SHADOW.contactDepth * (1 - SHADOW.contactFade * t)
-      disc(buf, this.tw, this.th, wx * per, wz * per, r * per, depth)
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+    for (const o of list) {
+      const len = Math.min(SHADOW.reachTiles, o.height / tanE)
+      const r = o.radius * SHADOW.contactWidth
+      x0 = Math.min(x0, o.x - r, o.x - sx * len - r); x1 = Math.max(x1, o.x + r, o.x - sx * len + r)
+      z0 = Math.min(z0, o.z - r, o.z - sz * len - r); z1 = Math.max(z1, o.z + r, o.z - sz * len + r)
+    }
+    const tx0 = Math.max(0, Math.floor(x0 * per)), tx1 = Math.min(this.tw - 1, Math.ceil(x1 * per))
+    const tz0 = Math.max(0, Math.floor(z0 * per)), tz1 = Math.min(this.th - 1, Math.ceil(z1 * per))
+    if (tx1 < tx0 || tz1 < tz0) return
+    const sw = tx1 - tx0 + 1, shh = tz1 - tz0 + 1
+    const scratch = this.scratch
+    for (const o of list) {
+      const len = Math.min(SHADOW.reachTiles, o.height / tanE)
+      const discs = Math.max(2, Math.min(26, Math.round(len * per * 0.9)))
+      for (let k = 0; k <= discs; k++) {
+        const t = k / discs
+        const wx = o.x - sx * len * t
+        const wz = o.z - sz * len * t
+        const r = o.radius * SHADOW.contactWidth * (1 - SHADOW.contactTaper * t)
+        const depth = SHADOW.contactDepth * (1 - SHADOW.contactFade * t)
+        discMax(scratch, sw, shh, wx * per - tx0, wz * per - tz0, r * per, depth)
+      }
+    }
+    for (let z = 0; z < shh; z++) for (let x = 0; x < sw; x++) {
+      const j = z * sw + x
+      const bite = scratch[j]
+      if (bite <= 0) continue
+      scratch[j] = 0
+      const i = (z + tz0) * this.tw + (x + tx0)
+      const v = buf[i] - bite * 255
+      buf[i] = v < 0 ? 0 : v
     }
   }
 
@@ -159,6 +201,26 @@ function disc(buf: Uint8Array, tw: number, th: number, cx: number, cz: number, r
       const i = z * tw + x
       const v = buf[i] - bite
       buf[i] = v < 0 ? 0 : v
+    }
+  }
+}
+
+/** The same bite, kept as the deepest at each texel rather than taken out of the light. */
+function discMax(buf: Float32Array, tw: number, th: number, cx: number, cz: number, r: number, depth: number) {
+  if (r <= 0 || depth <= 0) return
+  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(tw - 1, Math.ceil(cx + r))
+  const z0 = Math.max(0, Math.floor(cz - r)), z1 = Math.min(th - 1, Math.ceil(cz + r))
+  const r2 = r * r
+  for (let z = z0; z <= z1; z++) {
+    const dz = z + 0.5 - cz
+    for (let x = x0; x <= x1; x++) {
+      const dx = x + 0.5 - cx
+      const d2 = dx * dx + dz * dz
+      if (d2 > r2) continue
+      const fall = 1 - Math.sqrt(d2 / r2)
+      const bite = depth * fall * (0.45 + 0.55 * fall)
+      const i = z * tw + x
+      if (bite > buf[i]) buf[i] = bite
     }
   }
 }

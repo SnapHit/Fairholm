@@ -115,9 +115,10 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     // the banner below is the whole settlement, per art brief section 10
     const drawn = era === 0
     if (drawn) {
-      for (const place of layOut(st.id, pop + built * 0.5, cx, cz, heightAt, onLand, sheet)) {
+      for (const place of layOut(st, pop, cx, cz, heightAt, onLand, sheet)) {
         billboards.push(place)
-        occluders.push({ x: place.x, z: place.z, height: SPRITE.occluderHeight, radius: SPRITE.occluderRadius })
+        // one group per settlement: the buildings shade together, not one on top of another
+        occluders.push({ x: place.x, z: place.z, height: place.height * SPRITE.occluderHeightShare, radius: place.width * SPRITE.occluderWidthShare, group: st.id + 1 })
       }
     }
     const n = drawn ? 0 : Math.max(3, Math.min(BUILD.maxBuildings, Math.round(2 + pop * 0.5 + built * 0.5)))
