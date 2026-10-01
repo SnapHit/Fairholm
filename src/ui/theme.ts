@@ -101,6 +101,8 @@ export const TOKENS: Record<string, string> = {
   '--radius-md': '10px',
   '--radius-lg': '16px',
   '--radius-pill': '999px',
+  /** The count on a stacked tile: a small pill, under the thumb's notice and over a figure's. */
+  '--stack-badge': '1.125rem',
 
   // Type. In rem, so the whole interface follows the reader's own font size rather than ignoring
   // it. The numbers in brackets are what each comes to at the usual 16px root.

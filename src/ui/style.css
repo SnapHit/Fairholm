@@ -83,6 +83,18 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ---- the count on a stacked tile, following the map ------------------------------------------- */
+#stacks { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+#stacks .stack {
+  position: absolute; left: 0; top: 0;
+  min-width: var(--stack-badge); height: var(--stack-badge); padding: 0 var(--space-2);
+  margin: calc(var(--stack-badge) / -2) 0 0 calc(var(--stack-badge) / -2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-bar); color: var(--ink);
+  font-size: var(--text-micro); font-weight: var(--weight-medium); line-height: var(--stack-badge);
+  text-align: center; will-change: transform;
+}
+
 /* ---- the gallery strip: a season to pick, over the stage, at /?gallery ------------------------- */
 #gallery {
   position: absolute; left: 0; right: 0; top: 0; z-index: 2;

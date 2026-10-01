@@ -17,6 +17,7 @@ import { Scene } from '../render/scene'
 import { pick, tileUnderPoint } from '../render/picking'
 import { Input } from './input'
 import { MusicPlayer } from './audio'
+import { mountStackCounts, type StackCounts } from './stacks'
 import { h, clear, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
@@ -58,6 +59,7 @@ export class App {
   turnStartedAt = performance.now()
   private toastTimer: number | null = null
   private landingBusy = false
+  private stacks: StackCounts
 
   constructor(root: HTMLElement, state: GameState, resumed: boolean) {
     installTheme()
@@ -76,6 +78,8 @@ export class App {
     root.append(this.canvas, this.hud, this.audioStrip, this.scrim, this.sheetEl, this.queuebar, this.ring, this.toastEl, this.overlayEl)
     this.attachSheetSwipe()
     this.scene = new Scene(this.canvas)
+    this.stacks = mountStackCounts(root, this.scene)
+    this.scene.onFrame = () => this.stacks.place()
     this.music = new MusicPlayer(state.settings.audio)
     this.music.onChange = (a) => { this.state.settings.audio = { ...this.state.settings.audio, ...a }; this.renderAudio() }
     this.input = new Input(this.canvas, this.scene.cam, {
@@ -562,6 +566,7 @@ export class App {
   // ---- rendering -------------------------------------------------------------------------------
   refresh() {
     this.queue = deriveQueue(this.state, SYSTEMS)
+    this.stacks.rebuild(this.state)
     this.renderHud()
     this.renderQueueBar()
     this.renderSheet()
