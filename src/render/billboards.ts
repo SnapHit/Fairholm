@@ -144,11 +144,16 @@ export interface Billboard {
   desaturate: number
   /** Turned on the ground about its anchor by this many radians: a damaged piece is knocked askew. */
   tilt: number
+  /** Where the water is, as a share of the quad from its bottom, nought for none: below this the
+   *  drawing fades out, so a hull sits in the water rather than on it. */
+  cut: number
+  /** How far the picture drifts on the water as the clock runs, in tiles. Nought for a thing on land. */
+  bob: number
 }
 
 /** A unit quad lying in the ground plane, with v running up the screen so the top of a drawing is
  *  the far side of it. */
-function quadGeometry(): THREE.BufferGeometry {
+export function quadGeometry(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0], 3))
   g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 1, 1], 2))
@@ -161,6 +166,7 @@ attribute vec4 aRect;
 attribute vec3 aFoot;
 attribute vec4 aStyle;
 attribute vec4 aExtra;
+uniform float uTime;
 varying vec2 vUv;
 varying vec2 vLocal;
 varying vec3 vFoot;
@@ -181,6 +187,9 @@ void main() {
     vTint = instanceColor;
   #endif
   vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  // a thing on the water rides it: a slow drift about where it sits, its own phase from where it is
+  float ph = aFoot.x * 3.1 + aFoot.z * 1.7;
+  world.xz += vec2(cos(uTime * 0.9 + ph), sin(uTime * 1.3 + ph)) * aExtra.w;
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `
@@ -202,6 +211,9 @@ void main() {
   vec4 t0 = texture2D(uSheet0, vUv);
   vec4 t1 = texture2D(uSheet1, vUv);
   vec4 texel = mix(t0, t1, step(0.5, vStyle.w));
+  // below the waterline the hull is in the water, and goes: a short fade rather than a cut, so the
+  // bow and the stern go under the way a hull does
+  texel.a *= smoothstep(vExtra.z - 0.07, vExtra.z, vLocal.y);
   if (texel.a < 0.03) discard;
   // the light at the foot, not per fragment: a picture is not a surface, and one shadow across the
   // whole of it is what a thing in shade looks like. The sample is taken toward the sun by the
@@ -299,6 +311,8 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
     style[i * 4 + 3] = b.sheet
     extra[i * 4] = b.flip ? 1 : 0
     extra[i * 4 + 1] = b.desaturate
+    extra[i * 4 + 2] = b.cut
+    extra[i * 4 + 3] = b.bob
   })
   geo.setAttribute('aRect', new THREE.InstancedBufferAttribute(rect, 4))
   geo.setAttribute('aFoot', new THREE.InstancedBufferAttribute(foot, 3))

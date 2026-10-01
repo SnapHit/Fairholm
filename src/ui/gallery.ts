@@ -22,6 +22,7 @@ import { Scene } from '../render/scene'
 import { Input } from './input'
 import { h, button, clear } from './dom'
 import { installTheme } from './theme'
+import { mountStackCounts } from './stacks'
 
 /** The stage, in tiles. Water above the shore row, land from it down. */
 const STAGE = {
@@ -54,8 +55,8 @@ function stageTile(x: number, z: number): Tile {
   return t
 }
 
-function stageUnit(id: number, owner: number, kind: UnitKind, tile: number, flagged = true, going: number[] = []): Unit {
-  return { id, owner, kind, tile, quality: 'raw', moves: 0, cargo: {}, colonist: null, order: null, path: going, damage: 0, progress: 0, since: {}, flagged }
+function stageUnit(id: number, owner: number, kind: UnitKind, tile: number, flagged = true, going: number[] = [], quality: Unit['quality'] = 'raw'): Unit {
+  return { id, owner, kind, tile, quality, moves: 0, cargo: {}, colonist: null, order: null, path: going, damage: 0, progress: 0, since: {}, flagged }
 }
 
 function stageSettlement(id: number, tile: number, pop: number): Settlement {
@@ -83,36 +84,51 @@ export function stageState(turn: number): GameState {
   const owners = base.charters.map(c => c.id)
   // the land rows, one per owner, from the shore down. Every second row is on its way to the right,
   // so the profiles in it are mirrored and the two can be compared
+  // the second row is hardened and the third sworn, so the chevrons can be seen beside the rings
+  const QUALITY: Unit['quality'][] = ['raw', 'hardened', 'sworn', 'raw']
   owners.forEach((owner, row) => {
     const z = STAGE.shore + 3 + row
     STAGE.landKinds.forEach((kind, k) => {
       const tile = at(2 + k * 2, z)
-      units.push(stageUnit(id++, owner, kind, tile, true, row % 2 ? [tile + 1] : []))
+      units.push(stageUnit(id++, owner, kind, tile, true, row % 2 ? [tile + 1] : [], QUALITY[row % QUALITY.length]))
     })
   })
+  // a stack: three of the player's on one tile, so the count can be seen
+  const stackTile = at(16, STAGE.shore + 3)
+  for (let k = 0; k < 3; k++) units.push(stageUnit(id++, 0, k === 0 ? 'militia' : 'colonist', stackTile))
   // the Company's row, with a colonist for scale
   const companyRow = STAGE.shore + 3 + owners.length + 1
   units.push(stageUnit(id++, 0, 'colonist', at(2, companyRow)))
   STAGE.companyKinds.forEach((kind, k) => units.push(stageUnit(id++, -1, kind, at(4 + k * 2, companyRow))))
-  // the hulls, one row per owner on the water, the Company's ship and an unflagged raider after them
+  // the hulls, one row per owner on the water, the Company's ship and an unflagged raider after
+  // them; the second row is under way to the right, so the wakes and the mirroring can be seen
   owners.forEach((owner, row) => {
     const z = 1 + row * 2
-    STAGE.hullKinds.forEach((kind, k) => units.push(stageUnit(id++, owner, kind, at(3 + k * 3, z))))
+    STAGE.hullKinds.forEach((kind, k) => {
+      const tile = at(3 + k * 3, z)
+      units.push(stageUnit(id++, owner, kind, tile, true, row === 1 ? [tile + 1] : []))
+    })
   })
   units.push(stageUnit(id++, 1, 'raider', at(15, 3), false))
   units.push(stageUnit(id++, -1, 'companyShip', at(15, 7)))
   const settlements = STAGE.settlements.map((pop, i) => stageSettlement(i, at(3 + i * 8, STAGE.shore + 1), pop))
   for (const st of settlements) tiles[st.tile].worked = st.id
-  // the landing, so the arrival stands offshore to the right of the hulls
+  // the landing, so the arrival stands offshore to the right of the hulls; and anchorages along
+  // the shore with a wave at sea toward them, so the Company's lander stands offshore too
   const landing = at(22, STAGE.shore)
+  const anchorages = [at(8, STAGE.shore - 1), at(20, STAGE.shore - 1), at(26, STAGE.shore - 1)]
   return {
     ...base,
     turn,
-    world: { width: w, height: hgt, tiles, anchorages: [], rivers: [], landingSites: [landing] },
+    world: { width: w, height: hgt, tiles, anchorages, rivers: [], landingSites: [landing] },
     charters: base.charters.map(c => ({ ...c, landing })),
     settlements,
     units,
     predecessors: [],
+    declaration: {
+      declared: true, turnDeclared: turn, interventionProgress: 0, nextWaveId: 2, won: false, lost: false, intervened: null,
+      waves: [{ id: 1, units: [], anchorage: anchorages[1], turnsToLand: C.military.approachTurns, landed: false, excluded: [] }],
+    },
     intent: 'The gallery.',
   }
 }
@@ -130,12 +146,14 @@ export function mountGallery(root: HTMLElement): Gallery {
   const strip = h('div', { id: 'gallery' })
   root.append(canvas, strip)
   const scene = new Scene(canvas)
+  const stacks = mountStackCounts(root, scene)
   let state = stageState(STAGE.seasonTurns[1])
   let seasonNow = 1
   const show = () => {
     scene.rebuild(state, 'full')
     // the arrival is drawn for a game that has not landed; the stage has, and wants it anyway
-    scene.showArrival(state)
+    scene.showArrival(state, true)
+    stacks.rebuild(state)
     scene.requestDraw()
   }
   const season = (k: number) => {
@@ -171,6 +189,7 @@ export function mountGallery(root: HTMLElement): Gallery {
   new ResizeObserver(layout).observe(root)
   layout()
   scene.onFrame = () => {
+    stacks.place()
     const z = strip.querySelector('.zoom')
     if (z) z.textContent = `${Math.round(scene.cam.view.zoom)} px a tile`
   }

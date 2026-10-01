@@ -29,10 +29,12 @@
 import * as THREE from 'three'
 import type { GameState, Unit, UnitKind } from '../sim/state'
 import { hex, type RGB } from './palette'
-import { UNITS, UNIT_SPRITE, LIGHT } from './look'
-import { surfaceMaterial, flatMaterial, type LightUniforms } from './shading'
+import { UNITS, UNIT_SPRITE, LIGHT, ARRIVAL, hexRgb } from './look'
+import { surfaceMaterial, type LightUniforms } from './shading'
 import type { Occluder } from './shadow'
-import type { AtlasManifest, AtlasPiece, Billboard } from './billboards'
+import { buildBillboards, quadGeometry, type AtlasManifest, type AtlasPiece, type Billboard } from './billboards'
+import { waveCandidates, openWaterNear } from './selectors'
+import { C } from '../sim/constants'
 
 type Form = 'disc' | 'square' | 'long' | 'wedge' | 'rect' | 'hull' | 'company'
 
@@ -103,12 +105,28 @@ export function goesRight(s: GameState, u: Unit): boolean {
   return next % w > u.tile % w
 }
 
-/** How large a piece stands on the ground for a kind, in tiles: against the person, by the piece's
- *  own height in people, times whatever share a borrowing kind is drawn at. */
-export function drawnSize(kind: UnitKind, piece: AtlasPiece): { width: number; height: number } {
+/** How large a piece stands on the ground, in tiles: against the person, by the piece's own height
+ *  in people, times whatever share a borrowing kind is drawn at. */
+export function drawnSize(piece: AtlasPiece, scale = 1): { width: number; height: number } {
   const personPx = piece.personPx ?? UNIT_SPRITE.referenceHeight
-  const height = (piece.h / personPx) * UNIT_SPRITE.tileHeight * (UNIT_SPRITE.scale[kind] ?? 1)
+  const height = (piece.h / personPx) * UNIT_SPRITE.tileHeight * scale
   return { width: height * (piece.w / piece.h), height }
+}
+
+/** A hull on the water: anchored at its waterline rather than its keel, the hull below the line
+ *  faded out, riding the water a little as the clock runs, and reading its light at the waterline.
+ *  The water is at nought, whatever the bed under it is. */
+export function waterBillboard(piece: AtlasPiece, scale: number, x: number, z: number, flip: boolean, sheetIndex: number, tint: THREE.Color): Billboard {
+  const { width, height } = drawnSize(piece, scale)
+  const line = piece.waterline ?? piece.anchorY
+  const anchored: AtlasPiece = { ...piece, anchorY: line }
+  return {
+    sheet: sheetIndex, piece: anchored, x, z, y: UNITS.lift, width, height, lift: 0, tint,
+    exposure: UNIT_SPRITE.exposure, sunSide: UNIT_SPRITE.sunSide, probeHeight: UNIT_SPRITE.shadow.hullHeight,
+    flip, desaturate: 0, tilt: 0,
+    cut: 1 - line / piece.h,
+    bob: ARRIVAL.bob,
+  }
 }
 
 /** Where a ring of this size has to sit to lie over the ground rather than in it.
@@ -129,6 +147,25 @@ function ringHeight(x: number, z: number, heightAt: (x: number, z: number) => nu
     if (h < low) low = h
   }
   return top + (top - low)
+}
+
+/** A flat chevron lying on the ground, pointing up the screen: one for a hardened unit beside its
+ *  ring, two for a sworn one. Two arms, each a thin quad. */
+function chevronGeometry(): THREE.BufferGeometry {
+  const c = UNIT_SPRITE.chevron
+  const a = c.arm, t = c.thickness
+  // the arms meet at the origin and run down and out to either side; wound to face up
+  const v = [
+    // left arm
+    0, 0, -t, -a, 0, a - t, -a, 0, a, 0, 0, 0,
+    // right arm
+    0, 0, 0, a, 0, a, a, 0, a - t, 0, 0, -t,
+  ]
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3))
+  g.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7])
+  g.computeVertexNormals()
+  return g
 }
 
 /** A flat ring lying on the ground, the owner's mark under a drawn figure. */
@@ -236,106 +273,313 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
     // threefold. Replacing the shared uniform's reference on this material alone leaves every other
     // material pointing at the real one
     ringMat.uniforms.uSunLift = { value: 0 }
-    const rings = new THREE.InstancedMesh(ringGeometry(), ringMat, drawn.length)
+    // an unflagged raider carries no mark of whose it is: that is the whole of what unflagged means,
+    // rival charters brief section 8. Everything else drawn has its owner's ring
+    const marked = drawn.filter(e => !(e.unit.kind === 'raider' && !e.unit.flagged))
+    const rings = new THREE.InstancedMesh(ringGeometry(), ringMat, Math.max(1, marked.length))
+    rings.count = marked.length
     rings.renderOrder = -2
+    // quality beside the ring: one chevron hardened, two sworn, in the ring's colour
+    const chevrons = marked.flatMap(e => e.unit.quality === 'raw' ? [] : e.unit.quality === 'hardened' ? [{ e, k: 0 }] : [{ e, k: 0 }, { e, k: 1 }])
+    const badges = new THREE.InstancedMesh(chevronGeometry(), ringMat, Math.max(1, chevrons.length))
+    badges.count = chevrons.length
+    badges.renderOrder = -2
+    // a wake behind every hull that is going somewhere
+    const moving = drawn.filter(e => isHull(e.unit.kind) && nextTileOf(s, e.unit) !== null && nextTileOf(s, e.unit) !== e.unit.tile)
     const marks = new THREE.InstancedMesh(geometryFor('disc'), mat, drawn.length)
     const plain = new THREE.Color(1, 1, 1)
     const d = UNIT_SPRITE.damaged
     const hurt = new THREE.Color(d.darken, d.darken, d.darken)
     drawn.forEach((e, i) => {
       const y = heightAt(e.x, e.z)
-      const { width, height } = drawnSize(e.unit.kind, e.piece)
+      const scale = UNIT_SPRITE.scale[e.unit.kind] ?? 1
+      const { width, height } = drawnSize(e.piece, scale)
       const damaged = isDamaged(e.unit.kind)
       const hull = isHull(e.unit.kind)
-      // the light is read a little toward the sun, clear of the piece's own shadow, and no further:
-      // a ship three people tall read its light from three tiles away, which was the next ship's
-      // shadow. A hull lies in the water and reads its light at the waterline
+      const flip = e.piece.facing === 'left' && goesRight(s, e.unit)
       const sh = UNIT_SPRITE.shadow
-      const probe = hull ? sh.hullHeight : Math.min(height, LIGHT.propShadowHeightMax)
-      billboards.push({
-        sheet: sheetIndex, piece: e.piece, x: e.x, z: e.z, y, width, height, lift: UNIT_SPRITE.lift,
-        tint: damaged ? hurt : plain,
-        exposure: UNIT_SPRITE.exposure, sunSide: UNIT_SPRITE.sunSide, probeHeight: probe,
-        flip: e.piece.facing === 'left' && goesRight(s, e.unit),
-        desaturate: damaged ? d.desaturate : 0,
-        tilt: damaged ? (d.tiltDeg * Math.PI) / 180 : 0,
-      })
+      if (hull) billboards.push(waterBillboard(e.piece, scale, e.x, e.z, flip, sheetIndex, plain))
+      else {
+        // the light is read a little toward the sun, clear of the piece's own shadow, and no further:
+        // a ship three people tall read its light from three tiles away, which was the next ship's
+        // shadow. A hull lies in the water and reads its light at the waterline
+        billboards.push({
+          sheet: sheetIndex, piece: e.piece, x: e.x, z: e.z, y, width, height, lift: UNIT_SPRITE.lift,
+          tint: damaged ? hurt : plain,
+          exposure: UNIT_SPRITE.exposure, sunSide: UNIT_SPRITE.sunSide, probeHeight: Math.min(height, LIGHT.propShadowHeightMax),
+          flip,
+          desaturate: damaged ? d.desaturate : 0,
+          tilt: damaged ? (d.tiltDeg * Math.PI) / 180 : 0,
+          cut: 0, bob: 0,
+        })
+      }
       occluders.push({ x: e.x, z: e.z, height: hull ? sh.hullHeight : height * sh.heightShare, radius: Math.max(sh.minRadius, width * sh.widthShare) })
       const oc = ownerColour(e.unit)
-      col.setRGB(oc[0] * UNIT_SPRITE.ring.strength, oc[1] * UNIT_SPRITE.ring.strength, oc[2] * UNIT_SPRITE.ring.strength)
       q.identity()
-      // the ring is a flat disc lying on ground that is not flat, and heightAt snaps to the nearest
-      // vertex of a jittered mesh rather than interpolating, so the height at the feet alone puts
-      // half the ring inside the hill it is lying on and the depth test drops it. Take the highest
-      // ground the ring covers instead
-      p.set(e.x, ringHeight(e.x, e.z, heightAt) + UNIT_SPRITE.ring.lift, e.z)
-      sc.set(1, 1, 1)
-      m.compose(p, q, sc)
-      rings.setMatrixAt(i, m)
-      rings.setColorAt(i, col)
-      p.set(e.x, y + UNITS.lift, e.z)
+      // a hull's mark is on the water, which is at nought whatever the bed under it is
+      p.set(e.x, hull ? UNITS.lift * 0.8 : y + UNITS.lift, e.z)
       sc.set(UNIT_SPRITE.markerScale, 1, UNIT_SPRITE.markerScale)
       m.compose(p, q, sc)
       marks.setMatrixAt(i, m)
       col.setRGB(oc[0], oc[1], oc[2])
       marks.setColorAt(i, col)
     })
-    for (const mesh of [rings, marks]) {
+    marked.forEach((e, i) => {
+      const oc = ownerColour(e.unit)
+      col.setRGB(oc[0] * UNIT_SPRITE.ring.strength, oc[1] * UNIT_SPRITE.ring.strength, oc[2] * UNIT_SPRITE.ring.strength)
+      q.identity()
+      // the ring is a flat disc lying on ground that is not flat, and heightAt snaps to the nearest
+      // vertex of a jittered mesh rather than interpolating, so the height at the feet alone puts
+      // half the ring inside the hill it is lying on and the depth test drops it. Take the highest
+      // ground the ring covers instead. On the water the ring lies on the water
+      const ringY = isHull(e.unit.kind) ? UNIT_SPRITE.ring.lift : ringHeight(e.x, e.z, heightAt) + UNIT_SPRITE.ring.lift
+      p.set(e.x, ringY, e.z)
+      sc.set(1, 1, 1)
+      m.compose(p, q, sc)
+      rings.setMatrixAt(i, m)
+      rings.setColorAt(i, col)
+    })
+    chevrons.forEach(({ e, k }, i) => {
+      const oc = ownerColour(e.unit)
+      col.setRGB(oc[0] * UNIT_SPRITE.ring.strength, oc[1] * UNIT_SPRITE.ring.strength, oc[2] * UNIT_SPRITE.ring.strength)
+      const c = UNIT_SPRITE.chevron
+      const ringY = isHull(e.unit.kind) ? UNIT_SPRITE.ring.lift : ringHeight(e.x, e.z, heightAt) + UNIT_SPRITE.ring.lift
+      // to the right of the ring, the second above the first
+      p.set(e.x + UNIT_SPRITE.ring.outer + c.gap, ringY, e.z + c.drop - k * c.stack)
+      q.identity()
+      sc.set(1, 1, 1)
+      m.compose(p, q, sc)
+      badges.setMatrixAt(i, m)
+      badges.setColorAt(i, col)
+    })
+    if (moving.length) {
+      close.add(buildWakes(moving.map(e => {
+        const next = nextTileOf(s, e.unit)!
+        return { x: e.x, z: e.z, heading: Math.atan2(Math.floor(next / w) + 0.5 - e.z, (next % w) + 0.5 - e.x) }
+      })))
+    }
+    for (const mesh of [rings, badges, marks]) {
       mesh.instanceMatrix.needsUpdate = true
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
       mesh.frustumCulled = false
     }
-    close.add(rings)
+    close.add(rings, badges)
     far.add(marks)
   }
   return { group, close, far, billboards, positions, occluders }
 }
 
-/** The arrival: a lander down and steaming offshore, a boat making for the coast. */
-export function buildArrival(s: GameState, site: number | null, progress: number, light: LightUniforms): THREE.Group {
+/** What is on the water that is not a unit. Before the landing: the lander down and steaming
+ *  offshore, and the boat making for the coast with a wake, the boat's progress animated once a site
+ *  is chosen. After it: the Company's landers while a wave is at sea, steaming on the turn they came
+ *  down. Setting brief section 7, onboarding brief section 2, military brief section 10. The pictures
+ *  are a billboard layer of their own: they stand on open water, where nothing else drawn stands,
+ *  so they need no sorting against the people and the buildings. Null when there is nothing. */
+export function buildArrival(
+  s: GameState, site: number | null, progress: number, light: LightUniforms,
+  sheet: AtlasManifest, sheetIndex: number, sheets: THREE.IUniform[], sizes: [number, number][],
+  /** The arrival is drawn before the landing; the gallery asks for it whatever the turn. */
+  always = false,
+): THREE.Group | null {
   const group = new THREE.Group()
   const w = s.world.width
-  const home = s.world.landingSites[0] ?? s.charters[0].landing
-  // the splashdown point is out to sea from the first site
-  const hx = (home % w) + 0.5, hz = Math.floor(home / w) + 0.5
-  let sx = hx, sz = hz
-  let best = 0
-  for (let dz = -5; dz <= 5; dz++) for (let dx = -5; dx <= 5; dx++) {
-    const nx = Math.floor(hx) + dx, nz = Math.floor(hz) + dz
-    if (nx < 0 || nz < 0 || nx >= w || nz >= s.world.height) continue
-    const t = s.world.tiles[nz * w + nx]
-    if (t.terrain !== 'water') continue
-    let water = 0
-    for (let ez = -1; ez <= 1; ez++) for (let ex = -1; ex <= 1; ex++) { const t2 = s.world.tiles[(nz + ez) * w + (nx + ex)]; if (t2 && t2.terrain === 'water') water++ }
-    const score = water * 2 - Math.hypot(dx, dz) * 0.5
-    if (score > best) { best = score; sx = nx + 0.5; sz = nz + 0.5 }
+  const bills: Billboard[] = []
+  const steam: [number, number][] = []
+  const plain = new THREE.Color(1, 1, 1)
+  const lander = sheet.pieces['lander'] ?? null
+  const boatPiece = pieceFor('lighter', sheet)
+
+  /** The lander, drawn if the sheet has it and built if not, and where its stacks are. */
+  const putLander = (x: number, z: number, steaming: boolean) => {
+    if (lander) {
+      bills.push(waterBillboard(lander, 1, x, z, false, sheetIndex, plain))
+      const { width, height } = drawnSize(lander)
+      // the stacks are at the top right of the drawing, and the steam comes off them
+      if (steaming) steam.push([x + width * ARRIVAL.plume.stacks[0], z - height * ARRIVAL.plume.stacks[1]])
+    } else {
+      const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.12, 8), surfaceMaterial(light, 1, false, 0x2a2a2e))
+      hull.position.set(x, 0.05, z)
+      group.add(hull)
+      if (steaming) steam.push([x + 0.2, z - 0.1])
+    }
   }
-  const lander = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.12, 8), surfaceMaterial(light, 1, false, 0x2a2a2e))
-  lander.position.set(sx, 0.05, sz)
-  group.add(lander)
-  for (let i = 0; i < 3; i++) {
-    const plume = new THREE.Mesh(new THREE.CylinderGeometry(0.2 + i * 0.18, 0.24 + i * 0.2, 0.02, 10), flatMaterial(0xf2ece0))
-    plume.position.set(sx + 0.25 + i * 0.3, 0.09 + i * 0.01, sz - 0.15 - i * 0.22)
-    group.add(plume)
+
+  if (s.turn === 0 || always) {
+    const home = s.world.landingSites[0] ?? s.charters[0].landing
+    const hx = (home % w) + 0.5, hz = Math.floor(home / w) + 0.5
+    const [sx, sz] = openWaterNear(s, hx, hz, ARRIVAL.offshoreReach) ?? [hx, hz]
+    putLander(sx, sz, true)
+    // the boat, with a wake, moving toward the chosen site when one is chosen
+    const target = site ?? home
+    const tx = (target % w) + 0.5, tz = Math.floor(target / w) + 0.5
+    const t = Math.min(1, Math.max(0, progress))
+    const k = ARRIVAL.boatStart + (1 - ARRIVAL.boatStart) * t
+    const bx = sx + (tx - sx) * k, bz = sz + (tz - sz) * k
+    const heading = Math.atan2(tz - sz, tx - sx)
+    if (boatPiece) bills.push(waterBillboard(boatPiece, ARRIVAL.boatScale, bx, bz, boatPiece.facing === 'left' && tx > sx, sheetIndex, plain))
+    else {
+      const boatGeo = new THREE.CylinderGeometry(0.05, 0.12, 0.05, 4)
+      boatGeo.rotateY(Math.PI / 4); boatGeo.scale(1.8, 1, 1)
+      const boat = new THREE.Mesh(boatGeo, surfaceMaterial(light, 1, false, 0xe9e2cc))
+      boat.position.set(bx, 0.04, bz)
+      boat.rotation.y = -heading
+      group.add(boat)
+    }
+    group.add(buildWakes([{ x: bx, z: bz, heading }]))
   }
-  // the boat, with a wake, moving toward the chosen site when one is chosen
-  const target = site ?? home
-  const tx = (target % w) + 0.5, tz = Math.floor(target / w) + 0.5
-  const t = Math.min(1, Math.max(0, progress))
-  const bx = sx + (tx - sx) * (0.18 + 0.82 * t), bz = sz + (tz - sz) * (0.18 + 0.82 * t)
-  const boatGeo = new THREE.CylinderGeometry(0.05, 0.12, 0.05, 4)
-  boatGeo.rotateY(Math.PI / 4); boatGeo.scale(1.8, 1, 1)
-  const boat = new THREE.Mesh(boatGeo, surfaceMaterial(light, 1, false, 0xe9e2cc))
-  boat.position.set(bx, 0.04, bz)
-  boat.rotation.y = -Math.atan2(tz - sz, tx - sx)
-  group.add(boat)
-  const wake = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.16), flatMaterial(0xd9e6e3))
-  wake.rotation.x = -Math.PI / 2
-  const back = 0.55
-  wake.position.set(bx - Math.cos(-boat.rotation.y) * back, 0.015, bz - Math.sin(-boat.rotation.y) * back)
-  wake.rotation.z = boat.rotation.y
-  group.add(wake)
-  return group
+
+  // the Company's landers: one a wave, down offshore of the middle of the coast it might still land
+  // on, which tells you no more than its heading does. Military brief section 10: where it lands is
+  // genuinely unknown, so the lander does not stand at the anchorage
+  const d = s.declaration
+  if (d?.declared) {
+    let n = 0
+    for (const wave of d.waves) {
+      if (wave.landed) continue
+      const cands = waveCandidates(s, wave)
+      if (!cands.length) continue
+      let cx = 0, cz = 0
+      for (const a of cands) { cx += (a % w) + 0.5; cz += Math.floor(a / w) + 0.5 }
+      cx /= cands.length; cz /= cands.length
+      const at = openWaterNear(s, cx + (n % 2 ? 1 : -1) * ARRIVAL.waveSpacing * Math.ceil(n / 2), cz, ARRIVAL.waveOffshore)
+      if (!at) continue
+      const since = C.military.approachTurns - wave.turnsToLand
+      putLander(at[0], at[1], since < ARRIVAL.waveSteamTurns)
+      n++
+    }
+  }
+
+  if (bills.length) {
+    const mesh = buildBillboards(bills, light, sheets, sizes)
+    if (mesh) { mesh.renderOrder = 0; group.add(mesh) }
+  }
+  if (steam.length) group.add(buildPlume(steam, light))
+  return group.children.length ? group : null
+}
+
+const WAKE_VS = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`
+
+const WAKE_FS = /* glsl */ `
+precision highp float;
+uniform vec3 uColour;
+uniform float uOpacity;
+varying vec2 vUv;
+void main() {
+  // widest and faintest at the tail, narrow and brightest just behind the stern: u runs from the
+  // tail at nought to the stern at one, and the streak thins across its width toward either edge
+  float across = 1.0 - abs(vUv.y - 0.5) * 2.0;
+  float width = mix(1.0, 0.35, vUv.x);
+  float a = smoothstep(0.0, width, across) * pow(vUv.x, 0.9) * (1.0 - smoothstep(0.85, 1.0, vUv.x)) * uOpacity;
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(uColour, a);
+}
+`
+
+/** The wake material: a pale streak that thins toward its edges and fades toward its tail. */
+function wakeMaterial(): THREE.ShaderMaterial {
+  const wk = ARRIVAL.wake
+  return new THREE.ShaderMaterial({
+    vertexShader: WAKE_VS,
+    fragmentShader: WAKE_FS,
+    uniforms: { uColour: { value: new THREE.Color(...hexRgb(wk.colour)) }, uOpacity: { value: wk.opacity } },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+}
+
+/** Wakes behind hulls under way: one instanced mesh, each lying back along its hull's heading. */
+function buildWakes(at: { x: number; z: number; heading: number }[]): THREE.InstancedMesh {
+  const wk = ARRIVAL.wake
+  const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(wk.length, wk.width), wakeMaterial(), at.length)
+  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1)
+  const e = new THREE.Euler()
+  at.forEach((w, i) => {
+    const back = wk.length * 0.5
+    p.set(w.x - Math.cos(w.heading) * back, UNITS.lift * 0.5, w.z - Math.sin(w.heading) * back)
+    // the plane lies flat, then turns to lie along the heading, its u running tail to stern
+    e.set(-Math.PI / 2, 0, -w.heading, 'ZYX')
+    q.setFromEuler(e)
+    m.compose(p, q, sc)
+    mesh.setMatrixAt(i, m)
+  })
+  mesh.renderOrder = -1
+  mesh.frustumCulled = false
+  mesh.instanceMatrix.needsUpdate = true
+  return mesh
+}
+
+const PLUME_VS = /* glsl */ `
+attribute float aPhase;
+uniform float uTime;
+varying vec2 vLocal;
+varying float vLife;
+void main() {
+  // each puff lives a few seconds: born at the stack, it rises up the screen and drifts off the
+  // wind, growing and thinning as it goes, and is born again
+  float t = fract(uTime / ${ARRIVAL.plume.life.toFixed(2)} + aPhase);
+  vLife = t;
+  vLocal = uv;
+  float size = mix(${ARRIVAL.plume.sizeFrom.toFixed(3)}, ${ARRIVAL.plume.sizeTo.toFixed(3)}, t);
+  vec3 off = vec3(${ARRIVAL.plume.drift.toFixed(3)} * t + sin(aPhase * 6.28 + t * 4.0) * 0.05, 0.0, -${ARRIVAL.plume.rise.toFixed(3)} * t);
+  vec3 local = vec3((uv.x - 0.5) * size, 0.0, (0.5 - uv.y) * size);
+  vec4 world = modelMatrix * instanceMatrix * vec4(off + local, 1.0);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`
+
+const PLUME_FS = /* glsl */ `
+precision highp float;
+uniform vec3 uColour;
+varying vec2 vLocal;
+varying float vLife;
+void main() {
+  float d = length(vLocal - 0.5) * 2.0;
+  float soft = smoothstep(1.0, 0.25, d);
+  float a = soft * (1.0 - vLife) * smoothstep(0.0, 0.12, vLife) * ${ARRIVAL.plume.opacity.toFixed(2)};
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(uColour, a);
+}
+`
+
+/** Steam off a lander's stacks: a few soft quads lying on the water plane, each on its own phase of
+ *  one cycle, so the plume drifts and thins and renews as the clock runs. One draw call however many
+ *  landers are steaming, and small overdraw: a handful of quads a third of a tile across. */
+function buildPlume(at: [number, number][], light: LightUniforms): THREE.InstancedMesh {
+  const per = ARRIVAL.plume.count
+  const n = at.length * per
+  const geo = quadGeometry()
+  const phase = new Float32Array(n)
+  const material = new THREE.ShaderMaterial({
+    vertexShader: PLUME_VS,
+    fragmentShader: PLUME_FS,
+    uniforms: { uTime: light.uTime, uColour: { value: new THREE.Color(...hexRgb(ARRIVAL.plume.colour)) } },
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.InstancedMesh(geo, material, n)
+  mesh.frustumCulled = false
+  mesh.renderOrder = 1
+  const m = new THREE.Matrix4()
+  at.forEach(([x, z], i) => {
+    for (let k = 0; k < per; k++) {
+      m.makeTranslation(x, UNITS.lift * 2, z)
+      mesh.setMatrixAt(i * per + k, m)
+      phase[i * per + k] = (k + 0.37 * i) / per
+    }
+  })
+  geo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1))
+  mesh.instanceMatrix.needsUpdate = true
+  return mesh
 }
 
 export function makeRing(colour: number, r: number): THREE.Mesh {

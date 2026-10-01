@@ -221,8 +221,9 @@ export class Scene {
     this.billboards = buildBillboards([...sb.billboards, ...ub.billboards], this.light, this.sheets, this.sheetManifests.map(m => m.size))
     if (this.billboards) this.scene.add(this.billboards)
     this.applyTierVisibility()
-    if (s.turn === 0) this.showArrival(s)
-    else if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival); this.arrival = null }
+    // what is on the water that is not a unit: the arrival before the landing, and the Company's
+    // landers while a wave is at sea
+    this.showArrival(s)
     // whatever moved this turn puts its shadow back on top of the baked base
     this.dynamicOccluders = [...sb.occluders, ...ub.occluders]
     if (this.shadow && !this.bakePending) this.shadow.stampDynamic(sunVector(seasonLook(sn)), this.dynamicOccluders)
@@ -261,11 +262,13 @@ export class Scene {
     this.requestDraw()
   }
 
-  /** Arrival: the lander offshore, the boat. Progress animates after the site is chosen. */
-  showArrival(s: GameState) {
-    if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival) }
-    this.arrival = buildArrival(s, this.arrivalSite, this.arrivalProgress, this.light)
-    this.scene.add(this.arrival)
+  /** The water scene: before the landing, the lander offshore and the boat, with the boat's progress
+   *  animated after the site is chosen; after it, the Company's landers while a wave is at sea. */
+  showArrival(s: GameState, always = false) {
+    if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival); this.arrival = null }
+    this.arrival = buildArrival(s, this.arrivalSite, this.arrivalProgress, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, this.sheets, this.sheetManifests.map(m => m.size), always)
+    if (this.arrival) this.scene.add(this.arrival)
+    if (this.steaming()) this.startLoop()
   }
 
   animateLanding(s: GameState, site: number, done: () => void) {
@@ -431,8 +434,12 @@ export class Scene {
       const settling = this.cam.tick()
       const gliding = this.cam.glideTick()
       const moving = this.gestureActive || settling || gliding || this.arrivalAnimating
-      this.draw(true)
-      if (moving) requestAnimationFrame(frame)
+      // the opening image is a lander down and steaming, and steam that does not move is not
+      // steaming: while the game waits for its first tap the plume drifts, at full resolution,
+      // and the loop ends with the landing. Nothing else idle draws anything
+      const ambient = this.steaming()
+      this.draw(moving)
+      if (moving || ambient) requestAnimationFrame(frame)
       else {
         this.loopRunning = false
         // settle: refine at full DPR after a short pause
@@ -455,6 +462,7 @@ export class Scene {
     this.lastFrame = now
     this.cloudTime += dt * 0.02
     this.light.uCloudTime.value = this.cloudTime
+    this.light.uTime.value = (now / 1000) % 3600
     if (this.terrain) {
       this.terrain.material.uniforms.gridMix.value = this.cam.view.zoom >= C.feel.tileTapFloor ? 1 : 0
     }
@@ -470,6 +478,11 @@ export class Scene {
     }
   }
 
+  /** True while the lander is down and steaming offshore before the landing. */
+  private steaming(): boolean {
+    return !!this.arrival && !!this.lastState && this.lastState.turn === 0 && !this.contextLost
+  }
+
   /** Nudge the clouds a little between turns so a quiet turn still moves. */
   advanceClouds() { this.cloudTime += 0.35 }
 
@@ -477,6 +490,9 @@ export class Scene {
   warm() { if (this.lastState) { this.renderer.compile(this.scene, this.cam.camera); this.draw(true) } }
 
   pixelsPerTile(): number { return this.cam.view.zoom }
+
+  /** Whether the map is at a zoom where a unit is a drawing rather than a mark. */
+  get drawnClose(): boolean { return this.propsVisible }
 
   /** Read the frame back as RGBA pixels, bottom row first. For verification: a WebGL canvas is
    *  cleared once it has been presented, so looking at what was drawn needs a render target. */

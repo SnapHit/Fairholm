@@ -454,6 +454,10 @@ export const UNIT_SPRITE = {
   /** Below overview zoom a figure is a mark, the same disc the unit was before it was drawn,
    *  a little larger so it still reads at sixteen pixels a tile. */
   markerScale: 1.35,
+  /** Quality, as chevrons beside the ring: none raw, one hardened, two sworn. The arm is the half
+   *  width of the chevron and how far down its arms reach, in tiles; it stands this far right of the
+   *  ring and this far below the ring's centre, and a second stands this far above the first. */
+  chevron: { arm: 0.045, thickness: 0.016, gap: 0.03, drop: 0.02, stack: 0.07 },
 }
 
 // ---- units ------------------------------------------------------------------------------------------
@@ -474,6 +478,33 @@ export const UNITS = {
   shadowColour: '#161208',
   shadowOpacity: 0.5,
   shadowOffset: 0.07,
+}
+
+// ---- the water scene: the arrival, and the Company's landers -----------------------------------------
+
+export const ARRIVAL = {
+  /** The boat that comes off the lander is the smallest hull, at the lighter's share of the trader. */
+  boatScale: 0.6,
+  /** How far out from the first landing site the lander is looked for, in tiles. */
+  offshoreReach: 5,
+  /** Where the boat starts, as a share of the way from the lander to the shore, before a site is
+   *  chosen; then it goes the rest of the way. */
+  boatStart: 0.18,
+  /** How far a hull drifts on the water as it rides, in tiles. Small: a thing you notice has moved
+   *  when you look again, not a thing that moves while you look. */
+  bob: 0.012,
+  /** The wake: how long and wide behind the boat, in tiles, and its colour. */
+  wake: { length: 0.9, width: 0.16, colour: '#d9e6e3', opacity: 0.55 },
+  /** The steam: how many puffs, how long one lives in seconds, how far it rises and drifts in tiles
+   *  (up the screen and to the right, off the wind), how large it starts and ends, and its colour. */
+  plume: { count: 7, life: 3.2, rise: 0.75, drift: 0.55, sizeFrom: 0.1, sizeTo: 0.36, colour: '#f2ece0', opacity: 0.72, stacks: [0.3, 0.72] as [number, number] },
+  /** Where a wave's lander splashes down: offshore of the middle of the coast it might still land
+   *  on, this far out, so that it tells you no more than the heading does. Waves after the first
+   *  stand a little apart so they are not drawn on top of one another. */
+  waveOffshore: 4,
+  waveSpacing: 1.4,
+  /** A splashdown steams for this many turns after it comes down. */
+  waveSteamTurns: 1,
 }
 
 // ---- cloud shadow ------------------------------------------------------------------------------------

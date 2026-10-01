@@ -94,6 +94,8 @@ const made = await page.evaluate(() => {
   // the hauler is sent to the right of where it stands, so it is drawn going that way
   const hauler = a.state.units.find(u => u.kind === 'hauler')
   if (hauler) hauler.path = [hauler.tile + 1]
+  // the state was changed under the interface, which a real action never does: tell it
+  a.refresh()
   window.__openUnit = out ? out.id : null
   return `${before} -> ${a.state.units.length} units: ${a.state.units.map(u => u.kind).join(', ')}; improver walked to ${best}${failed.length ? '; failed: ' + failed.join('; ') : ''}`
 })

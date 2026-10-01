@@ -34,6 +34,8 @@ export function makeLightUniforms(): LightUniforms {
     uContrast: { value: 1.15 },
     uLift: { value: 0 },
     uCloudTime: { value: 0 },
+    /** Seconds, for the few things that move while a frame is being drawn: a hull's bob, steam. */
+    uTime: { value: 0 },
     uShadowMap: { value: null as THREE.Texture | null },
     uMapSize: { value: new THREE.Vector2(1, 1) },
     uSunLift: { value: 1 },
