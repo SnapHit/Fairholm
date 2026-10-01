@@ -1,0 +1,76 @@
+{
+ "battery": {
+  "source": "battery.jpg",
+  "w": 168,
+  "h": 86,
+  "people": 0.6,
+  "personPx": 144.0,
+  "facing": "left"
+ },
+ "colonist": {
+  "source": "colonist.png",
+  "w": 60,
+  "h": 144,
+  "people": 1.0,
+  "personPx": 144.0,
+  "facing": "front"
+ },
+ "company-regular": {
+  "source": "regulars.jpg",
+  "w": 57,
+  "h": 144,
+  "people": 1.0,
+  "personPx": 144.0,
+  "facing": "front"
+ },
+ "hauler": {
+  "source": "hauler.jpg",
+  "w": 290,
+  "h": 144,
+  "people": 1.0,
+  "personPx": 144.0,
+  "facing": "left"
+ },
+ "improver": {
+  "source": "improver.jpg",
+  "w": 80,
+  "h": 167,
+  "people": 1.0,
+  "personPx": 144.0,
+  "facing": "front"
+ },
+ "lander": {
+  "source": "lander.jpg",
+  "w": 332,
+  "h": 156,
+  "people": 1.8,
+  "personPx": 86.4,
+  "facing": "front",
+  "waterline": 120.2
+ },
+ "militia": {
+  "source": "militia.jpg",
+  "w": 56,
+  "h": 144,
+  "people": 1.0,
+  "personPx": 144.0,
+  "facing": "front"
+ },
+ "outrider": {
+  "source": "outrider.jpg",
+  "w": 175,
+  "h": 194,
+  "people": 1.35,
+  "personPx": 144.0,
+  "facing": "left"
+ },
+ "trader": {
+  "source": "trader.jpg",
+  "w": 326,
+  "h": 259,
+  "people": 3.0,
+  "personPx": 86.4,
+  "facing": "left",
+  "waterline": 231.6
+ }
+}

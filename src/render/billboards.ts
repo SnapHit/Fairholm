@@ -36,6 +36,10 @@ export interface AtlasPiece {
   h: number
   anchorX: number
   anchorY: number
+  /** Which way a profile is drawn looking; absent for a drawing seen from the front. */
+  facing?: 'left' | 'right' | 'front'
+  /** The row a hull sits in the water on, from the top of the piece, where the piece is a hull. */
+  waterline?: number
 }
 
 /** A sheet as the artist ships it: the image, its size, and the pieces on it by name. Adding a
@@ -59,7 +63,10 @@ export function manifestFrom(json: unknown, name: string): AtlasManifest {
     for (const f of ['x', 'y', 'w', 'h', 'anchorX', 'anchorY']) {
       if (typeof p[f] !== 'number') throw new Error(`${name}: piece ${key} has no ${f}`)
     }
-    pieces[key] = { x: p.x as number, y: p.y as number, w: p.w as number, h: p.h as number, anchorX: p.anchorX as number, anchorY: p.anchorY as number }
+    const piece: AtlasPiece = { x: p.x as number, y: p.y as number, w: p.w as number, h: p.h as number, anchorX: p.anchorX as number, anchorY: p.anchorY as number }
+    if (p.facing === 'left' || p.facing === 'right' || p.facing === 'front') piece.facing = p.facing
+    if (typeof p.waterline === 'number') piece.waterline = p.waterline
+    pieces[key] = piece
   }
   return { texture: o.texture, size: [o.size[0] as number, o.size[1] as number], pieces }
 }

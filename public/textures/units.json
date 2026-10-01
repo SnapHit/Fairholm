@@ -1,0 +1,102 @@
+{
+ "texture": "units.png",
+ "size": [
+  1024,
+  512
+ ],
+ "note": "personPx is how tall a standing person is in that piece; ground anchor at the feet, wheels or keel; waterline where a hull sits in the water; profiles face left as drawn",
+ "pieces": {
+  "battery": {
+   "x": 483,
+   "y": 267,
+   "w": 168,
+   "h": 86,
+   "anchorX": 86,
+   "anchorY": 86,
+   "personPx": 144,
+   "facing": "left"
+  },
+  "colonist": {
+   "x": 298,
+   "y": 267,
+   "w": 60,
+   "h": 144,
+   "anchorX": 29.6,
+   "anchorY": 144,
+   "personPx": 144,
+   "facing": "front"
+  },
+  "company-regular": {
+   "x": 362,
+   "y": 267,
+   "w": 57,
+   "h": 144,
+   "anchorX": 28.1,
+   "anchorY": 144,
+   "personPx": 144,
+   "facing": "front"
+  },
+  "hauler": {
+   "x": 4,
+   "y": 267,
+   "w": 290,
+   "h": 144,
+   "anchorX": 171.6,
+   "anchorY": 144,
+   "personPx": 144,
+   "facing": "left"
+  },
+  "improver": {
+   "x": 513,
+   "y": 4,
+   "w": 80,
+   "h": 167,
+   "anchorX": 40.8,
+   "anchorY": 167,
+   "personPx": 144,
+   "facing": "front"
+  },
+  "lander": {
+   "x": 597,
+   "y": 4,
+   "w": 332,
+   "h": 156,
+   "anchorX": 149.3,
+   "anchorY": 156,
+   "personPx": 86.4,
+   "facing": "front",
+   "waterline": 120.2
+  },
+  "militia": {
+   "x": 423,
+   "y": 267,
+   "w": 56,
+   "h": 144,
+   "anchorX": 27.5,
+   "anchorY": 144,
+   "personPx": 144,
+   "facing": "front"
+  },
+  "outrider": {
+   "x": 334,
+   "y": 4,
+   "w": 175,
+   "h": 194,
+   "anchorX": 103.8,
+   "anchorY": 194,
+   "personPx": 144,
+   "facing": "left"
+  },
+  "trader": {
+   "x": 4,
+   "y": 4,
+   "w": 326,
+   "h": 259,
+   "anchorX": 186.6,
+   "anchorY": 259,
+   "personPx": 86.4,
+   "facing": "left",
+   "waterline": 231.6
+  }
+ }
+}

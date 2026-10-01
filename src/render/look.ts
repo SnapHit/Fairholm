@@ -399,7 +399,7 @@ export const UNIT_SPRITE = {
    *  so a drawing shorter than a person on the same sheet stands shorter on the ground. That is what
    *  makes a new piece a manifest change and nothing more: a cannon drawn two thirds of a figure's
    *  height is two thirds of a figure's height on the map, without a table of exceptions here. */
-  referenceHeight: 200,
+  referenceHeight: 144,
   tileHeight: 0.52,
   /** A hair off the ground, so a figure is not fighting the terrain for the same depth. */
   lift: 0.03,

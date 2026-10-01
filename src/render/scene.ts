@@ -31,7 +31,7 @@ import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
 import { spriteSheet, buildBillboards, manifestFrom, type AtlasManifest } from './billboards'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
-import UNITS_ATLAS_JSON from '../../public/textures/units-early.json'
+import UNITS_ATLAS_JSON from '../../public/textures/units.json'
 import { seasonLook, sunVector, PROPS, SHADOW } from './look'
 
 /** Where each sheet stands in the list handed to billboards.ts. */
@@ -40,7 +40,7 @@ const SHEET_UNITS = 1
 // the people's sheet ships with its manifest beside it in public/textures, and that manifest is
 // the whole of what the renderer knows about it: a new figure on the sheet under its kind's name
 // needs nothing here
-const UNITS_ATLAS = manifestFrom(UNITS_ATLAS_JSON, 'units-early.json')
+const UNITS_ATLAS = manifestFrom(UNITS_ATLAS_JSON, 'units.json')
 
 export class Scene {
   renderer: THREE.WebGLRenderer
