@@ -9,9 +9,17 @@ export const HULLS: HullKind[] = ['lighter', 'trader', 'raider', 'cutter']
 export function isHull(kind: UnitKind): boolean { return (HULLS as string[]).includes(kind) }
 export function isCompany(kind: UnitKind): boolean { return kind === 'regulars' || kind === 'horse' || kind === 'siegeTrain' || kind === 'damagedSiegeTrain' || kind === 'companyShip' }
 export function isArmed(kind: UnitKind): boolean { return kind === 'militia' || kind === 'outrider' || kind === 'battery' || kind === 'damagedBattery' || isCompany(kind) }
+/** Everything that moves on water: the four hulls, the Company's landing craft and the lander. */
+export function isAfloat(kind: UnitKind): boolean { return isHull(kind) || kind === 'companyShip' || kind === 'lander' }
+/** A ship that can enforce a blockade: the Company's, or an armed hull. */
+export function isArmedShip(u: Unit): boolean {
+  if (u.kind === 'companyShip') return true
+  return isHull(u.kind) && C.naval.hulls[u.kind as HullKind].guns - u.damage > 0
+}
 
 export function maxMoves(u: Unit): number {
   switch (u.kind) {
+    case 'lander': return C.lander.moves
     case 'colonist': return C.military.units.colonist.moves
     case 'militia': return C.military.units.militia.moves
     case 'outrider': return C.military.units.outrider.moves
@@ -31,6 +39,7 @@ export function maxMoves(u: Unit): number {
 
 export function cargoCapacity(u: Unit): number {
   if (u.kind === 'hauler') return C.military.units.hauler.capacity
+  if (u.kind === 'lander') return C.lander.capacity
   if (isHull(u.kind)) return Math.max(20, Math.round(C.naval.hulls[u.kind as HullKind].capacity * (1 - u.damage * 0.15)))
   return 0
 }
@@ -39,7 +48,12 @@ export function cargoCapacity(u: Unit): number {
 export function enterCost(s: GameState, u: Unit, tile: number): number {
   const t = s.world.tiles[tile]
   const water = t.terrain === 'water'
-  if (isHull(u.kind) || u.kind === 'companyShip') {
+  if (u.kind === 'lander') {
+    // the lander goes where boats go, open water and major rivers, and never into a port: it is
+    // not a ship and it founds from the water, not from a quay
+    return water || t.river === 2 ? 1 : Infinity
+  }
+  if (isAfloat(u.kind)) {
     if (water) return 1
     // a hull may enter a coastal settlement tile (a port) or a major river tile
     if (s.settlements.some(st => st.tile === tile) || t.river === 2) return 1
@@ -98,7 +112,6 @@ export function advance(s: GameState, u: Unit): boolean {
     u.moves -= c
     u.tile = nextTile
     u.path.shift()
-    s.world.tiles[nextTile].explored = true
   }
   if (u.moves < 0) u.moves = 0
   return u.path.length === 0
@@ -119,7 +132,7 @@ export function equipCost(kind: LandKind): EquipCost {
 }
 
 export function makeUnit(s: GameState, owner: number, kind: UnitKind, tile: number, colonist: Colonist | null): Unit {
-  const u: Unit = { id: s.nextId++, owner, kind, tile, quality: 'raw', moves: 0, cargo: {}, colonist, order: null, path: [], damage: 0, progress: 0, since: {}, flagged: true }
+  const u: Unit = { id: s.nextId++, owner, kind, tile, quality: 'raw', moves: 0, cargo: {}, colonist, order: null, path: [], damage: 0, progress: 0, since: {}, flagged: true, aboard: [] }
   u.moves = maxMoves(u)
   return u
 }

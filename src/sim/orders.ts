@@ -92,9 +92,6 @@ function runExplore(s: GameState, u: Unit, ctx: TurnContext) {
   if (!path) { u.order = null; return }
   u.path = path
   advance(s, u)
-  for (const n of neighbours8(w, h, u.tile)) s.world.tiles[n].explored = true
-  // a predecessor settlement in sight is scouted
-  for (const p of s.predecessors) if (dist(w, p.tile, u.tile) <= 2) p.scouted = true
 }
 
 function runHaul(s: GameState, u: Unit, ctx: TurnContext) {

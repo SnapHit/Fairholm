@@ -41,7 +41,7 @@ export const TERMS: Record<string, Term> = {
   consign: { title: 'Consign', text: 'Consigning sends goods to the Company market in lots of twenty-five. Each lot moves the price, so a dump walks it down while you watch.', state: s => `Payment arrives ${C.market.crossingTurns[s.settings.crossing]} turns after the ship leaves.` },
   word: { title: 'Word', text: 'Word is reputation at home. Consigning earns it, and when enough has gathered a colonist takes passage to join you.', state: s => `${s.charters[0].word} Word held; next passage needs ${passageCost(s)}.` },
   passage: { title: 'Passage', text: 'A passage brings one colonist across. Each costs more Word than the last; gold can buy one outright.', state: s => `${s.charters[0].passages} passages so far.` },
-  landing: { title: 'The landing', text: 'Your first settlement, where the Company ships call. Inland settlements haul here to consign, or build a consignment office.', state: s => s.settlements[0] ? `${s.settlements[0].name}.` : 'Not yet ashore.' },
+  landing: { title: 'The Landing', text: 'Your first settlement, where the lander beached. Freight landers come down offshore of any coastal settlement you own; inland settlements haul to one, or build a consignment office.', state: s => s.settlements.find(x => x.owner === 0) ? `${s.settlements.find(x => x.owner === 0)!.name}.` : 'Not yet ashore.' },
   settlement: { title: 'Settlement', text: 'A settlement works the nine tiles around it and the buildings within. Every colonist in it has one job.', state: s => `${s.settlements.filter(x => x.owner === 0).length} of yours.` },
   colonist: { title: 'Colonist', text: 'A person. Each works one tile or one building, or stands idle, and each eats two food a turn.', state: s => `${s.settlements.filter(x => x.owner === 0).reduce((a, st) => a + population(st), 0)} across your settlements.` },
   debtor: { title: 'Debtor', text: 'A colonist working off the passage the Company paid. Debtors produce two less in buildings and cannot be taught.', state: s => `${countStanding(s, 'debtor')} at present.` },
@@ -81,9 +81,10 @@ export const TERMS: Record<string, Term> = {
   dispatch: { title: 'The dispatch', text: 'What happened last turn, and why. Tap an entry for the cause.' },
   intent: { title: 'Objective', text: 'One line at the top saying what you are working toward. You can change it.' },
   season: { title: 'Season', text: 'Four a year, recolouring the map. Nothing else changes with the season.', state: s => SEASON_NAMES[season(s.turn)] + '.' },
-  anchorage: { title: 'Anchorage', text: 'A stretch of coast ships can land on. The recall fleet chooses one at random and narrows over three turns.' },
+  lander: { title: 'The lander', text: 'The capsule that brought you down, and your first ship. It sails where boats go. Beach it on the shore beside it to found the first settlement; it is consumed doing it, and the boat it carried stays on the water.' },
+  fog: { title: 'Fog', text: 'Ground is hidden until one of your units or settlements has seen it, and then stays known. Other charters are seen only within your sight. The recall fleet is always seen.' },
   garrison: { title: 'Garrison', text: 'Units inside a settlement. The works multiply their defence; the works also cap how many fit.' },
-  blockade: { title: 'Blockade', text: 'Company ships off your landing stop passages and consignments until they are driven off.' },
+  blockade: { title: 'Blockade', text: 'A hostile armed ship on the water beside a settlement stops its passages and consignments until it is driven off or leaves.' },
   difficulty: { title: 'The charter terms', text: 'Generous, standard, hard, punitive. They set the starting party, the charge and the fleet. They can be eased any time, never tightened.', state: s => `${s.settings.difficulty}.` },
 }
 

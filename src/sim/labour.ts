@@ -5,6 +5,8 @@ import { C, difficultyOf } from './constants'
 import type { GameState, Settlement, Colonist, Tile, TileGood, BuildingLine, Standing, TurnContext, Speciality } from './state'
 import type { System } from './turn'
 import { neighbours8 } from './worldgen'
+import { isBlockaded } from './military'
+import { isCoastalSettlement } from './settlement'
 
 /** The nine tiles a settlement works: its own and the eight around it. Art brief section 3. */
 export function workableTiles(s: GameState, st: Settlement): number[] {
@@ -95,16 +97,19 @@ export function goldPassageCost(s: GameState): number {
   return cost
 }
 
-/** Where an arriving colonist lands: the settlement at the player's Landing, else the nearest coastal one. */
+/** Where an arriving colonist comes ashore: the Landing, the player's first settlement, while it
+ *  stands and is on the coast; else the nearest coastal settlement of the player's to it. Freight
+ *  landers come down offshore of any coastal settlement, setting brief section 7. */
 export function landingSettlement(s: GameState): Settlement | null {
   const landing = s.charters[0].landing
   const own = s.settlements.filter(st => st.owner === 0)
   if (!own.length) return null
   const at = own.find(st => st.tile === landing)
-  if (at) return at
+  if (at && isCoastalSettlement(s, at)) return at
   const w = s.world.width
   const d = (a: number, b: number) => Math.max(Math.abs(a % w - b % w), Math.abs(Math.floor(a / w) - Math.floor(b / w)))
-  return own.slice().sort((a, b) => d(a.tile, landing) - d(b.tile, landing))[0]
+  const coastal = own.filter(st => isCoastalSettlement(s, st))
+  return (coastal.length ? coastal : own).slice().sort((a, b) => d(a.tile, landing) - d(b.tile, landing))[0]
 }
 
 export function makeColonist(s: GameState, standing: Standing, speciality: Speciality | null = null): Colonist {
@@ -183,12 +188,13 @@ export const labourSystem: System = {
       if (gold > 0) ctx.log({ kind: 'company', text: `Payment landed: ${Math.round(gold)} gold for consigned freight.`, why: 'Consignments are paid when the crossing completes.' })
     }
     // immigration
-    // passages stop while a wave is at sea, and for good once the charter is torn up and won
-    const blockaded = s.declaration?.declared && (s.declaration.won || s.declaration.waves.some(w => !w.landed))
+    // passages stop for good once the charter is torn up and won, and while the settlement they
+    // would come ashore at is blockaded
+    const won = s.declaration?.declared && s.declaration.won
     let guard = 0
-    while (!blockaded && ch.word >= passageCost(s) && guard++ < 3) {
+    while (!won && ch.word >= passageCost(s) && guard++ < 3) {
       const dest = landingSettlement(s)
-      if (!dest) break
+      if (!dest || isBlockaded(s, dest)) break
       ch.word -= passageCost(s)
       ch.passages++
       const col = makeColonist(s, 'debtor')

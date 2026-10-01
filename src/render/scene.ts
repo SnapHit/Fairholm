@@ -351,8 +351,6 @@ export class Scene {
         }
       }
     }
-    // the three landing sites, before the landing
-    if (s.turn === 0) for (const site of s.world.landingSites) setOverlayTile(tex, w, site, [0.97, 0.92, 0.78], 0.7)
     // a path preview for the active unit
     if (this.pathTiles && this.pathTiles.length) {
       this.pathTiles.forEach((t, i) => setOverlayTile(tex, w, t, [0.96, 0.93, 0.82], i === this.pathTiles!.length - 1 ? 0.75 : 0.42))

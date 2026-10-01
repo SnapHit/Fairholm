@@ -7,6 +7,7 @@
 import type { GameState, TurnContext, Unit, GoodId, QueueItem, PredecessorSettlement } from './state'
 import type { System } from './turn'
 import { C, difficultyOf } from './constants'
+import { dist } from './worldgen'
 import { sellPrice } from './market'
 import { chance, pick } from './rng'
 
@@ -109,9 +110,12 @@ export const predecessorsSystem: System = {
   resolve(s: GameState, ctx: TurnContext) {
     const diff = difficultyOf(s.settings.difficulty)
     for (const p of s.predecessors) {
-      // ground taken inside their territory alarms them
+      // ground taken inside their territory alarms them, and so does a settlement of the player's
+      // founded hard against it: the spacing rule keeps rings apart, so the nearest a settlement
+      // can stand is with its ring touching theirs, and that counts as much as a tile taken
       let taken = 0
       for (const t of p.territory) if (s.world.tiles[t].owner === 0) taken++
+      for (const st of s.settlements) if (st.owner === 0 && dist(s.world.width, st.tile, p.tile) <= C.predecessors.crowdingReach) taken++
       let rise = taken * C.predecessors.alarmPerTileTaken * diff.alarmSensitivity
       if (p.agent) rise *= C.predecessors.agentAlarmRelief
       const before = p.alarm

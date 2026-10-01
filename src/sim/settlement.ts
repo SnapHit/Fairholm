@@ -8,7 +8,7 @@ import { GOODS, emptyStock, emptyBuildings } from './state'
 import type { System } from './turn'
 import { tileYield, tileOffers, workerOutput, workableTiles, clerksRequired, buildingWorkers, defaultJob, makeColonist, foodBalance } from './labour'
 import { chance, next } from './rng'
-import { SETTLEMENT_NAMES, neighbours8 } from './worldgen'
+import { SETTLEMENT_NAMES, neighbours8, dist } from './worldgen'
 
 export function storageCapacity(st: Settlement): number {
   return C.buildings.storage[st.buildings.storage] ?? C.buildings.storage[0]
@@ -135,6 +135,21 @@ export function nextSettlementName(s: GameState): string {
   return 'Settlement ' + (s.settlements.length + 1)
 }
 
+/** Why a settlement cannot be founded on a tile, in the player's words, or null when it can.
+ *  Session brief section 8: any tile but mountain and water, and two settlements' centres at least
+ *  three tiles apart in every direction, anyone's, the predecessors' included, so that no two rings
+ *  ever share a tile. */
+export function foundingProblem(s: GameState, tile: number): string | null {
+  const w = s.world.width
+  const t = s.world.tiles[tile]
+  if (!t) return 'off the map'
+  if (t.terrain === 'water') return 'water'
+  if (t.terrain === 'mountain') return 'mountain'
+  for (const st of s.settlements) if (dist(w, st.tile, tile) < C.founding.spacing) return `too close to ${st.name}`
+  for (const p of s.predecessors) if (dist(w, p.tile, tile) < C.founding.spacing) return `too close to ${p.name}`
+  return null
+}
+
 /** Found a settlement. Claims the nine tiles where unowned. Every settlement begins with a meeting
  * house and the tier-one building its terrain suggests, remaining systems proposal section 4. */
 export function foundSettlement(s: GameState, tile: number, owner: number, colonists: Colonist[], name?: string): Settlement {
@@ -162,6 +177,7 @@ export function foundSettlement(s: GameState, tile: number, owner: number, colon
     lastProduced: {},
     abstractPop: 0,
     nameChosen: false,
+    seen: null,
   }
   st.buildings.meeting = 1
   const fb = orders.purpose === 'ask' ? null : firstBuilding(orders.purpose)
@@ -292,7 +308,7 @@ function grow(s: GameState, st: Settlement, ctx: TurnContext) {
   const rule = st.orders.growth
   if (rule.kind === 'send' && s.settlements[rule.settlement] && s.settlements[rule.settlement].owner === 0) {
     born.job = { kind: 'idle' }
-    s.units.push({ id: s.nextId++, owner: 0, kind: 'colonist', tile: st.tile, quality: 'raw', moves: 0, cargo: {}, colonist: born, order: { kind: 'goto', tile: s.settlements[rule.settlement].tile }, path: [], damage: 0, progress: 0, since: {}, flagged: true })
+    s.units.push({ id: s.nextId++, owner: 0, kind: 'colonist', tile: st.tile, quality: 'raw', moves: 0, cargo: {}, colonist: born, order: { kind: 'goto', tile: s.settlements[rule.settlement].tile }, path: [], damage: 0, progress: 0, since: {}, flagged: true, aboard: [] })
     ctx.log({ kind: 'growth', text: `${st.name}: a child came of age and set out for ${s.settlements[rule.settlement].name}.`, settlement: st.id })
   } else {
     born.job = defaultJob(s, st)

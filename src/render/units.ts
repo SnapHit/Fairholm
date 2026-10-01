@@ -404,50 +404,18 @@ export function buildArrival(
     }
   }
 
-  if (s.turn === 0 || always) {
-    const home = s.world.landingSites[0] ?? s.charters[0].landing
-    const hx = (home % w) + 0.5, hz = Math.floor(home / w) + 0.5
-    const [sx, sz] = openWaterNear(s, hx, hz, ARRIVAL.offshoreReach) ?? [hx, hz]
-    putLander(sx, sz, true)
-    // the boat, with a wake, moving toward the chosen site when one is chosen
-    const target = site ?? home
-    const tx = (target % w) + 0.5, tz = Math.floor(target / w) + 0.5
-    const t = Math.min(1, Math.max(0, progress))
-    const k = ARRIVAL.boatStart + (1 - ARRIVAL.boatStart) * t
-    const bx = sx + (tx - sx) * k, bz = sz + (tz - sz) * k
-    const heading = Math.atan2(tz - sz, tx - sx)
-    if (boatPiece) bills.push(waterBillboard(boatPiece, ARRIVAL.boatScale, bx, bz, boatPiece.facing === 'left' && tx > sx, sheetIndex, plain))
-    else {
-      const boatGeo = new THREE.CylinderGeometry(0.05, 0.12, 0.05, 4)
-      boatGeo.rotateY(Math.PI / 4); boatGeo.scale(1.8, 1, 1)
-      const boat = new THREE.Mesh(boatGeo, surfaceMaterial(light, 1, false, 0xe9e2cc))
-      boat.position.set(bx, 0.04, bz)
-      boat.rotation.y = -heading
-      group.add(boat)
-    }
-    group.add(buildWakes([{ x: bx, z: bz, heading }]))
-  }
-
-  // the Company's landers: one a wave, down offshore of the middle of the coast it might still land
-  // on, which tells you no more than its heading does. Military brief section 10: where it lands is
-  // genuinely unknown, so the lander does not stand at the anchorage
+  // the Company's landers: one a wave, where the simulation says it is, motoring in from its
+  // splashdown toward the coast over the approach, steaming on the turn it came down. Military
+  // brief section 9: the approach is always visible, whatever the fog hides
   const d = s.declaration
   if (d?.declared) {
-    let n = 0
     for (const wave of d.waves) {
       if (wave.landed) continue
-      const cands = waveCandidates(s, wave)
-      if (!cands.length) continue
-      let cx = 0, cz = 0
-      for (const a of cands) { cx += (a % w) + 0.5; cz += Math.floor(a / w) + 0.5 }
-      cx /= cands.length; cz /= cands.length
-      const at = openWaterNear(s, cx + (n % 2 ? 1 : -1) * ARRIVAL.waveSpacing * Math.ceil(n / 2), cz, ARRIVAL.waveOffshore)
-      if (!at) continue
       const since = C.military.approachTurns - wave.turnsToLand
-      putLander(at[0], at[1], since < ARRIVAL.waveSteamTurns)
-      n++
+      putLander((wave.at % w) + 0.5, Math.floor(wave.at / w) + 0.5, since < ARRIVAL.waveSteamTurns)
     }
   }
+  void site; void progress; void always; void boatPiece
 
   if (bills.length) {
     const mesh = buildBillboards(bills, light, sheets, sizes)

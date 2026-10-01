@@ -45,18 +45,19 @@ const STAGE = {
 }
 
 function stageTile(x: number, z: number): Tile {
-  if (z < STAGE.shore) return blankTile('water')
+  if (z < STAGE.shore) { const t = blankTile('water'); t.explored = true; return t }
   // grassland, ploughed: the renderer rolls a landform under every map that can carry low ground
   // under the waterline, and a stage wants its floor above it everywhere. Ploughed ground is
   // flattened to less than half the roll, which with this seed keeps the whole stage dry
   const t = blankTile('grassland')
+  t.explored = true
   t.improved = true
   if (x >= STAGE.wood) t.forest = x === STAGE.width - 1 ? 'deepTimber' : 'lightWoodland'
   return t
 }
 
 function stageUnit(id: number, owner: number, kind: UnitKind, tile: number, flagged = true, going: number[] = [], quality: Unit['quality'] = 'raw'): Unit {
-  return { id, owner, kind, tile, quality, moves: 0, cargo: {}, colonist: null, order: null, path: going, damage: 0, progress: 0, since: {}, flagged }
+  return { id, owner, kind, tile, quality, moves: 0, cargo: {}, colonist: null, order: null, path: going, damage: 0, progress: 0, since: {}, flagged, aboard: [] }
 }
 
 function stageSettlement(id: number, tile: number, pop: number): Settlement {
@@ -67,7 +68,7 @@ function stageSettlement(id: number, tile: number, pop: number): Settlement {
     stock: emptyStock(), frame: 0, foodStore: 0, hunger: 0, buildings: emptyBuildings(), imported: {},
     buildQueue: [], building: null,
     orders: { purpose: 'food', surplus: { threshold: 0, destination: { kind: 'hold' } }, growth: { kind: 'keep' }, reviewed: true },
-    grievance: 0, resolve: 0, education: null, conditions: {}, lastProduced: {}, abstractPop: pop, nameChosen: true,
+    grievance: 0, resolve: 0, education: null, conditions: {}, lastProduced: {}, abstractPop: pop, nameChosen: true, seen: null,
   }
 }
 
@@ -113,21 +114,24 @@ export function stageState(turn: number): GameState {
   units.push(stageUnit(id++, -1, 'companyShip', at(15, 7)))
   const settlements = STAGE.settlements.map((pop, i) => stageSettlement(i, at(3 + i * 8, STAGE.shore + 1), pop))
   for (const st of settlements) tiles[st.tile].worked = st.id
-  // the landing, so the arrival stands offshore to the right of the hulls; and anchorages along
-  // the shore with a wave at sea toward them, so the Company's lander stands offshore too
-  const landing = at(22, STAGE.shore)
-  const anchorages = [at(8, STAGE.shore - 1), at(20, STAGE.shore - 1), at(26, STAGE.shore - 1)]
+  // the player's lander at sea in fog, off to the right of the hulls, as the opening finds it; and
+  // a wave of the recall fleet motoring in toward the coast beside the middle settlement
+  const splash = at(22, 4)
+  const lander = stageUnit(id++, 0, 'lander', splash)
+  lander.aboard = [{ id: 9000, standing: 'contracted', speciality: null, job: { kind: 'idle' }, arrived: 1 }]
+  units.push(lander)
+  const landing = settlements[0].tile
   return {
     ...base,
     turn,
-    world: { width: w, height: hgt, tiles, anchorages, rivers: [], landingSites: [landing] },
+    world: { width: w, height: hgt, tiles, rivers: [], splashdowns: [splash] },
     charters: base.charters.map(c => ({ ...c, landing })),
     settlements,
     units,
     predecessors: [],
     declaration: {
       declared: true, turnDeclared: turn, interventionProgress: 0, nextWaveId: 2, won: false, lost: false, intervened: null,
-      waves: [{ id: 1, units: [], anchorage: anchorages[1], turnsToLand: C.military.approachTurns, landed: false, excluded: [] }],
+      waves: [{ id: 1, units: [], target: at(12, STAGE.shore), at: at(13, STAGE.shore - 3), turnsToLand: C.military.approachTurns, landed: false, excluded: [] }],
     },
     intent: 'The gallery.',
   }

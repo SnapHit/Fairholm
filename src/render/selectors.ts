@@ -3,26 +3,12 @@
 // file exists.
 
 import type { GameState, Wave } from '../sim/state'
-import { landComponents, dist } from '../sim/worldgen'
+import { waveCoast } from '../sim/fleet'
 
-/** The anchorages a wave at sea might still land at: the ones that serve the player's landmass,
- *  nearest the player's settlements where there are any within reach, less the coast its heading
- *  has ruled out. The same reading of the world as the fleet makes, so the two agree. */
+/** The coast a wave at sea might still come ashore on, as far as the player can tell: the fleet's
+ *  own reading, so the two agree. */
 export function waveCandidates(s: GameState, wave: Wave): number[] {
-  const w = s.world.width
-  const comp = landComponents(w, s.world.height, s.world.tiles).comp
-  const mine = s.settlements.filter(x => x.owner === 0)
-  const home = comp[s.charters[0].landing]
-  const all = s.world.anchorages.filter(a => {
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const x = (a % w) + dx, z = Math.floor(a / w) + dz
-      if (x < 0 || z < 0 || x >= w || z >= s.world.height) continue
-      if (comp[z * w + x] === home) return true
-    }
-    return false
-  })
-  const near = all.filter(a => mine.some(m => dist(w, a, m.tile) <= 10))
-  return (near.length ? near : all).filter(a => !wave.excluded.includes(a))
+  return waveCoast(s, wave)
 }
 
 /** Open water within reach of a point: the water tile with the most water around it, so a thing

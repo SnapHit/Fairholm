@@ -6,7 +6,7 @@
 // a turn can be undone.
 
 import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings, Settlement, BuildingLine } from '../sim/state'
-import { applyAction, createGame, siteDescriptions, type Action } from '../sim/actions'
+import { applyAction, createGame, type Action } from '../sim/actions'
 import { deriveQueue, unitLabel } from '../sim/queue'
 import { SYSTEMS } from '../sim/systems'
 import { SEASON_NAMES, season, year } from '../sim/turn'
@@ -58,10 +58,9 @@ export class App {
   audioStrip: HTMLElement
   turnStartedAt = performance.now()
   private toastTimer: number | null = null
-  private landingBusy = false
   private stacks: StackCounts
 
-  constructor(root: HTMLElement, state: GameState, resumed: boolean) {
+  constructor(root: HTMLElement, state: GameState, resumed: boolean, notice: string | null = null) {
     installTheme()
     this.root = root
     this.state = state
@@ -98,12 +97,20 @@ export class App {
     Save.requestPersistence()
     this.scene.rebuild(this.state, 'full')
     this.scene.warm()
-    if (this.state.turn === 0) this.beginArrival()
+    if (!resumed && !this.state.settlements.length) this.beginArrival()
     else {
-      this.scene.cam.centreOn(this.state.settlements[0]?.tile ?? this.state.charters[0].landing, C.feel.zoom.working)
+      this.scene.cam.centreOn(this.homeTile(), C.feel.zoom.working)
       this.refresh()
       if (resumed) this.showReturnScreen()
     }
+    if (notice) this.toast(notice)
+  }
+
+  /** Where the camera goes home to: the first settlement, else the lander, else where it came down. */
+  homeTile(): number {
+    const s = this.state
+    const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
+    return s.settlements.find(x => x.owner === 0)?.tile ?? lander?.tile ?? s.charters[0].landing
   }
 
   // ---- layout ---------------------------------------------------------------------------------
@@ -121,41 +128,22 @@ export class App {
   }
 
   // ---- arrival ----------------------------------------------------------------------------------
+  /** The opening: a fresh game at sea. The camera settles on the lander at working zoom, the queue
+   *  bar is there as always, and the first tap is the player's; the lines over the shot are the
+   *  interface's business, in opening.ts, and never block input. */
   beginArrival() {
-    const sites = this.state.world.landingSites
-    const first = sites[0]
-    this.scene.cam.centreOn(first, C.feel.zoom.working * 0.75)
-    this.scene.showArrival(this.state)
+    this.scene.cam.centreOn(this.homeTile(), C.feel.zoom.working)
     this.scene.requestDraw()
-    this.sheet = { kind: 'landing' }
+    this.sheet = { kind: 'queue' }
+    this.queueExpanded = false
+    Telemetry.newGame()
     this.refresh()
-  }
-
-  land(site: number) {
-    if (this.landingBusy || this.state.turn !== 0) return
-    // the choice of a landing site is the player's first tap, and the gesture that starts the music
-    this.music.unlock()
-    this.landingBusy = true
-    this.scene.glideTo(site, C.feel.zoom.working)
-    this.scene.animateLanding(this.state, site, () => {
-      try { applyAction(this.state, { t: 'land', site }) } catch (e) { this.landingBusy = false; this.toast(String((e as Error).message)); return }
-      this.landingBusy = false
-      Telemetry.newGame()
-      this.sheet = { kind: 'queue' }
-      this.queueExpanded = false
-      this.scene.arrivalSite = null
-      this.scene.rebuild(this.state, 'dynamic')
-      this.turnStartedAt = performance.now()
-      this.save()
-      this.refresh()
-      this.toast('Ashore. The bar below is everything that needs you.')
-    })
   }
 
   // ---- state changes -----------------------------------------------------------------------------
   /** Apply an action. Throws are swallowed into a toast; nothing happened. Returns success. */
   dispatch(a: Action, undoLabel?: string): boolean {
-    const undoable = undoLabel !== undefined && a.t !== 'endTurn' && a.t !== 'land'
+    const undoable = undoLabel !== undefined && a.t !== 'endTurn'
     let snapshot: GameState | null = null
     if (undoable) snapshot = structuredClone(this.state)
     try {
@@ -170,7 +158,10 @@ export class App {
       this.toast(undoLabel!, () => this.undo())
     }
     if (a.t === 'consign') { if (this.state.telemetry.firstConsignment === this.state.turn) Telemetry.firstConsignment(this.state.turn) }
-    if (a.t === 'found') { if (this.state.telemetry.secondSettlement === this.state.turn) Telemetry.secondSettlement(this.state.turn) }
+    if (a.t === 'found') {
+      if (this.state.telemetry.founded === this.state.turn && this.state.settlements.filter(x => x.owner === 0).length === 1) Telemetry.founded(this.state.turn)
+      if (this.state.telemetry.secondSettlement === this.state.turn) Telemetry.secondSettlement(this.state.turn)
+    }
     this.pathPreview = null
     this.scene.rebuild(this.state, 'dynamic')
     this.refresh()
@@ -192,7 +183,6 @@ export class App {
   }
 
   endTurn() {
-    if (this.state.turn === 0) return
     if (this.state.declaration?.won || this.state.declaration?.lost) return
     const q = this.queue
     const seconds = (performance.now() - this.turnStartedAt) / 1000
@@ -215,7 +205,6 @@ export class App {
   }
 
   save() {
-    if (this.state.turn === 0) return
     Save.writeLocal(this.state)
     Save.writeLastSettings(this.state.settings)
   }
@@ -230,8 +219,6 @@ export class App {
     this.pick = null
     this.scene.cam.view.selectedTile = null
     this.scene.cam.view.activeUnit = null
-    this.scene.arrivalProgress = 0
-    this.scene.arrivalSite = null
     this.scene.rebuild(this.state, 'full')
     this.beginArrival()
   }
@@ -246,7 +233,7 @@ export class App {
       this.scene.cam.view.selectedTile = null
       this.scene.cam.view.activeUnit = null
       this.scene.rebuild(this.state, 'full')
-      this.scene.cam.centreOn(this.state.settlements[0]?.tile ?? this.state.charters[0].landing, C.feel.zoom.working)
+      this.scene.cam.centreOn(this.homeTile(), C.feel.zoom.working)
       this.sheet = { kind: 'queue' }
       this.queueExpanded = false
       this.save()
@@ -258,19 +245,6 @@ export class App {
   // ---- input routing ---------------------------------------------------------------------------
   tap(px: number, py: number) {
     const s = this.state
-    if (s.turn === 0) {
-      // landing: a tap on or near a site goes ashore there
-      const t = tileUnderPoint(s, this.scene.cam, px, py)
-      if (t === null) return
-      const w = s.world.width
-      let best: number | null = null, bd = 3
-      for (const site of s.world.landingSites) {
-        const d = Math.hypot((site % w) - (t % w), Math.floor(site / w) - Math.floor(t / w))
-        if (d < bd) { bd = d; best = site }
-      }
-      if (best !== null) this.land(best)
-      return
-    }
     const p = pick(s, this.scene.cam, px, py, this.scene.unitPositions)
     const v = this.scene.cam.view
     if (p.unit !== null) {
@@ -359,7 +333,6 @@ export class App {
 
   hold(px: number, py: number) {
     const s = this.state
-    if (s.turn === 0) return
     const v = this.scene.cam.view
     const t = tileUnderPoint(s, this.scene.cam, px, py)
     if (t === null) return
@@ -399,7 +372,7 @@ export class App {
   holdRing(px: number, py: number, k: number) {
     if (k < 0) { this.ring.style.display = 'none'; this.holdPreviewed = false; return }
     // the target shows what will happen before the hold completes
-    if (!this.holdPreviewed && this.scene.cam.view.activeUnit !== null && this.state.turn > 0) {
+    if (!this.holdPreviewed && this.scene.cam.view.activeUnit !== null) {
       this.holdPreviewed = true
       const t = tileUnderPoint(this.state, this.scene.cam, px, py)
       if (t !== null && this.previewPath(t)) { this.scene.cam.view.selectedTile = t; this.afterSelect(); if (this.sheet.kind === 'unit') this.renderSheet() }
@@ -576,10 +549,6 @@ export class App {
   renderHud() {
     const s = this.state
     clear(this.hud)
-    if (s.turn === 0) {
-      this.hud.append(h('div', { class: 'intent' }, 'Choose where to go ashore.'))
-      return
-    }
     const ch = s.charters[0]
     this.hud.append(
       h('div', { class: 'intent', onClick: () => this.open({ kind: 'intent' }) }, s.intent),
@@ -600,8 +569,6 @@ export class App {
   renderQueueBar() {
     const s = this.state
     clear(this.queuebar)
-    this.queuebar.style.display = s.turn === 0 ? 'none' : ''
-    if (s.turn === 0) return
     const q = this.queue
     const total = q.shown.reduce((a, g) => a + g.items.length, 0) + q.folded.reduce((a, g) => a + g.items.length, 0)
     const top = q.shown[0]
@@ -629,7 +596,6 @@ export class App {
     this.sheetBody.scrollTop = 0
     this.sheetEl.style.transform = ''
     if (!showing) return
-    if (this.sheet.kind === 'landing') { this.sheetBody.append(this.renderLanding()); return }
     if (this.sheet.kind === 'queue') { this.sheetBody.append(this.renderQueue()); return }
     this.sheetBody.append(renderSheet(this, this.sheet))
   }
@@ -657,19 +623,6 @@ export class App {
     }
     grip.addEventListener('pointerup', end)
     grip.addEventListener('pointercancel', end)
-  }
-
-  renderLanding(): HTMLElement {
-    const sites = siteDescriptions(this.state)
-    return h('div', { class: 'panel' },
-      h('h2', {}, 'Where to go ashore'),
-      h('p', { class: 'muted' }, 'Three places the boat can make. Tap one to land there.'),
-      sites.map((site, i) => h('div', { class: 'card tappable', onClick: () => this.land(site.tile) },
-        h('div', { class: 'card-title' }, ['The first cove', 'The second cove', 'The third cove'][i] ?? `Site ${i + 1}`),
-        h('div', { class: 'card-body' }, site.text),
-        h('div', { class: 'card-actions' }, button('Look', (ev?: unknown) => { (ev as Event)?.stopPropagation?.(); this.scene.glideTo(site.tile, C.feel.zoom.working) }, 'ghost'), button('Go ashore here', () => this.land(site.tile), 'primary')),
-      )),
-    )
   }
 
   renderQueue(): HTMLElement {
@@ -787,7 +740,7 @@ export class App {
     const s = this.state
     const title = won === true ? 'The charter is torn up' : won === false ? 'The charter holds' : 'The end of the charter'
     const body = won === true ? 'The recall fleet is spent. Fairholm answers to no one across the sea.'
-      : won === false ? 'The Company retook the landing. Fairholm is a Company holding again.'
+      : won === false ? 'The Company retook the Landing. Fairholm is a Company holding again.'
       : `${s.settings.turns} turns are done. ${s.declaration?.declared ? 'The war was not finished.' : 'The charter was never torn up.'}`
     const box = h('div', { class: 'screen' },
       h('h1', {}, title),

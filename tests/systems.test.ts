@@ -11,11 +11,10 @@ import { makeUnit, findPath } from '../src/sim/units'
 import { isLand, neighbours8, dist } from '../src/sim/worldgen'
 import { nationalResolve } from '../src/sim/grievance'
 import type { GameState } from '../src/sim/state'
+import { arrived, playOpening } from './helpers'
 
 function landed(seed = 'market-seed', size: 'small' | 'standard' = 'small'): GameState {
-  const s = createGame(seed, { size, difficulty: 'standard' }, 1)
-  applyAction(s, { t: 'land', site: s.world.landingSites[0] })
-  return s
+  return arrived(seed, { size, difficulty: 'standard' }, 1)
 }
 
 describe('market', () => {
@@ -67,7 +66,7 @@ describe('determinism', () => {
   it('a turn resolves identically twice with the same play rng state', () => {
     const a = createGame('det', { size: 'small' }, 123)
     const b = createGame('det', { size: 'small' }, 123)
-    for (const s of [a, b]) applyAction(s, { t: 'land', site: s.world.landingSites[1] })
+    for (const s of [a, b]) playOpening(s)
     // fix the play stream to the same value on both
     a.rng.play = [1, 2, 3, 4]
     b.rng.play = [1, 2, 3, 4]
@@ -80,7 +79,7 @@ describe('determinism', () => {
 describe('late game queue stress', () => {
   it('forty settlements derive a queue quickly and fold correctly', () => {
     const s = createGame('stress', { size: 'large', difficulty: 'standard' }, 7)
-    applyAction(s, { t: 'land', site: s.world.landingSites[0] })
+    playOpening(s)
     const w = s.world.width, h = s.world.height
     // plant forty settlements on viable land, spaced out
     let planted = 1
@@ -131,8 +130,8 @@ describe('late game queue stress', () => {
 describe('a whole game on autopilot', () => {
   it('runs through a declaration and a war without throwing', () => {
     const s = createGame('whole-game', { size: 'small', difficulty: 'standard' }, 99)
-    applyAction(s, { t: 'land', site: s.world.landingSites[0] })
-    const home = s.settlements[0]
+    playOpening(s)
+    const home = s.settlements.find(x => x.owner === 0)!
     // a crude autopilot: auto-assign, queue civic and military buildings, arm when arms arrive, declare when allowed
     let declaredAt = -1
     for (let turn = 1; turn <= 300; turn++) {
@@ -150,7 +149,10 @@ describe('a whole game on autopilot', () => {
         if (s.charters[0].gold > 300 && st.stock.arms < 30) try { applyAction(s, { t: 'buy', settlement: st.id, good: 'arms', amount: 20 }) } catch { /* fine */ }
       }
       if (s.company.demand) applyAction(s, { t: 'answerDemand', accept: turn % 2 === 0 })
-      // the spare colonist founds a second settlement a few tiles off, once
+      // one colonist walks out of the roster and founds a second settlement a few tiles off, once
+      if (turn > 3 && s.settlements.filter(x => x.owner === 0).length < 2 && !s.units.some(u => u.owner === 0 && u.kind === 'colonist') && home.colonists.length >= 4) {
+        try { applyAction(s, { t: 'equip', settlement: home.id, colonist: home.colonists.length - 1, as: 'colonist' }) } catch { /* fine */ }
+      }
       const spare = s.units.find(u => u.owner === 0 && u.kind === 'colonist')
       if (spare && turn > 3 && s.settlements.filter(x => x.owner === 0).length < 2) {
         const w = s.world.width

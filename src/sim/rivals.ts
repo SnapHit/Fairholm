@@ -7,26 +7,44 @@
 import type { GameState, TurnContext, QueueItem, Settlement, GoodId } from './state'
 import type { System } from './turn'
 import { C, difficultyOf } from './constants'
-import { foundSettlement } from './settlement'
+import { foundSettlement, foundingProblem } from './settlement'
 import { recompute } from './market'
 import { chance, pick, next } from './rng'
 import { neighbours8, isLand, dist } from './worldgen'
-import { spawnHostile, landTileNear } from './military'
-import { isArmed, isHull } from './units'
+import { spawnHostile } from './military'
+import { isArmed, isHull, findPath, advance, maxMoves } from './units'
+import { bestLanding } from './autopilot'
+import { canSee } from './fog'
 
 const RIVAL_GOODS: GoodId[] = ['timber', 'ore', 'metal', 'linen', 'cordage', 'dye', 'attar', 'horses', 'flax', 'hemp', 'madder']
 
 function rivalSettlements(s: GameState, id: number): Settlement[] { return s.settlements.filter(x => x.owner === id) }
 
-export function foundRivals(s: GameState, ctx: TurnContext) {
+/** The rivals' landers, down in fog at their own splashdowns, sail for the best coast within reach
+ *  and found by the player's own rules: beside the shore, on legal ground, three tiles from anyone.
+ *  Setting brief section 7. A rival's people are abstract, so its lander carries no one and its
+ *  first settlement begins with three. The player learns of it only if it is in sight. */
+export function rivalVoyages(s: GameState, ctx: TurnContext) {
+  const w = s.world.width, h = s.world.height
   for (const ch of s.charters) {
-    if (ch.player) continue
-    if (rivalSettlements(s, ch.id).length) continue
-    const tile = landTileNear(s, ch.landing, ctx)
-    const st = foundSettlement(s, tile, ch.id, [], `${ch.name.split(' ')[0]} Landing`)
-    st.abstractPop = 3
-    st.nameChosen = true
-    ch.strength = 2
+    if (ch.player || ch.fell) continue
+    const lander = s.units.find(u => u.owner === ch.id && u.kind === 'lander')
+    if (!lander) continue
+    const site = bestLanding(s, lander.tile)
+    if (!site) continue
+    if (neighbours8(w, h, lander.tile).includes(site.tile)) {
+      const st = foundSettlement(s, site.tile, ch.id, [], `${ch.name.split(' ')[0]} Landing`)
+      st.abstractPop = 3
+      st.nameChosen = true
+      ch.strength = 2
+      ch.landing = st.tile
+      s.units = s.units.filter(u => u !== lander)
+      if (canSee(s, site.tile)) ctx.log({ kind: 'rival', text: `${ch.name} came ashore and founded ${st.name}.`, tile: site.tile })
+      continue
+    }
+    lander.moves = maxMoves(lander)
+    const path = findPath(s, lander, lander.tile, site.water)
+    if (path && path.length) { lander.path = path; advance(s, lander) }
   }
 }
 
@@ -34,8 +52,8 @@ function viableSite(s: GameState, tile: number): boolean {
   const t = s.world.tiles[tile]
   if (!isLand(t) || t.terrain === 'mountain') return false
   const w = s.world.width
-  if (s.settlements.some(st => dist(w, st.tile, tile) < 3)) return false
-  if (s.predecessors.some(p => p.territory.includes(tile))) return false
+  // the same spacing as the player: three tiles from any centre, the predecessors' included
+  if (foundingProblem(s, tile) !== null) return false
   let food = 0
   for (const n of neighbours8(w, s.world.height, tile)) { const nt = s.world.tiles[n]; if (nt.terrain === 'grassland' || nt.terrain === 'plains' || nt.terrain === 'water') food++ }
   return food >= 2
@@ -72,6 +90,7 @@ export const rivalsSystem: System = {
     const w = s.world.width
     const mine = s.settlements.filter(x => x.owner === 0)
     const player = s.market.tables[0]
+    rivalVoyages(s, ctx)
     for (const ch of s.charters) {
       if (ch.player || ch.fell) continue
       const own = rivalSettlements(s, ch.id)

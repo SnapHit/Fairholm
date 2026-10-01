@@ -9,6 +9,7 @@ import type { System } from './turn'
 import { wordForValue } from './labour'
 import { chance, int } from './rng'
 import { isCoastalSettlement } from './settlement'
+import { isBlockaded } from './military'
 
 export function initMarket(charters: number): Market {
   const tables: PriceTable[] = []
@@ -40,19 +41,27 @@ export function buyPrice(s: GameState, g: GoodId, charter = 0): number {
   return s.market.tables[charter][g].price + spread
 }
 
-/** The third soft pressure: freight distance from the Landing. */
+/** The third soft pressure: freight distance to the water. Freight landers come down offshore of
+ *  any coastal settlement the player owns, so a coastal settlement pays nothing and an inland one
+ *  pays for the haul to the nearest coastal one. Setting brief section 7. */
 export function freightLoss(s: GameState, st: Settlement): number {
   if (st.buildings.consignment > 0) return 0
+  if (isCoastalSettlement(s, st)) return 0
   const w = s.world.width
-  const a = st.tile, b = s.charters[0].landing
-  const d = Math.max(Math.abs(a % w - b % w), Math.abs(Math.floor(a / w) - Math.floor(b / w)))
+  let d = Infinity
+  for (const o of s.settlements) {
+    if (o.owner !== 0 || !isCoastalSettlement(s, o)) continue
+    const dd = Math.max(Math.abs(o.tile % w - st.tile % w), Math.abs(Math.floor(o.tile / w) - Math.floor(st.tile / w)))
+    if (dd < d) d = dd
+  }
+  if (!isFinite(d)) return C.market.freightLossMax
   return Math.min(C.market.freightLossMax, d * C.market.freightLossPerTile)
 }
 
 /** Can this settlement consign at all? Coastal, or holding a consignment office. Inland settlements
  * without an office must haul to the coast. See DECISIONS.md. */
 export function canConsign(s: GameState, st: Settlement): { ok: boolean; reason?: string } {
-  if (s.declaration?.declared && !s.declaration.won && s.declaration.waves.some(w => !w.landed)) return { ok: false, reason: 'Blockaded. Company ships are off the coast while a wave is at sea.' }
+  if (isBlockaded(s, st)) return { ok: false, reason: 'Blockaded. A hostile armed ship lies off the settlement.' }
   if (st.buildings.consignment > 0) return { ok: true }
   if (isCoastalSettlement(s, st)) return { ok: true }
   return { ok: false, reason: 'Inland. Haul goods to the coast, or build a consignment office.' }

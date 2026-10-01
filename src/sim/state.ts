@@ -176,6 +176,9 @@ export interface Settlement {
   /** Rival settlements carry an abstract size instead of colonists. */
   abstractPop: number
   nameChosen: boolean
+  /** What the player last saw of a settlement that is not theirs, for the map to draw it as it was
+   *  seen rather than as it is. Null until seen. The player's own are always in sight. */
+  seen: { turn: number; pop: number; buildings: Record<BuildingLine, number> } | null
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -184,7 +187,9 @@ export interface Settlement {
 export type LandKind = 'colonist' | 'militia' | 'outrider' | 'battery' | 'damagedBattery' | 'improver' | 'hauler'
 export type HullKind = 'lighter' | 'trader' | 'raider' | 'cutter'
 export type CompanyKind = 'regulars' | 'horse' | 'siegeTrain' | 'damagedSiegeTrain' | 'companyShip'
-export type UnitKind = LandKind | HullKind | CompanyKind
+/** The lander: the first ship, a heavy capsule that splashes down in open sea, sails where boats
+ *  go, and is consumed founding the first settlement. Setting brief section 7. */
+export type UnitKind = LandKind | HullKind | CompanyKind | 'lander'
 export type Quality = 'raw' | 'hardened' | 'sworn'
 
 export type UnitOrder =
@@ -223,6 +228,7 @@ export interface Unit {
   progress: number             // improver work done on current task; breach progress for siege trains
   since: Record<string, number>
   flagged: boolean             // raiders: false means unflagged and unattributed
+  aboard: Colonist[]           // the lander's passengers; empty for everything else
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -250,7 +256,7 @@ export interface Charter {
   declared: boolean
   independent: boolean
   fell: boolean                // rival lost its war and reverted to its Company
-  landing: number              // tile index of its Landing anchorage
+  landing: number              // the first settlement's tile once founded; the splashdown before that
   charge: number               // its own Company's charge on consignments
   unlocked: Record<string, boolean>   // onboarding: which systems have been introduced
   explained: Record<string, boolean>  // onboarding: one sentence, once
@@ -308,10 +314,15 @@ export interface FleetUnit { kind: CompanyKind; quality: Quality }
 export interface Wave {
   id: number
   units: FleetUnit[]
-  anchorage: number            // chosen by rng.play, never persisted before landing
+  /** The coastal land tile it will come ashore on, chosen by rng.play from the coast within two
+   *  tiles of a player settlement. Known to the simulation from the first turn and to the player
+   *  only by what the narrowing rules out. */
+  target: number
+  /** Where its landers are now: a water tile, moving in from the splashdown over three turns. */
+  at: number
   turnsToLand: number          // 3, 2, 1, then lands at 0
   landed: boolean
-  excluded: number[]           // anchorages ruled out so far, for the narrowing display
+  excluded: number[]           // coast tiles ruled out so far, for the narrowing display
 }
 
 export interface Declaration {
@@ -377,15 +388,14 @@ export interface GameState {
   worldgenVersion: number
   seed: string
   settings: Settings
-  turn: number                 // 1 = first month after landing. 0 = not yet landed
+  turn: number                 // 1 = the first month, at sea; the voyage counts from here
 
   world: {
     width: number
     height: number
     tiles: Tile[]              // flat, index = y * width + x
-    anchorages: number[]       // tile indices
     rivers: RiverSegment[]
-    landingSites: number[]     // the three offered at arrival, in order
+    splashdowns: number[]      // where each charter's lander came down, by charter index; open sea
   }
 
   charters: Charter[]          // index 0 is always the player
@@ -418,6 +428,7 @@ export interface GameState {
     firstConsignment: number | null
     secondSettlement: number | null
     foldOpened: number | null
+    founded: number | null      // the turn the first settlement was founded; turns at sea is this less one
   }
   /** Queue bookkeeping that must survive a turn: opportunities that have appeared once. */
   opportunitiesShown: Record<string, number>

@@ -1,6 +1,10 @@
 // World generation. Deterministic from the seed, versioned by WORLDGEN_VERSION, validated and
-// retried per session brief section 8. Uses rng.world only. Rivers, anchorages, primes, gold
-// reserves, charter starts and predecessor placement all come from here.
+// retried per session brief section 8. Uses rng.world only. Rivers, primes, gold reserves, the
+// charters' splashdowns and predecessor placement all come from here.
+//
+// There are no anchorages and no offered landing sites. Each charter's lander comes down in open
+// sea a few turns' sailing from a coast that can feed it, and where it goes ashore is its own
+// business. The generator's job is to put the splashdowns somewhere fair: see `splashdowns` below.
 
 import { C, WORLDGEN_VERSION } from './constants'
 import { seedRng, next, int, chance, pick, shuffle, fork, makeNoise, fbm } from './rng'
@@ -11,10 +15,13 @@ export interface World {
   width: number
   height: number
   tiles: Tile[]
-  anchorages: number[]
   rivers: RiverSegment[]
-  charterLandings: number[]   // index 0 player
-  landingSites: number[]      // three offered to the player
+  /** Where each charter's lander comes down, by charter index, the player first. Open sea. */
+  splashdowns: number[]
+  /** The coast each lander is nearest to: a viable coastal land tile, by charter index. The
+   *  player is free to go anywhere; this is what the generator measured fairness against, and
+   *  what a rival's lander makes for. */
+  coasts: number[]
   predecessors: PredecessorSettlement[]
   attempts: number
 }
@@ -47,7 +54,7 @@ export function dist(w: number, a: number, b: number): number {
 export function isLand(t: Tile): boolean { return t.terrain !== 'water' }
 
 export function blankTile(terrain: TerrainId): Tile {
-  return { terrain, forest: null, river: 0, road: false, improved: false, prime: null, goldReserve: 0, owner: null, worked: null, workings: false, explored: true }
+  return { terrain, forest: null, river: 0, road: false, improved: false, prime: null, goldReserve: 0, owner: null, worked: null, workings: false, explored: false }
 }
 
 /** Flood-fill land components. Returns component id per tile, -1 for water. */
@@ -251,71 +258,67 @@ function generateOnce(seed: string, settings: Settings, attempt: number): World 
     if (options.length) t.prime = pick(primeRng, options)
   }
 
-  // ---- anchorages -------------------------------------------------------------------------
-  const anchorRng = fork(rng, 'anchorages')
-  const coastTiles: number[] = []
-  for (let i = 0; i < N; i++) {
-    if (!isCoastal(w, h, tiles, i)) continue
-    if (tiles[i].terrain === 'mountain') continue
-    // needs open water: at least three water neighbours of eight
-    let water = 0
-    for (const n of neighbours8(w, h, i)) if (tiles[n].terrain === 'water') water++
-    if (water >= 3) coastTiles.push(i)
-  }
-  shuffle(anchorRng, coastTiles)
-  const wanted = Math.max(5, Math.round(coastTiles.length / C.worldgen.anchoragePerCoastTiles))
-  const anchorages: number[] = []
-  for (const i of coastTiles) {
-    if (anchorages.length >= wanted) break
-    if (anchorages.every(a => dist(w, a, i) >= C.worldgen.anchorageSpacing)) anchorages.push(i)
-  }
-
-  // ---- charter landings ------------------------------------------------------------------
+  // ---- splashdowns ----------------------------------------------------------------------------
+  // A viable coast is a coastal land tile with food, timber and fresh water within reach, on a
+  // landmass large enough to live on. Every water tile's sailing distance to the nearest one is
+  // a flood fill over water from all of them at once. A splashdown is an open sea tile, nothing
+  // but water around it, whose distance lies within the voyage band; the player's is measured
+  // against the largest landmass's coast so the first game is on the main country, and each
+  // charter's is as far from the others as the map allows. Predecessors are placed afterwards and
+  // kept out of sight of every splashdown.
   const { comp, sizes } = landComponents(w, h, tiles)
-  const landingRng = fork(rng, 'landings')
-  const viableAnchor = (i: number) => landingViable(w, h, tiles, i) && sizes[comp[i]] >= 40
-  const candidates = shuffle(landingRng, anchorages.filter(viableAnchor))
-  const sep = C.worldgen.charterSeparation[settings.size]
-  const landings: number[] = []
-  // the player gets the largest landmass's candidate first
+  const viableCoast = (i: number) => isCoastal(w, h, tiles, i) && landingViable(w, h, tiles, i) && sizes[comp[i]] >= C.worldgen.homeLandmassMin
   const bigComp = sizes.indexOf(Math.max(...sizes))
-  const playerFirst = candidates.filter(i => comp[i] === bigComp)
-  const rest = candidates.filter(i => comp[i] !== bigComp)
-  for (const i of [...playerFirst, ...rest]) {
-    if (landings.length >= 1 + C.rivals.count) break
-    if (landings.every(l => dist(w, l, i) >= sep)) landings.push(i)
-  }
-  // relax separation if the map is tight
-  if (landings.length < 1 + C.rivals.count) {
-    for (const i of [...playerFirst, ...rest]) {
-      if (landings.length >= 1 + C.rivals.count) break
-      if (!landings.includes(i) && landings.every(l => dist(w, l, i) >= Math.floor(sep * 0.6))) landings.push(i)
+  const splashRng = fork(rng, 'splashdowns')
+  const sep = C.worldgen.charterSeparation[settings.size]
+  const band = voyageBand()
+  const splashdowns: number[] = []
+  const coasts: number[] = []
+  // the player's: the main landmass's coast only
+  const playerDist = sailingDistance(w, h, tiles, i => viableCoast(i) && comp[i] === bigComp)
+  const anyDist = sailingDistance(w, h, tiles, viableCoast)
+  const pickSplash = (d: Int32Array, taken: number[]): number => {
+    const cands: number[] = []
+    for (let i = 0; i < N; i++) {
+      if (!isOpenSea(w, h, tiles, i) || d[i] < band[0] || d[i] > band[1]) continue
+      if (!nothingInSight(w, h, tiles, i)) continue
+      if (taken.some(t => dist(w, t, i) < sep)) continue
+      cands.push(i)
     }
+    if (!cands.length) return -1
+    return pick(splashRng, cands)
   }
-
-  // three landing sites for the player: the player's anchorage and the two nearest viable ones on
-  // the same landmass, so the choice is between coves of one coast rather than between continents
-  const landingSites: number[] = []
-  if (landings.length) {
-    const home = landings[0]
-    const near = anchorages
-      .filter(a => comp[a] === comp[home] && viableAnchor(a) && !landings.slice(1).some(l => dist(w, l, a) < Math.floor(sep * 0.5)))
-      .sort((a, b) => dist(w, home, a) - dist(w, home, b))
-    for (const a of near) {
-      if (landingSites.length >= C.onboarding.landingSites) break
-      if (landingSites.every(s => dist(w, s, a) >= 3)) landingSites.push(a)
-    }
-    // fall back to viable coves near home that are not yet anchorages, and make them anchorages,
-    // so the arrival still uses an anchorage
-    if (landingSites.length < C.onboarding.landingSites) {
-      const coves = coastTiles
-        .filter(a => comp[a] === comp[home] && landingViable(w, h, tiles, a) && !anchorages.includes(a) && !landings.slice(1).some(l => dist(w, l, a) < Math.floor(sep * 0.5)))
-        .sort((a, b) => dist(w, home, a) - dist(w, home, b))
-      for (const a of coves) {
-        if (landingSites.length >= C.onboarding.landingSites) break
-        if (landingSites.every(s => dist(w, s, a) >= 3) && dist(w, home, a) <= 18) { landingSites.push(a); anchorages.push(a) }
+  const nearestCoast = (from: number, d: Int32Array, test: (i: number) => boolean): number => {
+    // walk the distance field downhill to the coast it was measured from
+    let cur = from
+    for (let guard = 0; guard < w + h; guard++) {
+      let best = -1, bd = d[cur]
+      for (const n of neighbours8(w, h, cur)) {
+        if (test(n)) return n
+        if (tiles[n].terrain === 'water' && d[n] >= 0 && d[n] < bd) { bd = d[n]; best = n }
       }
+      if (best < 0) break
+      cur = best
     }
+    for (const n of neighbours8(w, h, cur)) if (test(n)) return n
+    return -1
+  }
+  const player = pickSplash(playerDist, [])
+  if (player >= 0) {
+    splashdowns.push(player)
+    coasts.push(nearestCoast(player, playerDist, i => viableCoast(i) && comp[i] === bigComp))
+  }
+  for (let r = 0; r < C.rivals.count && splashdowns.length; r++) {
+    let at = pickSplash(anyDist, splashdowns)
+    // a tight map relaxes the separation rather than losing a charter
+    if (at < 0) {
+      const cands: number[] = []
+      for (let i = 0; i < N; i++) if (isOpenSea(w, h, tiles, i) && nothingInSight(w, h, tiles, i) && anyDist[i] >= band[0] && anyDist[i] <= band[1] && splashdowns.every(t => dist(w, t, i) >= Math.floor(sep * 0.6))) cands.push(i)
+      if (cands.length) at = pick(splashRng, cands)
+    }
+    if (at < 0) break
+    splashdowns.push(at)
+    coasts.push(nearestCoast(at, anyDist, viableCoast))
   }
 
   // ---- predecessors -----------------------------------------------------------------------
@@ -328,8 +331,9 @@ function generateOnce(seed: string, settings: Settings, attempt: number): World 
   let k = 0
   for (const i of predCandidates) {
     if (predecessors.length >= predWanted) break
-    if (landings.some(l => dist(w, l, i) < 6)) continue
-    if (landingSites.some(l => dist(w, l, i) < 5)) continue
+    // out of sight of every splashdown, and clear of the coast each lander makes for
+    if (splashdowns.some(l => dist(w, l, i) <= C.lander.sight + 1)) continue
+    if (coasts.some(l => dist(w, l, i) < 6)) continue
     if (predecessors.some(p => dist(w, p.tile, i) < 6)) continue
     const territory = neighbours8(w, h, i).filter(n => isLand(tiles[n]))
     territory.push(i)
@@ -354,7 +358,51 @@ function generateOnce(seed: string, settings: Settings, attempt: number): World 
     })
   }
 
-  return { width: w, height: h, tiles, anchorages, rivers, charterLandings: landings, landingSites, predecessors, attempts: attempt + 1 }
+  return { width: w, height: h, tiles, rivers, splashdowns, coasts, predecessors, attempts: attempt + 1 }
+}
+
+/** The band of sailing distances a splashdown may lie at, in tiles: the voyage in turns times the
+ *  lander's speed, give or take the slack. */
+export function voyageBand(): [number, number] {
+  const turns = C.lander.voyageTurns, slack = C.lander.voyageSlack, moves = C.lander.moves
+  return [(turns - slack) * moves, (turns + slack) * moves]
+}
+
+/** No land within the lander's sight of a tile, and a tile past it: the opening shows a little
+ *  open sea and haze, and nothing else is known. Onboarding brief section 2. */
+export function nothingInSight(w: number, h: number, tiles: Tile[], i: number): boolean {
+  const r = C.lander.sight + 1
+  const x = i % w, z = Math.floor(i / w)
+  for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    const xx = x + dx, zz = z + dz
+    if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue
+    if (tiles[zz * w + xx].terrain !== 'water') return false
+  }
+  return true
+}
+
+/** Open sea: water with nothing but water around it, inside the map. */
+export function isOpenSea(w: number, h: number, tiles: Tile[], i: number): boolean {
+  if (tiles[i].terrain !== 'water') return false
+  const ns = neighbours8(w, h, i)
+  return ns.length === 8 && ns.every(n => tiles[n].terrain === 'water')
+}
+
+/** Every water tile's sailing distance, in tiles, from the nearest land tile passing `test`: a
+ *  flood fill over water, eight ways, which is how a hull moves. Minus one where no such coast is
+ *  reachable. */
+export function sailingDistance(w: number, h: number, tiles: Tile[], test: (i: number) => boolean): Int32Array {
+  const d = new Int32Array(w * h).fill(-1)
+  const queue: number[] = []
+  for (let i = 0; i < tiles.length; i++) {
+    if (!test(i)) continue
+    for (const n of neighbours8(w, h, i)) if (tiles[n].terrain === 'water' && d[n] < 0) { d[n] = 1; queue.push(n) }
+  }
+  for (let q = 0; q < queue.length; q++) {
+    const c = queue[q]
+    for (const n of neighbours8(w, h, c)) if (tiles[n].terrain === 'water' && d[n] < 0) { d[n] = d[c] + 1; queue.push(n) }
+  }
+  return d
 }
 
 /** The landing invariant: food, timber and fresh water within reach. */
@@ -395,18 +443,29 @@ function chainsReachable(w: number, h: number, tiles: Tile[], comp: Int32Array, 
 
 function validate(world: World, settings: Settings): string | null {
   const { width: w, height: h, tiles } = world
-  if (world.charterLandings.length < 1) return 'no landing'
-  if (world.charterLandings.length < 1 + C.rivals.count) return 'too few charter landings'
-  if (world.landingSites.length < C.onboarding.landingSites) return 'too few landing sites'
+  if (world.splashdowns.length < 1) return 'no splashdown'
+  if (world.splashdowns.length < 1 + C.rivals.count) return 'too few splashdowns'
   const { comp, sizes } = landComponents(w, h, tiles)
-  for (const l of world.charterLandings) {
-    if (!landingViable(w, h, tiles, l)) return 'landing not viable'
-    if (chainsReachable(w, h, tiles, comp, l) < C.worldgen.minReachableChains) return 'too few chains'
+  const band = voyageBand()
+  const sep = C.worldgen.charterSeparation[settings.size]
+  const viable = (i: number) => isCoastal(w, h, tiles, i) && landingViable(w, h, tiles, i) && sizes[comp[i]] >= C.worldgen.homeLandmassMin
+  const d = sailingDistance(w, h, tiles, viable)
+  for (let k = 0; k < world.splashdowns.length; k++) {
+    const at = world.splashdowns[k], coast = world.coasts[k]
+    if (!isOpenSea(w, h, tiles, at)) return 'splashdown not in open sea'
+    if (!nothingInSight(w, h, tiles, at)) return 'land in sight at splashdown'
+    // the voyage: the band holds for every charter, which is what fair means here
+    if (d[at] < band[0] || d[at] > band[1]) return 'voyage out of band'
+    if (coast < 0 || !viable(coast)) return 'no coast to make for'
+    if (chainsReachable(w, h, tiles, comp, coast) < C.worldgen.minReachableChains) return 'too few chains'
+    // nobody else in sight at splashdown
+    for (let j = 0; j < world.splashdowns.length; j++) if (j !== k && dist(w, world.splashdowns[j], at) <= C.lander.sight + 1) return 'a rival in sight at splashdown'
+    if (world.predecessors.some(p => dist(w, p.tile, at) <= C.lander.sight + 1)) return 'a predecessor in sight at splashdown'
+    for (let j = 0; j < k; j++) if (dist(w, world.splashdowns[j], at) < Math.floor(sep * 0.6)) return 'splashdowns too close'
   }
-  const home = world.charterLandings[0]
+  const home = world.coasts[0]
   const reachablePreds = world.predecessors.filter(p => comp[p.tile] === comp[home]).length
   if (reachablePreds < Math.min(C.worldgen.minPredecessorsReachable, world.predecessors.length)) return 'predecessors unreachable'
-  if (world.anchorages.length < 4) return 'too few anchorages'
   // no unique resource on an unreachable landmass: bloom must exist on the home landmass
   let bloom = false
   for (let i = 0; i < tiles.length; i++) if (comp[i] === comp[home] && (C.terrain.yields[tiles[i].terrain].bloom ?? 0) >= 2) { bloom = true; break }
@@ -431,7 +490,7 @@ export function generateWorld(seed: string, settings: Settings): World {
   return last!
 }
 
-/** One line of plain characterisation for a landing site, onboarding brief section 2. */
+/** One line of plain characterisation of the ground around a tile: what a founding would find. */
 export function describeSite(w: number, h: number, tiles: Tile[], i: number): string {
   let food = 0, timber = 0, ore = 0, river = 0, water = 0, crops = 0, bloom = 0
   const x = i % w, y = Math.floor(i / w)
@@ -478,9 +537,8 @@ export function worldToState(world: World): GameState['world'] {
     width: world.width,
     height: world.height,
     tiles: world.tiles,
-    anchorages: world.anchorages,
     rivers: world.rivers,
-    landingSites: world.landingSites,
+    splashdowns: world.splashdowns,
   }
 }
 

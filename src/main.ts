@@ -18,12 +18,18 @@ function boot() {
   }
   let state: GameState | null = null
   let resumed = false
+  let notice: string | null = null
   try {
     const save = Save.readLocal()
     if (save) { state = Save.fromSave(save, Date.now()); resumed = true }
   } catch (e) {
+    // a save from an earlier build is turned away in plain words and a new game begins; the old
+    // save is cleared so this is said once. Persistence brief section 4: during development,
+    // invalidate
     console.warn('Could not resume the saved game', e)
     state = null
+    notice = 'Your saved game was from an earlier version of Fairholm and could not be opened. A new game has begun.'
+    try { Save.clearLocal() } catch { /* nothing to clear */ }
   }
   if (!state) {
     const last = Save.readLastSettings()
@@ -31,7 +37,7 @@ function boot() {
     // the first game is small and generous, without saying so; after that the last settings hold
     state = createGame(seed, last ? { size: last.size, shape: last.shape, difficulty: last.difficulty, audio: last.audio, firstGame: false } : {}, Date.now())
   }
-  const app = new App(root, state, resumed)
+  const app = new App(root, state, resumed, notice)
   ;(window as unknown as { fairholm: App }).fairholm = app
 }
 

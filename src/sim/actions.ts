@@ -1,30 +1,33 @@
 // Every mutation is an action. Nothing writes to state except applyAction. This buys undo, the
 // dispatch log and determinism in one move, and makes the read-only rule for /ui and /render
 // enforceable. Build specification section 3.
+//
+// A game begins at sea: the lander is a unit, and the first settlement is founded from it with the
+// `found` action, which a colonist uses afterwards to found the next. There is no landing action
+// and no offered site.
 
 import { C, SCHEMA_VERSION, WORLDGEN_VERSION, difficultyOf } from './constants'
-import type { GameState, Settings, Job, BuildId, GoodId, UnitOrder, Charter, SignatoryCategory, Difficulty, Pace, Colonist, LandKind, HullKind, Purpose, SurplusDestination, GrowthRule, MapSize, LandShape, Unit } from './state'
+import type { GameState, Settings, Job, BuildId, GoodId, UnitOrder, Charter, SignatoryCategory, Difficulty, Pace, LandKind, HullKind, Purpose, SurplusDestination, GrowthRule, MapSize, LandShape, Unit, TurnContext } from './state'
 import { GOODS, emptyStock } from './state'
 import { seedRng, playRng, fork, next } from './rng'
 import { generateWorld, worldToState, describeSite, type World } from './worldgen'
-import { foundSettlement, buildable, canStart, completeBuilding, syncWorkedTiles, isCoastalSettlement, storageCapacity } from './settlement'
+import { foundSettlement, foundingProblem, buildable, canStart, completeBuilding, syncWorkedTiles, isCoastalSettlement, storageCapacity } from './settlement'
 import { consign, buyFromCompany, answerDemand, canConsign, buyPrice } from './market'
 import { makeColonist, defaultJob, workableTiles, tileYield, buildingWorkers, goldPassageCost, landingSettlement, tileOffers } from './labour'
 import { initMarket } from './market'
 import { runTurn, makeContext, pushDispatch } from './turn'
 import { SYSTEMS } from './systems'
 import { deriveQueue, noteUnresolved } from './queue'
-import { findPath, advance, makeUnit, equipCost, cargoCapacity, isHull, maxMoves } from './units'
+import { findPath, advance, makeUnit, equipCost, cargoCapacity, isHull, isAfloat, maxMoves } from './units'
 import { neighbours8, isLand } from './worldgen'
 import { declareIndependence } from './fleet'
 import { attackWith } from './military'
-import { foundRivals } from './rivals'
+import { reveal } from './fog'
 import { offerToPredecessor, learnFromPredecessor, stationAgent, scoutPredecessor } from './predecessors'
 import { buildHull, raidTarget } from './naval'
 import { signatoryList } from './grievance'
 
 export type Action =
-  | { t: 'land'; site: number }
   | { t: 'assignWorker'; settlement: number; colonist: number; job: Job }
   | { t: 'autoAssign'; settlement: number }
   | { t: 'setBuildOrder'; settlement: number; queue: BuildId[] }
@@ -40,7 +43,12 @@ export type Action =
   | { t: 'disband'; unit: number }
   | { t: 'moveUnit'; unit: number; path: number[] }
   | { t: 'setUnitOrder'; unit: number; order: UnitOrder | null }
-  | { t: 'found'; unit: number; name?: string }
+  /** A colonist founds where it stands; the lander founds on the shore tile beside it. */
+  | { t: 'found'; unit: number; tile?: number; name?: string }
+  /** One of the lander's passengers steps ashore onto a land tile beside it, to scout on foot. */
+  | { t: 'disembark'; unit: number; tile: number }
+  /** A colonist beside the lander climbs back aboard. */
+  | { t: 'embark'; unit: number; lander: number }
   | { t: 'attack'; unit: number; tile: number }
   | { t: 'load'; unit: number; good: GoodId; amount: number }
   | { t: 'unload'; unit: number; good: GoodId; amount: number }
@@ -91,22 +99,24 @@ function makeCharter(id: number, name: string, colour: string, player: boolean, 
   }
 }
 
-/** Create a new game at turn 0, before landing. The world is generated here. */
+/** Create a new game at turn one, at sea. The world is generated here, and every charter's lander
+ *  is put down at its splashdown with its people and stores aboard. Nothing is ashore yet. */
 export function createGame(seed: string, partial: Partial<Settings>, now: number): GameState {
   const settings = settingsFor(partial)
   const world: World = generateWorld(seed, settings)
   const diff = difficultyOf(settings.difficulty)
   const charters: Charter[] = []
-  charters.push(makeCharter(0, 'Your charter', C.art.palette.player, true, world.charterLandings[0], diff.openingCharge))
+  const splash = (i: number) => world.splashdowns[i] ?? world.splashdowns[0] ?? 0
+  charters.push(makeCharter(0, 'Your charter', C.art.palette.player, true, splash(0), diff.openingCharge))
   for (let i = 0; i < C.rivals.count; i++) {
-    charters.push(makeCharter(i + 1, C.rivals.names[i], C.rivals.colours[i], false, world.charterLandings[i + 1] ?? world.charterLandings[0], diff.openingCharge))
+    charters.push(makeCharter(i + 1, C.rivals.names[i], C.rivals.colours[i], false, splash(i + 1), diff.openingCharge))
   }
   const s: GameState = {
     schemaVersion: SCHEMA_VERSION,
     worldgenVersion: WORLDGEN_VERSION,
     seed,
     settings,
-    turn: 0,
+    turn: 1,
     world: worldToState(world),
     charters,
     settlements: [],
@@ -116,11 +126,11 @@ export function createGame(seed: string, partial: Partial<Settings>, now: number
     company: { charge: diff.openingCharge, nextDemandTurn: diff.turnsBetweenDemands, demand: null, embargoed: [], embargoShield: 0, fleetStrength: C.military.fleetBase, fleetPool: null, payments: [], demandsAccepted: 0 },
     declaration: null,
     dispatch: [],
-    intent: 'Choose where to go ashore.',
+    intent: 'Find a coast and go ashore.',
     flags: { ...C.flags },
     rng: { world: seedRng(seed + ':world:' + WORLDGEN_VERSION), play: playRng(now) },
     nextId: 1,
-    telemetry: { firstConsignment: null, secondSettlement: null, foldOpened: null },
+    telemetry: { firstConsignment: null, secondSettlement: null, foldOpened: null, founded: null },
     opportunitiesShown: {},
     actionsThisTurn: 0,
     transits: [],
@@ -128,11 +138,26 @@ export function createGame(seed: string, partial: Partial<Settings>, now: number
   const problem = (world as World & { problem?: string }).problem
   if (problem) s.flags['worldgenProblem'] = true
   charters[0].gold = C.onboarding.startingGold
+  // the landers, down in open sea. The player's carries the starting colonists, the first of them
+  // contracted and the rest in debt, and the stores; a rival's people are abstract until it founds
+  for (let i = 0; i < charters.length; i++) {
+    if (world.splashdowns[i] === undefined) continue
+    const lander = makeUnit(s, i, 'lander', world.splashdowns[i], null)
+    if (i === 0) {
+      for (let k = 0; k < diff.startingColonists; k++) lander.aboard.push(makeColonist(s, k === 0 ? 'contracted' : 'debtor'))
+      for (const g of Object.keys(C.onboarding.startingStock) as GoodId[]) { const n = C.onboarding.startingStock[g] ?? 0; if (n > 0) lander.cargo[g] = n }
+    }
+    lander.moves = maxMoves(lander)
+    s.units.push(lander)
+  }
+  pushDispatch(s, { turn: 1, kind: 'event', text: 'The lander is down and steaming in open sea. Land lies some turns off. Sail until you find it, and go ashore where you choose.', why: 'The Company sent you on what cores it had left. No one is waiting.' })
+  reveal(s)
   return s
 }
 
-export function siteDescriptions(s: GameState): { tile: number; text: string }[] {
-  return s.world.landingSites.map(tile => ({ tile, text: describeSite(s.world.width, s.world.height, s.world.tiles, tile) }))
+/** One line of plain characterisation of the ground around a tile, for the founding preview. */
+export function describeTile(s: GameState, tile: number): string {
+  return describeSite(s.world.width, s.world.height, s.world.tiles, tile)
 }
 
 function settlementOf(s: GameState, i: number) {
@@ -146,33 +171,28 @@ function unitOf(s: GameState, id: number): Unit {
   return u
 }
 
+/** The settlement a unit can load from and unload to: the one it stands in, or, for a ship, one
+ *  on the shore beside it. A ship may unload onto any coastal tile, and a settlement there takes
+ *  the goods; bare shore has nowhere to put them. */
+function settlementToTrade(s: GameState, u: Unit) {
+  const at = s.settlements.find(x => x.tile === u.tile && x.owner === 0)
+  if (at || !isAfloat(u.kind)) return at
+  const beside = neighbours8(s.world.width, s.world.height, u.tile)
+  return s.settlements.find(x => x.owner === 0 && beside.includes(x.tile))
+}
+
 /** Apply one action. Mutates and returns the same state object. Throws on an invalid action, which
  * the interface treats as "nothing happened". */
 export function applyAction(s: GameState, a: Action): GameState {
   const ctx = makeContext(s)
+  applyOne(s, a, ctx)
+  // whatever moved, the ground in its sight is known now
+  reveal(s)
+  return s
+}
+
+function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
   switch (a.t) {
-    case 'land': {
-      if (s.turn !== 0) throw new Error('already landed')
-      const tile = s.world.landingSites.includes(a.site) ? a.site : s.world.landingSites[0]
-      s.turn = 1
-      s.charters[0].landing = tile
-      const diff = difficultyOf(s.settings.difficulty)
-      const colonists: Colonist[] = []
-      for (let i = 0; i < diff.startingColonists; i++) colonists.push(makeColonist(s, i === 0 ? 'contracted' : 'debtor'))
-      const st = foundSettlement(s, tile, 0, colonists, 'Fairholm')
-      st.nameChosen = true
-      for (const g of Object.keys(C.onboarding.startingStock) as GoodId[]) st.stock[g] += C.onboarding.startingStock[g] ?? 0
-      st.foodStore = C.onboarding.startingStock.food ?? 0
-      st.stock.food = 0
-      // a colonist unit comes ashore with them, to scout and found the second settlement
-      if (diff.startingColonists >= 3) s.units.push(makeUnit(s, 0, 'colonist', tile, makeColonist(s, 'debtor')))
-      for (const t of [tile, ...neighbours8(s.world.width, s.world.height, tile)]) s.world.tiles[t].explored = true
-      s.intent = 'Get Fairholm fed. Put people on food and timber.'
-      s.company.nextDemandTurn = Math.max(C.market.demandFirstTurn, diff.turnsBetweenDemands)
-      if (s.flags.rivals) foundRivals(s, ctx)
-      pushDispatch(s, { turn: 1, kind: 'event', text: 'The boat came ashore. The lander steams offshore, and the Company has written it off against your passage.', why: 'The first metal in the colony is the thing that brought you.' })
-      return s
-    }
     case 'assignWorker': {
       const st = settlementOf(s, a.settlement)
       const col = st.colonists[a.colonist]
@@ -343,19 +363,78 @@ export function applyAction(s: GameState, a: Action): GameState {
     }
     case 'found': {
       const u = unitOf(s, a.unit)
-      if (u.kind !== 'colonist' || !u.colonist) throw new Error('only a colonist can found')
-      const t = s.world.tiles[u.tile]
-      if (!isLand(t) || t.terrain === 'mountain') throw new Error('cannot settle here')
-      if (s.settlements.some(st => st.tile === u.tile)) throw new Error('already settled')
-      if (s.settlements.some(st => Math.max(Math.abs(st.tile % s.world.width - u.tile % s.world.width), Math.abs(Math.floor(st.tile / s.world.width) - Math.floor(u.tile / s.world.width))) < 2)) throw new Error('too close to another settlement')
-      if (s.predecessors.some(p => p.territory.includes(u.tile))) throw new Error('this is their ground')
+      const w = s.world.width, h = s.world.height
+      const own = s.settlements.filter(x => x.owner === 0)
+      if (u.kind === 'lander') {
+        // the lander beaches on the shore beside it and is consumed; everyone aboard is the
+        // settlement's people, the stores are its stores, and the boat it carried is the first ship
+        if (!u.aboard.length) throw new Error('No one is aboard to found with.')
+        if (a.tile === undefined) throw new Error('Choose the shore to beach on.')
+        if (!neighbours8(w, h, u.tile).includes(a.tile)) throw new Error('The lander must lie beside the shore it beaches on.')
+        const problem = foundingProblem(s, a.tile)
+        if (problem) throw new Error(`Not there: ${problem}.`)
+        const first = own.length === 0
+        const st = foundSettlement(s, a.tile, 0, u.aboard, a.name ?? (first ? C.lander.firstName : undefined))
+        st.nameChosen = first
+        u.aboard = []
+        for (const g of Object.keys(u.cargo) as GoodId[]) {
+          const n = u.cargo[g] ?? 0
+          if (g === 'food') st.foodStore += n
+          else st.stock[g] += n
+        }
+        s.units.push(makeUnit(s, 0, C.lander.boat, u.tile, null))
+        s.units = s.units.filter(x => x !== u)
+        if (first) {
+          s.charters[0].landing = st.tile
+          s.telemetry.founded = s.turn
+          s.intent = `Get ${st.name} fed. Put people on food and timber.`
+          s.company.nextDemandTurn = s.turn + Math.max(C.market.demandFirstTurn, difficultyOf(s.settings.difficulty).turnsBetweenDemands)
+          ctx.log({ kind: 'event', text: `The lander beached and ${st.name} was founded from what came out of it. The boat it carried is yours. The Company has written the lander off against your passage.`, why: 'The first metal in the colony is the thing that brought you.', settlement: st.id })
+        } else {
+          ctx.log({ kind: 'event', text: `${st.name} was founded from the lander.`, settlement: st.id })
+        }
+        s.actionsThisTurn++
+        return s
+      }
+      if (u.kind !== 'colonist' || !u.colonist) throw new Error('Only a colonist or the lander can found.')
+      if (!own.length) throw new Error('The lander founds the first settlement. Beach it first.')
+      if (a.tile !== undefined && a.tile !== u.tile) throw new Error('A colonist founds where it stands.')
+      const problem = foundingProblem(s, u.tile)
+      if (problem) throw new Error(`Not here: ${problem}.`)
       const st = foundSettlement(s, u.tile, 0, [u.colonist], a.name)
       s.units = s.units.filter(x => x !== u)
-      const own = s.settlements.filter(x => x.owner === 0).length
-      if (own === 2 && s.telemetry.secondSettlement === null) s.telemetry.secondSettlement = s.turn
-      if (own >= 2) s.charters[0].unlocked.orders = true
-      for (const n of workableTiles(s, st)) s.world.tiles[n].explored = true
+      const count = s.settlements.filter(x => x.owner === 0).length
+      if (count === 2 && s.telemetry.secondSettlement === null) s.telemetry.secondSettlement = s.turn
+      if (count >= 2) s.charters[0].unlocked.orders = true
       ctx.log({ kind: 'event', text: `${st.name} was founded. Its standing orders were inferred from the ground around it.`, settlement: st.id })
+      s.actionsThisTurn++
+      return s
+    }
+    case 'disembark': {
+      const u = unitOf(s, a.unit)
+      if (u.kind !== 'lander') throw new Error('Only the lander carries people.')
+      if (!u.aboard.length) throw new Error('No one is aboard.')
+      const w = s.world.width, h = s.world.height
+      if (!neighbours8(w, h, u.tile).includes(a.tile)) throw new Error('The shore must be beside the lander.')
+      const t = s.world.tiles[a.tile]
+      if (!isLand(t) || t.terrain === 'mountain') throw new Error('Not onto that.')
+      // the last aboard steps off, so the contracted colonist at the head of the list stays to found
+      const col = u.aboard.pop()!
+      const scout = makeUnit(s, 0, 'colonist', a.tile, col)
+      scout.moves = 0
+      s.units.push(scout)
+      s.actionsThisTurn++
+      return s
+    }
+    case 'embark': {
+      const u = unitOf(s, a.unit)
+      const lander = unitOf(s, a.lander)
+      if (u.kind !== 'colonist' || !u.colonist) throw new Error('Only a colonist can go aboard.')
+      if (lander.kind !== 'lander') throw new Error('That is not the lander.')
+      const w = s.world.width, h = s.world.height
+      if (!neighbours8(w, h, lander.tile).includes(u.tile)) throw new Error('The colonist must be beside the lander.')
+      lander.aboard.push(u.colonist)
+      s.units = s.units.filter(x => x !== u)
       s.actionsThisTurn++
       return s
     }
@@ -367,7 +446,7 @@ export function applyAction(s: GameState, a: Action): GameState {
     }
     case 'load': {
       const u = unitOf(s, a.unit)
-      const st = s.settlements.find(x => x.tile === u.tile && x.owner === 0)
+      const st = settlementToTrade(s, u)
       if (!st) throw new Error('must be at a settlement')
       const held = Object.values(u.cargo).reduce((x, y) => x + (y ?? 0), 0)
       const room = cargoCapacity(u) - held
@@ -380,7 +459,7 @@ export function applyAction(s: GameState, a: Action): GameState {
     }
     case 'unload': {
       const u = unitOf(s, a.unit)
-      const st = s.settlements.find(x => x.tile === u.tile && x.owner === 0)
+      const st = settlementToTrade(s, u)
       if (!st) throw new Error('must be at a settlement')
       const n = Math.min(a.amount, u.cargo[a.good] ?? 0)
       if (n <= 0) throw new Error('nothing to unload')

@@ -19,6 +19,7 @@ const GROUP_TITLES: Record<string, (n: number) => string> = {
   reviewOrders: n => `${n} settlements need their standing orders reviewed`,
   growthAsk: n => `${n} settlements have new colonists to place`,
   unitIdle: n => `${n} units are awaiting orders`,
+  blockade: n => `${n} settlements are blockaded`,
   unitContact: n => `${n} units have made contact and await you`,
   routeUnviable: n => `${n} haulage routes have become unviable`,
   threatened: n => `${n} settlements are threatened`,
@@ -42,8 +43,9 @@ function unitItems(s: GameState): QueueItem[] {
       const atSettlement = s.settlements.some(st => st.tile === u.tile && st.owner === 0)
       if (atSettlement && (u.kind === 'militia' || u.kind === 'battery' || u.kind === 'damagedBattery')) continue
       const since = u.since['idle'] ?? s.turn
-      out.push({ key: `unitIdle:${u.id}`, group: 'unitIdle', type: 4, title: `${unitLabel(u.kind)} is awaiting orders`, body: u.kind === 'colonist' ? 'Move it, found a settlement with it, or send it home.' : 'Give it a standing order or move it.', unit: u.id, tile: u.tile, magnitude: 1, since, choices: [], opens: 'unit',
-        explain: u.kind === 'colonist' ? 'Tap the unit, then tap and hold a tile to walk there. A colonist in open country can found a settlement.' : undefined })
+      const lander = u.kind === 'lander'
+      out.push({ key: `unitIdle:${u.id}`, group: 'unitIdle', type: lander ? 2 : 4, title: lander ? 'The lander is at sea' : `${unitLabel(u.kind)} is awaiting orders`, body: lander ? `${u.aboard.length} aboard. Sail toward land, then beach it on the shore of your choosing to found the first settlement.` : u.kind === 'colonist' ? 'Move it, found a settlement with it, or send it home.' : 'Give it a standing order or move it.', unit: u.id, tile: u.tile, magnitude: 1, since, choices: [], opens: 'unit',
+        explain: lander ? 'Tap the lander, then tap and hold a water tile to sail there. When land is beside it, the founding control below says where it can go ashore.' : u.kind === 'colonist' ? 'Tap the unit, then tap and hold a tile to walk there. A colonist in open country can found a settlement.' : undefined })
     }
   }
   return out
@@ -54,12 +56,12 @@ export function unitLabel(kind: string): string {
     colonist: 'A colonist', militia: 'Militia', outrider: 'An outrider', battery: 'A battery', damagedBattery: 'A damaged battery',
     improver: 'An improver', hauler: 'A hauler', lighter: 'A lighter', trader: 'A trader', raider: 'A raider', cutter: 'A cutter',
     regulars: 'Company regulars', horse: 'Company horse', siegeTrain: 'A Company siege train', damagedSiegeTrain: 'A damaged siege train', companyShip: 'A Company landing craft',
+    lander: 'The lander',
   }
   return names[kind] ?? kind
 }
 
 export function deriveQueue(s: GameState, systems: System[]): DerivedQueue {
-  if (s.turn === 0) return { shown: [], folded: [], crisis: false }
   const items = [...collectQueueItems(s, systems), ...unitItems(s)]
     // opportunities that have appeared twice lapse, section 8
     .filter(it => it.type !== 5 || (s.opportunitiesShown[it.key] ?? 0) <= C.queue.opportunityReturns)

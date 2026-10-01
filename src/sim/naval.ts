@@ -8,9 +8,11 @@ import type { System } from './turn'
 import { C } from './constants'
 import { makeUnit, isHull, maxMoves, findPath, advance } from './units'
 import { chance, next, pick } from './rng'
-import { neighbours8, dist } from './worldgen'
+import { neighbours8, dist, isOpenSea } from './worldgen'
 import { isHostileTo } from './military'
 import { unitLabel } from './queue'
+import { sightMask } from './fog'
+import { isCoastalSettlement } from './settlement'
 
 export function buildHull(s: GameState, st: Settlement, kind: HullKind, ctx: TurnContext) {
   const d = C.naval.hulls[kind]
@@ -63,23 +65,33 @@ function sendRaider(s: GameState, ctx: TurnContext) {
   const rivals = s.charters.filter(c => !c.player && !c.fell && (c.relation === 'tense' || c.relation === 'war'))
   if (!rivals.length) return
   const r = pick(ctx.rngPlay, rivals)
-  const anchorages = s.world.anchorages.filter(a => dist(s.world.width, a, s.charters[0].landing) > 6)
-  if (!anchorages.length) return
-  const from = pick(ctx.rngPlay, anchorages)
+  // from open sea, out of sight of the player's settlements
+  const w = s.world.width, h = s.world.height
+  const mine = s.settlements.filter(x => x.owner === 0)
+  const seas: number[] = []
+  for (let i = 0; i < s.world.tiles.length; i++) if (isOpenSea(w, h, s.world.tiles, i) && mine.every(m => dist(w, i, m.tile) > 6)) seas.push(i)
+  if (!seas.length) return
+  const from = pick(ctx.rngPlay, seas)
   const u = makeUnit(s, r.id, 'raider', from, null)
   u.flagged = r.relation === 'war'
   s.units.push(u)
 }
 
 export function raidTarget(s: GameState, u: Unit): number | null {
-  // the nearest player hull with cargo, else the player's landing
+  // the nearest player hull with cargo, else the nearest coastal settlement of the player's
   let best: number | null = null, bd = 1e9
   for (const x of s.units) {
     if (x.owner !== 0 || !isHull(x.kind)) continue
     const d = dist(s.world.width, u.tile, x.tile)
     if (d < bd) { bd = d; best = x.tile }
   }
-  return best ?? s.charters[0].landing
+  if (best !== null) return best
+  for (const st of s.settlements) {
+    if (st.owner !== 0 || !isCoastalSettlement(s, st)) continue
+    const d = dist(s.world.width, u.tile, st.tile)
+    if (d < bd) { bd = d; best = st.tile }
+  }
+  return best
 }
 
 export const navalSystem: System = {
@@ -122,12 +134,18 @@ export const navalSystem: System = {
   queueItems(s: GameState): QueueItem[] {
     const out: QueueItem[] = []
     const w = s.world.width
+    const mine = s.settlements.filter(x => x.owner === 0)
+    if (!mine.length) return out
+    const seen = sightMask(s)
     for (const u of s.units) {
       if (u.owner === 0 || !isHull(u.kind)) continue
       if (!(u.owner === -1 || u.kind === 'raider')) continue
-      const d = dist(w, u.tile, s.charters[0].landing)
+      // a raider out of sight is not off the coast as far as anyone ashore knows
+      if (u.owner !== -1 && !seen[u.tile]) continue
+      const near = mine.reduce((a, b) => dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a)
+      const d = dist(w, u.tile, near.tile)
       if (d <= 5 && isHostileTo(s, u.owner, 0) || (u.kind === 'raider' && d <= 5)) {
-        out.push({ key: `sail:${u.id}`, group: 'sail', type: 2, title: `${u.flagged ? (u.owner === -1 ? "A Company ship" : `A ${s.charters[u.owner]?.name} raider`) : 'An unflagged raider'} is off the coast`, body: `${d} tiles from the landing. Ships with cargo are its prey; a cutter or an armed trader can bring it to action.`, explain: 'Speed decides who can catch whom. A faster ship chooses whether to fight.', tile: u.tile, magnitude: 2, since: s.turn, choices: [], opens: 'unit' })
+        out.push({ key: `sail:${u.id}`, group: 'sail', type: 2, title: `${u.flagged ? (u.owner === -1 ? "A Company ship" : `A ${s.charters[u.owner]?.name} raider`) : 'An unflagged raider'} is off the coast`, body: `${d} tiles from ${near.name}. Ships with cargo are its prey; a cutter or an armed trader can bring it to action.`, explain: 'Speed decides who can catch whom. A faster ship chooses whether to fight.', tile: u.tile, magnitude: 2, since: s.turn, choices: [], opens: 'unit' })
       }
     }
     return out

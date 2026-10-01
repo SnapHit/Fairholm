@@ -3,10 +3,13 @@
 // value; nothing has been tuned by playing. Set the feel constants, verify by playing, then leave
 // them alone while changing other things. Never tune a constant to fix a turn-order bug in turn.ts.
 
-import type { GoodId, TerrainId, ForestId, PrimeId, TileGood, BuildingLine, Difficulty, MapSize, LandShape, Standing } from './state'
+import type { GoodId, TerrainId, ForestId, PrimeId, TileGood, BuildingLine, Difficulty, MapSize, LandShape, Standing, HullKind } from './state'
 
-export const SCHEMA_VERSION = 1
-export const WORLDGEN_VERSION = 1
+// Two: the opening changed from three offered landing sites to a lander at sea in fog, which
+// changed the world (splashdowns in place of anchorages and landing sites), the units (the lander
+// and its passengers) and the fleet's waves. Saves from one are turned away with a plain message.
+export const SCHEMA_VERSION = 2
+export const WORLDGEN_VERSION = 2
 
 export interface GoodParams {
   open: number
@@ -156,6 +159,8 @@ export const C = {
     riverDefence: 1.15,
     breachThreshold: 5,        // section 11, turns of adjacency before a tier falls
     approachTurns: 3,          // section 10
+    /** A wave comes ashore within this many tiles of one of the player's settlements. */
+    landingRadius: 2,
     declarationWindow: 6,
     fleetBase: 4,              // units before any grievance
     fleetPerGrievance: 0.004,  // units per point of cumulative national grievance, times difficulty
@@ -291,14 +296,59 @@ export const C = {
     workingsChance: 0.015,
     riversPerThousandTiles: 5,
     majorRiverFraction: 0.35,
-    anchorageSpacing: 5,       // minimum tiles between anchorages
-    anchoragePerCoastTiles: 12,
     charterSeparation: { small: 9, standard: 13, large: 17, massive: 22 } as Record<MapSize, number>,
     predecessorsPerThousandTiles: 4,
     predecessorTerritory: 8,   // tiles
     landingReach: 2,           // radius checked for food, timber and water
     minReachableChains: 2,
     minPredecessorsReachable: 2,
+    /** The smallest landmass a charter's lander is sent toward, in tiles. */
+    homeLandmassMin: 40,
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // The lander and the voyage. Setting brief section 7, onboarding brief section 2, session brief
+  // section 8. The lander is the first ship and the opening is sailing it to a coast of your own
+  // choosing.
+  // -------------------------------------------------------------------------------------------
+  lander: {
+    /** How far the lander sails in a turn, in tiles. One: it is a capsule with a boat's motor, not
+     *  a ship, and the voyage is meant to take a few turns, not a few taps. */
+    moves: 1,
+    /** The one named distance: how many turns' sailing the splashdown is from the nearest coast
+     *  with food, timber and fresh water, give or take the slack. At one tile a turn this is tiles
+     *  of open water, and the generator finds a splashdown within the band or tries again. */
+    voyageTurns: 5,
+    voyageSlack: 1,
+    /** How far the lander sees, in tiles. More than it moves in a turn, so a coast is in view at
+     *  least a turn before the lander can reach it. */
+    sight: 2,
+    /** What it can carry besides its people. The starting stores fit with room over. */
+    capacity: 400,
+    /** The boat it carries, which survives founding as the player's first ship. */
+    boat: 'lighter' as HullKind,
+    /** How many turns after coming down a lander steams. The map draws the plume for these. */
+    steamTurns: 2,
+    /** The first settlement's default name. */
+    firstName: 'The Landing',
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // Founding. Session brief section 8: anywhere but mountain and water, and two settlements'
+  // centres at least this far apart in every direction, anyone's, so no two rings share a tile.
+  // -------------------------------------------------------------------------------------------
+  founding: {
+    spacing: 3,
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // Fog of war. Ground is hidden until seen and then stays revealed; other charters' units are
+  // seen only within sight. Art direction brief section 10a.
+  // -------------------------------------------------------------------------------------------
+  fog: {
+    /** How far each thing sees, in tiles (Chebyshev). A settlement sees its ring and a tile past
+     *  it. A unit on foot sees the tiles around it. A rider and a ship see further. */
+    sight: { settlement: 2, colonist: 1, outrider: 2, hull: 2, default: 1 },
   },
 
   // -------------------------------------------------------------------------------------------
@@ -313,6 +363,8 @@ export const C = {
     wealthPerTrade: 0.02,      // wealth rises as you trade with them
     wealthPriceCap: 0.5,       // wealth can lift prices by up to this fraction
     alarmPerTileTaken: 0.04,
+    /** A player settlement within this many tiles of theirs counts as a tile taken, every turn. */
+    crowdingReach: 3,
     alarmDecay: 0.01,
     alarmRefuse: 0.5,          // above this they refuse to trade
     alarmClose: 0.85,          // above this they close to you entirely
@@ -361,7 +413,6 @@ export const C = {
   onboarding: {
     startingGold: 40,
     startingStock: { food: 20, timber: 10, tooling: 8, arms: 0 } as Partial<Record<GoodId, number>>,
-    landingSites: 3,
     unlockBackstop: { market: 12, refining: 30, orders: 60, grievance: 90, predecessors: 90, rivals: 140, signatories: 140, military: 140, fleet: 220 },
     marketUnlockValue: 30,     // the Company market appears when surplus worth this much is held
     refiningUnlockCrop: 20,    // a refinery appears when this much of its crop is held
@@ -446,7 +497,7 @@ export const C = {
     telemetry: true,
     onboarding: true,
     rivalDiplomacyOffers: false,   // no offers arrive; relations move by events only, build specification section 12
-    fogOfWar: false,               // decided against for version one, see DECISIONS.md
+    fogOfWar: true,                // on since the fog opening, see DECISIONS.md
     massiveValidated: false,       // generated but unvalidated, section 12
   },
 } as const

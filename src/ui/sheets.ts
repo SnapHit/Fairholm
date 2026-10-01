@@ -24,7 +24,7 @@ import type { App } from './app'
 import type { Action } from '../sim/actions'
 
 export type SheetSpec =
-  | { kind: 'queue' } | { kind: 'landing' } | { kind: 'fold' } | { kind: 'group'; group: string }
+  | { kind: 'queue' } | { kind: 'fold' } | { kind: 'group'; group: string }
   | { kind: 'settlement'; id: number } | { kind: 'settlementDetail'; id: number }
   | { kind: 'workers'; settlement: number; colonist: number }
   | { kind: 'assignTile'; settlement: number; tile: number; good?: TileGood }
@@ -308,7 +308,6 @@ function workersSheet(app: App, s: GameState, st: Settlement, idx: number): HTML
   const tiles: HTMLElement[] = []
   for (const t of workableTiles(s, st)) {
     const tile = s.world.tiles[t]
-    if (tile.terrain === 'water' && !(st.buildings.wharf > 0 || true)) continue
     const takenBy = st.colonists.findIndex((o, j) => j !== idx && o.job.kind === 'tile' && o.job.tile === t)
     const other = tile.worked !== null && tile.worked !== st.id
     for (const g of tileOffers(tile)) {
@@ -621,7 +620,6 @@ function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
       if (r.colonists.length) panel.append(section(`From ${r.name}`, ...yields.map(e => line([`Work ${GOOD_NAMES[e.g]} here`], idle >= 0 ? 'with an idle colonist' : `with a ${colonistLabel(r.colonists[0])}`, () => app.dispatch({ t: 'assignWorker', settlement: r.id, colonist: pickFrom, job: { kind: 'tile', tile, good: e.g } }, `Set to ${e.g}`)))))
     }
   }
-  if (s.world.landingSites.includes(tile) && s.turn === 0) panel.append(row(button('Go ashore here', () => app.land(tile), 'primary')))
   return panel
 }
 
@@ -725,7 +723,7 @@ function menuSheet(app: App, s: GameState): HTMLElement {
     ),
     section('Map',
       h('div', { class: 'chips' }, (['none', 'territory', 'yields', 'threat'] as const).map(m => h('button', { class: 'chip' + (app.scene.overlayMode === m ? ' on' : ''), type: 'button', onClick: () => { app.scene.setOverlay(m, s); app.renderSheet() } }, m === 'none' ? 'plain' : m))),
-      row(button('Overview', () => app.scene.glideTo(s.settlements[0]?.tile ?? s.charters[0].landing, C.feel.zoom.overview), 'small'), button('Home', () => app.scene.glideTo(s.settlements[0]?.tile ?? s.charters[0].landing, C.feel.zoom.working), 'small')),
+      row(button('Overview', () => app.scene.glideTo(app.homeTile(), C.feel.zoom.overview), 'small'), button('Home', () => app.scene.glideTo(app.homeTile(), C.feel.zoom.working), 'small')),
     ),
     section('Game',
       row(button('Settings', () => app.open({ kind: 'settings' }), 'small'), button('Save now', () => { app.save(); app.toast('Saved') }, 'small'),

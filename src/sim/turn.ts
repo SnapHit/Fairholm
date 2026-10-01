@@ -21,6 +21,7 @@
 import { C, type Constants } from './constants'
 import type { GameState, TurnContext, QueueItem, DispatchEntry } from './state'
 import { maxMoves } from './units'
+import { reveal } from './fog'
 
 /** Every simulation system exports this shape, so the turn loop is uniform and a stub is safe.
  * A stubbed system returns false from enabled, does nothing in resolve, and returns an empty array. */
@@ -49,7 +50,7 @@ export function pushDispatch(s: GameState, e: DispatchEntry) {
 }
 
 export function season(turn: number): 0 | 1 | 2 | 3 {
-  // turn 1 is the first month after landing, in new green
+  // turn 1 is the first month, at sea, in new green
   const t = Math.max(0, turn - 1)
   return (Math.floor((t % C.session.turnsPerYear) / C.session.turnsPerSeason) % 4) as 0 | 1 | 2 | 3
 }
@@ -76,6 +77,8 @@ export function runTurn(s: GameState, systems: System[]): void {
   }
   // restore movement for every unit
   for (const u of s.units) u.moves = maxMoves(u)
+  // and what everything that moved can now see is known
+  reveal(s)
 }
 
 /** Gather queue items from every enabled system. */

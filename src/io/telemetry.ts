@@ -10,6 +10,8 @@ export interface Telemetry {
   firstConsignment: number[]        // turn of first consignment, per game
   secondSettlement: number[]
   foldOpened: number[]              // turn the fold was first opened, per game, or -1
+  founded: number[]                 // the turn the first settlement was founded, per game, or -1
+  turnsAtSea: number[]              // turns sailed before founding, per game, or -1. Is the voyage the right length?
   reached: { t30: number; t100: number; t300: number }
   glossary: number                  // taps on tappable terms
 }
@@ -18,7 +20,7 @@ const KEY = 'fairholm.telemetry'
 let cache: Telemetry | null = null
 
 function blank(): Telemetry {
-  return { games: 0, maxTurn: [], queueLengths: {}, turnSeconds: [], firstConsignment: [], secondSettlement: [], foldOpened: [], reached: { t30: 0, t100: 0, t300: 0 }, glossary: 0 }
+  return { games: 0, maxTurn: [], queueLengths: {}, turnSeconds: [], firstConsignment: [], secondSettlement: [], foldOpened: [], founded: [], turnsAtSea: [], reached: { t30: 0, t100: 0, t300: 0 }, glossary: 0 }
 }
 
 export function read(): Telemetry {
@@ -41,6 +43,8 @@ export function newGame() {
   t.firstConsignment.push(-1)
   t.secondSettlement.push(-1)
   t.foldOpened.push(-1)
+  t.founded.push(-1)
+  t.turnsAtSea.push(-1)
   write()
 }
 
@@ -68,6 +72,11 @@ export function secondSettlement(turn: number) {
   const t = read(); const g = t.secondSettlement.length - 1
   if (g >= 0 && t.secondSettlement[g] < 0) { t.secondSettlement[g] = turn; write() }
 }
+/** The first settlement was founded on this turn; the turns at sea are the ones before it. */
+export function founded(turn: number) {
+  const t = read(); const g = t.founded.length - 1
+  if (g >= 0 && t.founded[g] < 0) { t.founded[g] = turn; t.turnsAtSea[g] = turn - 1; write() }
+}
 export function foldOpened(turn: number) {
   const t = read(); const g = t.foldOpened.length - 1
   if (g >= 0 && t.foldOpened[g] < 0) { t.foldOpened[g] = turn; write() }
@@ -89,6 +98,8 @@ export function summary(): string {
     `Turn of first consignment: ${t.firstConsignment.join(', ') || 'none'}`,
     `Turn of second settlement: ${t.secondSettlement.join(', ') || 'none'}`,
     `Turn the fold was first opened: ${t.foldOpened.join(', ') || 'none'}`,
+    `Turn the first settlement was founded: ${t.founded.join(', ') || 'none'}`,
+    `Turns at sea before founding: ${t.turnsAtSea.join(', ') || 'none'}`,
     `Glossary taps: ${t.glossary}`,
     'Counters are anonymous and never leave this device.',
   ].join('\n')

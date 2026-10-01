@@ -17,11 +17,11 @@ import { fight, defenceOf } from '../src/sim/military'
 import { nationalResolve } from '../src/sim/grievance'
 import { toSave, fromSave } from '../src/io/save'
 import { GOODS, type GameState, type Tile, type UnitKind } from '../src/sim/state'
-import { isLand, dist } from '../src/sim/worldgen'
+import { isLand, dist, neighbours8 } from '../src/sim/worldgen'
+import { arrived, playOpening } from './helpers'
 
 function landed(seed: string, size: 'small' | 'standard' | 'large' = 'small', difficulty: 'generous' | 'standard' | 'hard' | 'punitive' = 'standard'): GameState {
-  const s = createGame(seed, { size, difficulty }, 5)
-  applyAction(s, { t: 'land', site: s.world.landingSites[0] })
+  const s = arrived(seed, { size, difficulty }, 5)
   s.rng.play = [11, 22, 33, 44]
   return s
 }
@@ -116,17 +116,26 @@ describe('turn loop pin', () => {
   // Protects: the fifteen-step order in src/sim/systems.ts and every formula those steps run.
   // Taken from this build with seed pin-seed, standard terms, play stream [11, 22, 33, 44]. If a
   // deliberate change moves it, update the object and name the change in the commit.
+  //
+  // Re-recorded on 1 October 2026 for the fog opening. The old game began ashore on turn one at an
+  // offered site with three starting colonists in the settlement and a spare colonist unit; this one
+  // sails the lander for two turns and founds The Landing on turn 3 where the autopilot judged best,
+  // so the fifty turns end on turn 53, the ground is different ground (flax country with little
+  // timber in reach), the spare colonist is the lighter the lander carried, and the rivals' landers
+  // took two more ids. Old: turn 51, foodStore 4, stock { timber: 40, tooling: 8, flax: 40 },
+  // prices { timber: 2, tooling: 5, instruments: 14 }, units 1, dispatch 40, nextId 7.
   it('fifty turns from a fixed seed reproduce the recorded aggregates', () => {
     const s = landed('pin-seed')
+    expect(s.turn).toBe(3)
     for (let i = 0; i < 50; i++) applyAction(s, { t: 'endTurn' })
     expect(aggregates(s)).toEqual({
-      turn: 51, pop: 4, settlements: 1, rivalSettlements: 3,
+      turn: 53, pop: 4, settlements: 1, rivalSettlements: 3,
       gold: 40, word: 0, passages: 0,
-      foodStore: 4, frame: 0,
-      stock: { timber: 40, tooling: 8, flax: 40 },
-      prices: { timber: 2, tooling: 5, arms: 6, instruments: 14, linen: 11 },
-      charge: 0.08, units: 1, dispatch: 40, grievance: 0, fleet: 4,
-      nextId: 7, demand: null, embargoed: 0,
+      foodStore: 108, frame: 0,
+      stock: { timber: 10, tooling: 8, flax: 40 },
+      prices: { timber: 1, tooling: 6, arms: 6, instruments: 15, linen: 11 },
+      charge: 0.08, units: 2, dispatch: 49, grievance: 0, fleet: 4,
+      nextId: 11, demand: null, embargoed: 0,
     })
   })
 
@@ -145,10 +154,12 @@ describe('grievance gate pin', () => {
   // Protects: two meeting-house workers gather six a turn, resolve is grievance over 250 per head,
   // the gate is sixty per cent, the first signatory costs 300 and is taken from the national pool
   // without touching the settlement's own grievance, and the fleet scales at 0.004 per point
-  // times the generous multiplier. The turn number is exact: 750 needed at 6 a turn.
-  it('a settlement of five reaches the gate on turn 126 and can then declare', () => {
+  // times the generous multiplier. The turn number is exact: 750 needed at 6 a turn, so the gate
+  // falls 125 turns after founding. It was turn 126 when the game began ashore on turn one; with
+  // the voyage in front of it the pin counts from the founding turn instead, and the 125 is unchanged.
+  it('a settlement of five reaches the gate 125 turns after founding and can then declare', () => {
     const g = createGame('gate-seed', { size: 'small', difficulty: 'generous' }, 5)
-    applyAction(g, { t: 'land', site: g.world.landingSites[0] })
+    const founded = playOpening(g)
     g.rng.play = [11, 22, 33, 44]
     const st = g.settlements[0]
     expect(st.colonists.length).toBe(5)
@@ -163,7 +174,7 @@ describe('grievance gate pin', () => {
       applyAction(g, { t: 'endTurn' })
       if (nationalResolve(g) >= C.grievance.declarationGate) { gate = g.turn; break }
     }
-    expect(gate).toBe(126)
+    expect(gate).toBe(founded + 125)
     expect(Math.round(st.grievance)).toBe(750)
     expect(g.charters[0].signatories).toEqual([0])
     expect(g.company.fleetStrength).toBeCloseTo(C.military.fleetBase + 750 * C.military.fleetPerGrievance * C.difficulty.generous.fleetMultiplier, 5)
@@ -310,9 +321,9 @@ describe('long game save round-trip', () => {
   // here as a diff after a long run even when the short smoke test passes.
   it('two hundred turns of play survive save, serialise, load', () => {
     const s = createGame('long-save', { size: 'small', difficulty: 'standard' }, 99)
-    applyAction(s, { t: 'land', site: s.world.landingSites[0] })
+    const founded = playOpening(s)
     s.rng.play = [3, 1, 4, 1]
-    const home = s.settlements[0]
+    const home = s.settlements.find(x => x.owner === 0)!
     for (let turn = 1; turn <= 200; turn++) {
       for (const st of s.settlements.filter(x => x.owner === 0)) {
         if (st.colonists.some(c => c.job.kind === 'idle')) applyAction(s, { t: 'autoAssign', settlement: st.id })
@@ -328,7 +339,7 @@ describe('long game save round-trip', () => {
       if (turn === 120) { for (const st of s.settlements.filter(x => x.owner === 0)) st.resolve = 1; try { applyAction(s, { t: 'declare' }) } catch { /* fine */ } }
       applyAction(s, { t: 'endTurn' })
     }
-    expect(s.turn).toBe(201)
+    expect(s.turn).toBe(founded + 200)
     expect(s.world.tiles.some(t => t.road)).toBe(true)
     const save = toSave(s)
     const json = JSON.stringify(save)
@@ -357,7 +368,7 @@ describe('long game save round-trip', () => {
       if (i >= 0) { s = g; tile = i; break }
     }
     expect(s).not.toBeNull()
-    applyAction(s!, { t: 'land', site: s!.world.landingSites[0] })
+    playOpening(s!)
     const t = s!.world.tiles[tile]
     t.terrain = C.terrain.forestClearsTo[t.forest!]
     t.forest = null
@@ -375,7 +386,7 @@ describe('queue ceiling, adversarial', () => {
   // whole derivation must stay cheap. A new queue item that forgets its group or its key fails here.
   it('a war-time, famine, spoilage, all-stuck state folds correctly and derives fast', () => {
     const s = createGame('adversarial', { size: 'large', difficulty: 'standard' }, 7)
-    applyAction(s, { t: 'land', site: s.world.landingSites[0] })
+    playOpening(s)
     s.rng.play = [5, 5, 5, 5]
     const w = s.world.width
     const ch = s.charters[0]
@@ -406,15 +417,17 @@ describe('queue ceiling, adversarial', () => {
       const near = [mine[k].tile + 1, mine[k].tile - 1, mine[k].tile + w].find(n => n >= 0 && n < s.world.tiles.length && isLand(s.world.tiles[n]) && !s.settlements.some(st => st.tile === n))
       if (near !== undefined) s.units.push(makeUnit(s, -1, k % 2 ? 'regulars' : 'siegeTrain', near, null))
     }
-    const nearLanding = [...s.world.anchorages].sort((a, b) => dist(w, a, ch.landing) - dist(w, b, ch.landing))
+    // water off the Landing, nearest first
+    const nearLanding = s.world.tiles.map((t, i) => i).filter(i => s.world.tiles[i].terrain === 'water' && dist(w, i, ch.landing) <= 4).sort((a, b) => dist(w, a, ch.landing) - dist(w, b, ch.landing))
     for (const a of nearLanding.slice(0, 3)) { const r = makeUnit(s, 1, 'raider', a, null); r.flagged = false; s.units.push(r) }
     s.units.push(makeUnit(s, -1, 'companyShip', nearLanding[0], null))
+    const shore = neighbours8(w, s.world.height, nearLanding[0]).find(n => isLand(s.world.tiles[n])) ?? ch.landing
     // thirty idle colonists and five stuck haulers
     for (let k = 0; k < 30; k++) s.units.push(makeUnit(s, 0, 'colonist', mine[k % mine.length].tile, makeColonist(s, 'free')))
     for (let k = 0; k < 5; k++) { const u = makeUnit(s, 0, 'hauler', mine[k].tile, null); u.order = { kind: 'haul', stops: [{ settlement: 0, load: {}, unload: {} }], next: 0, risk: 'avoid' }; u.since['contact'] = s.turn - 3; s.units.push(u) }
     // a demand, a declaration with a wave at sea, alarmed predecessors, tense rivals
     s.company.demand = { turnOffered: s.turn, rise: 0.03, good: 'timber' }
-    s.declaration = { declared: true, turnDeclared: s.turn - 2, waves: [{ id: 1, units: [{ kind: 'regulars', quality: 'raw' }], anchorage: nearLanding[0], turnsToLand: 4, landed: false, excluded: [] }], interventionProgress: 0, nextWaveId: 2, won: false, lost: false, intervened: null }
+    s.declaration = { declared: true, turnDeclared: s.turn - 2, waves: [{ id: 1, units: [{ kind: 'regulars', quality: 'raw' }], target: shore, at: nearLanding[0], turnsToLand: 4, landed: false, excluded: [] }], interventionProgress: 0, nextWaveId: 2, won: false, lost: false, intervened: null }
     s.company.fleetPool = [{ kind: 'horse', quality: 'raw' }]
     for (const p of s.predecessors) p.alarm = 0.7
     for (const c of s.charters.slice(1)) { c.relation = 'tense'; c.suspicion = 0.8 }
@@ -464,7 +477,7 @@ describe('queue ceiling, adversarial', () => {
   // unexpectedly and should become a plain `it`.
   it.fails('every queue item key is unique (known bug: threat keys collide)', () => {
     const s = createGame('dupe-key', { size: 'small', difficulty: 'standard' }, 7)
-    applyAction(s, { t: 'land', site: s.world.landingSites[0] })
+    playOpening(s)
     s.charters[0].unlocked.military = true
     const w = s.world.width
     const home = s.settlements[0].tile

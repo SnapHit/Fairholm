@@ -1,18 +1,21 @@
-// The declaration and the recall fleet. Military brief sections 10 to 12. The fleet is always
+// The declaration and the recall fleet. Military brief sections 9 to 12. The fleet is always
 // visible and scales with cumulative grievance and the charter terms. Declaring opens a six-turn
-// window to muster, then waves land at anchorages chosen by the play RNG with a narrowing three-turn
-// approach. The fleet is finite: the game is won when it is spent, lost when the landing falls.
-// Blockade while a wave is at sea stops passages and consignments; wartime grievance can buy a
-// rival's intervention.
+// window to muster, then waves come ashore on the coast near the player's settlements: each picks,
+// from the play RNG, a coastal land tile within two tiles of one of them, its landers splash down
+// offshore and motor in over three turns, visibly, with the coast it might still take narrowing
+// each turn. Units standing on the landing tile are captured. The fleet is finite: the game is won
+// when it is spent, lost when the Landing falls. A settlement is blockaded while a hostile armed
+// ship lies on a water tile beside it; wartime grievance can buy a rival's intervention.
 
-import type { GameState, TurnContext, QueueItem, FleetUnit, Wave, CompanyKind } from './state'
+import type { GameState, TurnContext, QueueItem, FleetUnit, Wave, CompanyKind, Settlement } from './state'
 import type { System } from './turn'
 import { C } from './constants'
 import { nationalResolve } from './grievance'
 import { chance, next, pick, shuffle } from './rng'
-import { dist, landComponents } from './worldgen'
-import { spawnHostile, landTileNear } from './military'
-import { isArmed, isCompany, makeUnit } from './units'
+import { dist, neighbours8, isLand, isCoastal, sailingDistance } from './worldgen'
+import { spawnHostile, isBlockaded } from './military'
+import { isArmed, isCompany, makeUnit, isHull } from './units'
+import { unitLabel } from './queue'
 
 function composeFleet(s: GameState, ctx: TurnContext): FleetUnit[] {
   const n = Math.max(3, Math.round(s.company.fleetStrength))
@@ -34,55 +37,136 @@ export function declareIndependence(s: GameState, ctx: TurnContext) {
   s.company.demand = null
   s.charters[0].declared = true
   s.charters[0].unlocked.fleet = true
-  s.intent = 'Hold the landing. The fleet is finite.'
+  s.intent = 'Hold the Landing. The fleet is finite.'
   ctx.log({ kind: 'war', text: `The charter is torn up. ${s.company.fleetPool.length} Company units will come in waves. You have ${C.military.declarationWindow} turns to muster.`, why: 'The fleet was sized by everything the Company has been told you did. It cannot grow now.' })
 }
 
-/** Anchorages on the player's landmass, nearest the player's settlements first. */
-function candidateAnchorages(s: GameState): number[] {
-  const w = s.world.width
-  const comp = landComponents(w, s.world.height, s.world.tiles).comp
-  const mine = s.settlements.filter(x => x.owner === 0)
-  const home = comp[s.charters[0].landing]
-  const all = s.world.anchorages.filter(a => {
-    // an anchorage is water; it serves a landmass if a neighbouring land tile is in the component
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const x = (a % w) + dx, z = Math.floor(a / w) + dz
-      if (x < 0 || z < 0 || x >= w || z >= s.world.height) continue
-      if (comp[z * w + x] === home) return true
+/** The coast a wave may come ashore on: every coastal land tile that is not mountain within the
+ *  landing radius of one of the player's settlements. Military brief section 9. */
+export function landingCoast(s: GameState): number[] {
+  const w = s.world.width, h = s.world.height
+  const tiles = s.world.tiles
+  const out = new Set<number>()
+  const r = C.military.landingRadius
+  for (const st of s.settlements) {
+    if (st.owner !== 0) continue
+    const x = st.tile % w, z = Math.floor(st.tile / w)
+    for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      const xx = x + dx, zz = z + dz
+      if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue
+      const i = zz * w + xx
+      if (isLand(tiles[i]) && tiles[i].terrain !== 'mountain' && isCoastal(w, h, tiles, i)) out.add(i)
     }
-    return false
-  })
-  const near = all.filter(a => mine.some(m => dist(w, a, m.tile) <= 10))
-  return near.length ? near : all
+  }
+  return [...out].sort((a, b) => a - b)
+}
+
+/** A water tile beside a coast tile. The one with the most water around it, so a lander does not
+ *  come down in a creek. */
+function waterBeside(s: GameState, tile: number): number {
+  const w = s.world.width, h = s.world.height
+  let best = -1, bw = -1
+  for (const n of neighbours8(w, h, tile)) {
+    if (s.world.tiles[n].terrain !== 'water') continue
+    const open = neighbours8(w, h, n).filter(m => s.world.tiles[m].terrain === 'water').length
+    if (open > bw) { bw = open; best = n }
+  }
+  return best
+}
+
+/** Where a wave's landers splash down: water as far out from the coast it is making for as the
+ *  approach takes to sail, or as far as the sea allows. */
+function splashdownFor(s: GameState, target: number): number {
+  const w = s.world.width, h = s.world.height
+  const tiles = s.world.tiles
+  const shore = waterBeside(s, target)
+  if (shore < 0) return target
+  const want = C.military.approachTurns * C.lander.moves
+  // distance over water from the shore tile outward
+  const d = new Int32Array(w * h).fill(-1)
+  const queue = [shore]
+  d[shore] = 0
+  let best = shore, bd = 0
+  for (let q = 0; q < queue.length; q++) {
+    const c = queue[q]
+    if (d[c] > bd && d[c] <= want) { best = c; bd = d[c] }
+    if (d[c] >= want) continue
+    for (const n of neighbours8(w, h, c)) if (tiles[n].terrain === 'water' && d[n] < 0) { d[n] = d[c] + 1; queue.push(n) }
+  }
+  return best
+}
+
+/** The landers' position, a share of the way from where they came down to the shore. */
+function approachPosition(s: GameState, wave: Wave, origin: number): number {
+  const shore = waterBeside(s, wave.target)
+  if (shore < 0) return origin
+  const w = s.world.width, h = s.world.height
+  const tiles = s.world.tiles
+  // a path over water from the origin to the shore tile
+  const prev = new Int32Array(w * h).fill(-2)
+  const queue = [origin]
+  prev[origin] = -1
+  while (queue.length && prev[shore] === -2) {
+    const c = queue.shift()!
+    for (const n of neighbours8(w, h, c)) if (tiles[n].terrain === 'water' && prev[n] === -2) { prev[n] = c; queue.push(n) }
+  }
+  if (prev[shore] === -2) return origin
+  const path: number[] = []
+  for (let c = shore; c !== -1; c = prev[c]) path.push(c)
+  path.reverse()
+  const done = C.military.approachTurns - wave.turnsToLand
+  const k = Math.min(path.length - 1, Math.round((path.length - 1) * done / C.military.approachTurns))
+  return path[k]
 }
 
 function launchWave(s: GameState, ctx: TurnContext) {
   const d = s.declaration!
   const pool = s.company.fleetPool!
   if (!pool.length) return
+  const coast = landingCoast(s)
+  if (!coast.length) return
   const units = pool.splice(0, Math.min(C.military.waveSize, pool.length))
-  const cands = candidateAnchorages(s)
-  if (!cands.length) { s.company.fleetPool!.unshift(...units); return }
-  const anchorage = pick(ctx.rngPlay, cands)
-  const wave: Wave = { id: d.nextWaveId++, units, anchorage, turnsToLand: C.military.approachTurns, landed: false, excluded: [] }
+  const target = pick(ctx.rngPlay, coast)
+  const origin = splashdownFor(s, target)
+  const wave: Wave = { id: d.nextWaveId++, units, target, at: origin, turnsToLand: C.military.approachTurns, landed: false, excluded: [] }
   d.waves.push(wave)
-  // the blockade ship that escorts the wave sits off the landing
-  const ship = makeUnit(s, -1, 'companyShip', s.world.anchorages.reduce((a, b) => dist(s.world.width, b, s.charters[0].landing) < dist(s.world.width, a, s.charters[0].landing) ? b : a), null)
-  s.units.push(ship)
-  ctx.log({ kind: 'war', text: `A wave of ${units.length} is at sea. It will land in ${C.military.approachTurns} turns at one of ${cands.length} anchorages.`, why: 'Where a wave lands is not decided until it lands. Each turn rules some coast out.' })
+  // the blockade ship that escorts the wave lies off the settlement the wave is making for
+  const near = s.settlements.filter(x => x.owner === 0).sort((a, b) => dist(s.world.width, a.tile, target) - dist(s.world.width, b.tile, target))[0]
+  const berth = near ? waterBeside(s, near.tile) : -1
+  if (berth >= 0) s.units.push(makeUnit(s, -1, 'companyShip', berth, null))
+  ctx.log({ kind: 'war', text: `A wave of ${units.length} came down offshore. It will come ashore in ${C.military.approachTurns} turns, somewhere on ${coast.length} tiles of coast near your settlements.`, why: 'Where a wave lands is not decided until it lands. Each turn rules some coast out.', tile: origin })
 }
 
 function narrow(s: GameState, wave: Wave, ctx: TurnContext) {
-  const cands = candidateAnchorages(s).filter(a => !wave.excluded.includes(a) && a !== wave.anchorage)
+  const cands = landingCoast(s).filter(a => !wave.excluded.includes(a) && a !== wave.target)
   // rule out a share of the remaining coast each turn, so the last turn leaves one or two
   const remove = Math.ceil(cands.length / Math.max(1, wave.turnsToLand + 1))
   const gone = shuffle(ctx.rngPlay, [...cands]).slice(0, remove)
   wave.excluded.push(...gone)
 }
 
+/** The coast a wave might still come ashore on, as far as the player can tell. */
+export function waveCoast(s: GameState, wave: Wave): number[] {
+  return landingCoast(s).filter(a => !wave.excluded.includes(a))
+}
+
+/** Whether any of the player's settlements is blockaded. */
 export function blockaded(s: GameState): boolean {
-  return !!(s.declaration?.declared && !s.declaration.won && (s.declaration.waves.some(w => !w.landed) || s.units.some(u => u.owner === -1 && u.kind === 'companyShip')))
+  return s.settlements.some(st => st.owner === 0 && isBlockaded(s, st))
+}
+
+function land(s: GameState, wave: Wave, ctx: TurnContext) {
+  wave.landed = true
+  const tile = wave.target
+  // units standing on the landing tile are captured, military brief section 11
+  const taken = s.units.filter(u => u.tile === tile && u.owner === 0 && !isHull(u.kind))
+  if (taken.length) {
+    s.units = s.units.filter(u => !taken.includes(u))
+    ctx.log({ kind: 'loss', text: `${taken.map(u => unitLabel(u.kind)).join(', ')} on the landing tile ${taken.length === 1 ? 'was' : 'were'} captured as the Company came ashore.`, why: 'Units on a landing tile when a wave arrives are captured.', tile })
+  }
+  for (const fu of wave.units) spawnHostile(s, -1, fu.kind, tile, fu.quality)
+  wave.at = tile
+  ctx.log({ kind: 'war', text: `The Company landed ${wave.units.length} units on the coast.`, tile })
 }
 
 export const fleetSystem: System = {
@@ -93,15 +177,17 @@ export const fleetSystem: System = {
     if (!d || !d.declared || d.won || d.lost) return
     const since = s.turn - (d.turnDeclared ?? s.turn)
     const pool = s.company.fleetPool ?? []
-    // waves at sea narrow and land
+    // waves at sea motor in, narrow and land
     for (const wave of d.waves) {
       if (wave.landed) continue
       wave.turnsToLand--
-      if (wave.turnsToLand > 0) { narrow(s, wave, ctx); continue }
-      wave.landed = true
-      const tile = landTileNear(s, wave.anchorage, ctx)
-      for (const fu of wave.units) spawnHostile(s, -1, fu.kind, tile, fu.quality)
-      ctx.log({ kind: 'war', text: `The Company landed ${wave.units.length} units at the coast.`, tile })
+      if (wave.turnsToLand > 0) {
+        // the target itself can have been settled over since the wave was launched; it still lands
+        wave.at = approachPosition(s, wave, splashdownFor(s, wave.target))
+        narrow(s, wave, ctx)
+        continue
+      }
+      land(s, wave, ctx)
     }
     // launches: after the window, then about every interval while the pool lasts
     let atSea = d.waves.some(w => !w.landed)
@@ -126,7 +212,7 @@ export const fleetSystem: System = {
         }
       }
     }
-    // the blockade ship leaves when no wave is at sea and the pool is empty
+    // the blockade ships leave when no wave is at sea and the pool is empty
     if (!pool.length && !atSea) s.units = s.units.filter(u => !(u.owner === -1 && u.kind === 'companyShip'))
     // win: pool empty, every wave landed, nothing of the Company's left standing
     const standing = s.units.some(u => u.owner === -1 && isArmed(u.kind) && isCompany(u.kind))
@@ -143,13 +229,19 @@ export const fleetSystem: System = {
     if (!d || !d.declared || d.won || d.lost) return out
     const since = s.turn - (d.turnDeclared ?? s.turn)
     if (since < C.military.declarationWindow) {
-      out.push({ key: 'muster', group: 'muster', type: 2, title: `${C.military.declarationWindow - since} turns to muster`, body: `${(s.company.fleetPool ?? []).length} Company units will come in waves of about ${C.military.waveSize}. Arm colonists, raise works, garrison the landing.`, explain: 'Works multiply the garrison. Batteries are strongest inside them. Militia in forest or hills can ambush regulars in the open.', magnitude: 3, since: s.turn, choices: [], opens: 'declaration' })
+      out.push({ key: 'muster', group: 'muster', type: 2, title: `${C.military.declarationWindow - since} turns to muster`, body: `${(s.company.fleetPool ?? []).length} Company units will come in waves of about ${C.military.waveSize}. Arm colonists, raise works, garrison the Landing.`, explain: 'Works multiply the garrison. Batteries are strongest inside them. Militia in forest or hills can ambush regulars in the open.', magnitude: 3, since: s.turn, choices: [], opens: 'declaration' })
     }
     for (const wave of d.waves) {
       if (wave.landed) continue
-      const cands = candidateAnchorages(s).filter(a => !wave.excluded.includes(a))
-      out.push({ key: `wave:${wave.id}`, group: 'wave', type: 2, title: `A wave lands in ${wave.turnsToLand}`, body: `${wave.units.length} units at sea. ${cands.length} stretches of coast remain possible. Passages and consignments are stopped while it is at sea.`, magnitude: 3, since: s.turn, choices: [], opens: 'declaration', tile: cands[0] })
+      const coast = waveCoast(s, wave)
+      out.push({ key: `wave:${wave.id}`, group: 'wave', type: 2, title: `A wave lands in ${wave.turnsToLand}`, body: `${wave.units.length} units at sea. ${coast.length} tiles of coast remain possible. The settlement it lies off is blockaded while its ship stays.`, magnitude: 3, since: s.turn, choices: [], opens: 'declaration', tile: wave.at })
+    }
+    for (const st of s.settlements) {
+      if (st.owner !== 0 || !isBlockaded(s, st)) continue
+      out.push({ key: `blockade:${st.id}`, group: 'blockade', type: 2, title: `${st.name} is blockaded`, body: 'A hostile armed ship lies off it. Passages and consignments there stop until it is driven off or leaves.', explain: 'A blockade is a ship beside the settlement. Batteries fire on adjacent hostile ships.', settlement: st.id, tile: st.tile, magnitude: 2, since: s.turn, choices: [], opens: 'settlement' })
     }
     return out
   },
 }
+
+export { sailingDistance, isBlockaded }

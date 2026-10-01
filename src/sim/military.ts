@@ -3,15 +3,16 @@
 // multiply the garrison's defence and cap its size. Ambush flips the terrain bonus against regulars
 // in the open. Siege trains breach works after a threshold of adjacent turns. Company and hostile
 // rival units are moved here too, toward the nearest player settlement, with a preference for the
-// landing.
+// Landing, the player's first settlement.
 
 import type { GameState, TurnContext, Unit, QueueItem, Settlement, Quality } from './state'
 import type { System } from './turn'
 import { C, difficultyOf } from './constants'
-import { unitAttack, unitDefence, isArmed, isCompany, isHull, findPath, advance, makeUnit, maxMoves } from './units'
+import { unitAttack, unitDefence, isArmed, isCompany, isHull, isAfloat, isArmedShip, findPath, advance, makeUnit, maxMoves } from './units'
 import { chance, next } from './rng'
 import { neighbours8, isLand, dist } from './worldgen'
 import { unitLabel } from './queue'
+import { sightMask } from './fog'
 
 const QUALITY: Quality[] = ['raw', 'hardened', 'sworn']
 
@@ -23,6 +24,14 @@ export function isHostileTo(s: GameState, owner: number, other: number): boolean
 }
 
 function settlementAt(s: GameState, tile: number): Settlement | undefined { return s.settlements.find(x => x.tile === tile) }
+
+/** A settlement is blockaded while a hostile armed ship lies on a water tile beside it. Military
+ *  brief section 9. The Company's ships always count; a rival's only when flagged, because an
+ *  unflagged raider is not admitting to anything. */
+export function isBlockaded(s: GameState, st: Settlement): boolean {
+  const beside = neighbours8(s.world.width, s.world.height, st.tile)
+  return s.units.some(u => u.owner !== st.owner && isHostileTo(s, u.owner, st.owner) && isArmedShip(u) && (u.flagged || u.owner === -1) && beside.includes(u.tile) && s.world.tiles[u.tile].terrain === 'water')
+}
 
 /** Defence of a single defender on a tile, with terrain, works and coastal battery bonuses. */
 export function defenceOf(s: GameState, d: Unit, tile: number): number {
@@ -123,7 +132,7 @@ function ownerName(s: GameState, owner: number): string { return owner === 0 ? '
 function takeSettlement(s: GameState, st: Settlement, by: number, ctx: TurnContext) {
   const from = st.owner
   if (by === -1) {
-    // the Company does not hold ground; it breaks the place and moves on, unless it is the landing
+    // the Company does not hold ground; it breaks the place and moves on, unless it is the Landing
     if (st.owner === 0 && st.tile === s.charters[0].landing && s.declaration) {
       if (s.declaration.lost) return
       s.declaration.lost = true
@@ -178,11 +187,14 @@ function moveHostiles(s: GameState, ctx: TurnContext) {
   if (!mine.length) return
   const over = !!(s.declaration && (s.declaration.won || s.declaration.lost))
   for (const u of s.units) {
-    if (u.owner === 0 || isHull(u.kind) || !isArmed(u.kind)) continue
+    // a ship blockades and fights ships; it does not march, and it cannot take ground. The
+    // Company's landing craft now lies off the settlement its wave makes for, and left in this
+    // loop it took an ungarrisoned Landing from the water the turn it arrived
+    if (u.owner === 0 || isAfloat(u.kind) || !isArmed(u.kind)) continue
     if (!isHostileTo(s, u.owner, 0)) continue
     if (u.owner === -1 && over) continue
     u.moves = maxMoves(u)
-    // the Company marches on the landing when it can, otherwise the nearest settlement
+    // the Company marches on the Landing when it can, otherwise the nearest settlement
     const landing = mine.find(x => x.tile === s.charters[0].landing)
     const target = (u.owner === -1 && landing && dist(w, u.tile, landing.tile) <= 12) ? landing : mine.reduce((a, b) => dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a)
     // attack anything of the player's beside it first
@@ -235,8 +247,11 @@ export const militarySystem: System = {
     const mine = s.settlements.filter(x => x.owner === 0)
     const diff = difficultyOf(s.settings.difficulty)
     void diff
+    // a threat the player cannot see is not yet a threat the queue can name
+    const seen = sightMask(s)
     for (const u of s.units) {
-      if (u.owner === 0 || isHull(u.kind) || !isArmed(u.kind) || !isHostileTo(s, u.owner, 0)) continue
+      if (u.owner === 0 || isAfloat(u.kind) || !isArmed(u.kind) || !isHostileTo(s, u.owner, 0)) continue
+      if (u.owner !== -1 && !seen[u.tile]) continue
       const nearest = mine.reduce<Settlement | null>((a, b) => !a || dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a, null)
       if (!nearest) continue
       const d = dist(w, u.tile, nearest.tile)
