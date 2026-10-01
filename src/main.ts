@@ -10,6 +10,12 @@ import type { GameState } from './sim/state'
 
 function boot() {
   const root = document.getElementById('app')!
+  // the gallery: a hidden view for looking at the drawings, reached by address alone. It never
+  // reads or writes the save, so the save is not touched before this is decided
+  if (new URLSearchParams(location.search).has('gallery')) {
+    import('./ui/gallery').then(m => { (window as unknown as { gallery: unknown }).gallery = m.mountGallery(root) })
+    return
+  }
   let state: GameState | null = null
   let resumed = false
   try {

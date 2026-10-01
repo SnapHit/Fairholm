@@ -83,6 +83,21 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ---- the gallery strip: a season to pick, over the stage, at /?gallery ------------------------- */
+#gallery {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 2;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+  padding: calc(var(--space-3) + var(--safe-top)) var(--space-5) var(--space-3);
+  font-size: var(--text-small); color: var(--ink-dim); text-shadow: var(--shadow-text);
+  background: linear-gradient(to bottom, var(--surface-veil), transparent);
+  pointer-events: none;
+}
+#gallery > * { pointer-events: auto; }
+#gallery .label { color: var(--ink); font-weight: var(--weight-medium); }
+#gallery .btn { min-height: 0; padding: var(--space-2) var(--space-4); font-size: var(--text-small); }
+#gallery .btn.on { background: var(--accent); color: var(--ink-on-accent); border-color: transparent; }
+#gallery .zoom { margin-left: auto; }
+
 /* ---- the queue bar: one item and a count, and the turn ----------------------------------------- */
 #queuebar {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
