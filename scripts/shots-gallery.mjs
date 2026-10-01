@@ -3,8 +3,10 @@
 // The gallery at /?gallery stands every drawing on the real map under the real light. This shoots
 // it: the land rows, the hulls and the settlements, at working and detail zoom, in summer and in
 // winter, on a phone held sideways so a whole row fits, and leaves the pictures for a person to
-// look at. The questions they answer are the ones the art direction brief asks: one family, one
-// scale, shadows that lie with the trees', a ship that sits in the water.
+// look at. They are written as jpeg, because twenty of them at a phone's two times resolution are
+// thirty-five megabytes as png and these are for looking at, not for measuring. The questions they
+// answer are the ones the art direction brief asks: one family, one scale, shadows that lie with
+// the trees', a ship that sits in the water.
 //
 // Run with:  node scripts/shots-gallery.mjs
 //            OUT=shots/gallery CHROMIUM=/opt/pw-browsers/chromium node scripts/shots-gallery.mjs
@@ -62,7 +64,7 @@ for (const [seasonName, k] of Object.entries(SEASONS)) {
     await page.waitForFunction(() => !window.gallery.scene.loopRunning, null, { timeout: 15000 }).catch(() => {})
     await page.waitForTimeout(400)
     const m = await page.evaluate(() => ({ calls: window.gallery.scene.renderer.info.render.calls, tris: window.gallery.scene.renderer.info.render.triangles }))
-    await page.screenshot({ path: `${OUT}/${seasonName}-${viewName}.png`, clip: { x: 0, y: 0, width: W, height: H } })
+    await page.screenshot({ path: `${OUT}/${seasonName}-${viewName}.jpg`, type: 'jpeg', quality: 88, clip: { x: 0, y: 0, width: W, height: H } })
     rows.push({ season: seasonName, view: viewName, calls: m.calls, tris: m.tris })
   }
 }

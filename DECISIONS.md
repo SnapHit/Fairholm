@@ -1181,6 +1181,256 @@ there before this change.
   fixed: nothing in this session's scope would move it, and the figure to reduce is the bundle.
 
 
+## The drawings, session of 1 October 2026
+
+### 82. The units are keyed by level, not by phase, and a patch of board is told from a sail by holding both greys
+
+The settlement sheet was cut by sampling the checkerboard by phase: a pixel is board if it is
+neutral and near the grey of the square it falls in. That cannot cut the lander. Its board is three
+boards pasted together: a neutral checker above the hull on the 25.6 px grid, a blue grey one below
+it on a grid about 23 px wide and out of phase, with the junction running through the pontoons. A
+single neutrality threshold fails on the lower band's tint, and a phase model fails on its grid.
+
+So the unit extractor keys by level alone, per band of rows, with a tint taken off first: a pixel is
+board if it is neutral once the band's tint is removed and lies between the dark square's grey and
+the light one's. That leaves the question a phase model answered for free, which is whether a pale
+neutral patch inside the drawing is board the drawing encloses (between a wheel's spokes, between
+two shrouds) or a pale part of the drawing (a sail, a canopy). The answer is that a patch of board
+holds both of the board's greys and a sail holds one: a region that is at least twelve per cent near
+each grey is board. Twenty-three such patches came out of the trader and nineteen out of the hauler
+and no sail went with them.
+
+The hand repairs the prompt asked for are jobs in the same table. The ship's rigging goes: a plain
+thinness test on the silhouette failed, because a bundle of shrouds a few pixels apart is one wide
+band in the silhouette, so the ropes are found in the dark part of the silhouette only (under a lum
+of 200), opened by a three pixel disc, and each goes with the chroma it bled into the board beside
+it; the masts, yards, sails and bowsprit stay. The blank nameplates on the cannon's trail and the
+ship's stern are painted over by walking along the planking's grain to the nearest unpainted pixel
+either way and blending by distance, so the plank lines run through where the plate was. The
+lander's steam goes, everything pale above the hull's top, to come back as a live effect. Every
+piece is then de-fringed by pulling its edge colour two pixels in, and resampled premultiplied so
+the board's grey cannot bleed back in at the edge.
+
+### 83. One sheet, a person is 144 px, six bits a channel, the hulls at six tenths
+
+Eight new pieces at the colonist's 200 px person came to 663 kB on one 1024 square sheet, against a
+budget of about 250 kB. Three things brought it to 238 kB on a 1024 by 512:
+
+- A standing person is 144 px, not 200. At the closest zoom on a two times phone a person is 75
+  device pixels tall, so 144 is still nearly twice oversampled. The colonist was carried over from
+  its one piece sheet and cut down to agree, through the same pipeline.
+- Colour is kept to six bits a channel. The drawings are flat colour and soft gradients that a jpeg
+  had roughened, and the quantisation takes the roughness out of the png without putting a step
+  into the gradients at the size they are seen. About thirty per cent of the weight.
+- The trader and the lander, which between them were more than half the sheet, are stored at six
+  tenths of the common resolution. A hull three people tall is still 1.15 times oversampled at the
+  closest zoom. The manifest carries how many pixels a person is in each piece (`personPx`), so a
+  piece stored small still stands at its own height on the ground; see 85.
+
+The packer also writes two contact sheets to `art/units`, every piece on mid grey at the sheet's
+pixels and again at the size it stands on a phone at working zoom, with its anchor marked. They were
+looked at. Nothing was lost: the cannon's rammer, the horse's reins, the ship's anchor and the
+lander's ramp all survived, and no checker residue is left.
+
+### 84. The gallery is a stage, not a save
+
+`/?gallery` is a view for looking at the drawings on the real map under the real light. It is the
+production renderer with nothing swapped: the same terrain, shadow bake, season palettes and
+billboard layer. What it stands on them is a state built by hand around a real game's charters and
+market: a flat coast of ploughed grassland with every kind of unit in every owner's colour in a row
+beside a colonist for scale, three settlements of two, six and twelve behind them, every hull on the
+water with one row under way, an unflagged raider and the Company's ship, the lander offshore with
+the boat, a wave of the recall fleet at sea, a stack of three, and a wood at one side to compare
+shadows against. A strip over it picks the season; the pinch and the drag are the map's own.
+
+It never reads or writes the player's save: `main.ts` branches to it before the save is touched. It
+is a separate chunk of 3.7 kB that nothing in the game imports or links to; the address is the whole
+of its interface. The ground is ploughed because the renderer rolls a landform under every map that
+can carry low ground under the waterline, and a stage wants its floor above it everywhere; ploughed
+ground is flattened to less than half the roll.
+
+### 85. Scale is in world terms, and the manifest carries it
+
+The prompt's table (person 1, outrider 1.35, hauler 1 and about 2.4 long, battery 0.6, cabin to the
+ridge 1.4, trader to the masthead 3, lander 1.8) is applied where the pixels are made, in the
+extractor's job table, not in the renderer. Each piece is cut so that its height in people times the
+sheet's person is its height in pixels, and the manifest carries the person for each piece. The
+renderer has one number, how tall a person stands in tiles (0.52), and every piece stands against
+that by its own pixels. A new drawing cut by the pipeline needs nothing in the renderer, including a
+drawing stored at a lower resolution.
+
+One piece breaks the table on purpose: the improver stands 1.16 people tall because its pick and
+shovel stand over its hat. Its person is measured from the hat's crown down, so the person is a
+person's height and the tools stand above that, as they would.
+
+### 86. A profile is mirrored in the picture, and the light stays where it is
+
+The outrider, hauler, battery and trader are drawn facing left. A unit going right is drawn
+mirrored, where going right means the first tile of its path, or the tile its order is taking it to,
+is to the right of where it stands; a standing unit faces the way it was drawn. The flip is a
+per instance flag that reads the sheet from right to left. The quad is not turned, so the side light
+term, which brightens the side of the quad the sun is on, still brightens the left: a mirrored hauler
+standing alone on open ground beside a drawn one measured within three per cent of it on the canopy
+and on the horse, both lit from the upper left.
+
+### 87. Aliases, never fakes
+
+Kinds without a drawing of their own borrow one as it is, at a share of its size, and are told apart
+by their ring, their badge or their damage:
+
+| Kind | Draws | At |
+|---|---|---|
+| regulars, horse | company-regular | 1 |
+| siegeTrain, damagedSiegeTrain | battery | 1 |
+| damagedBattery | battery | 1 |
+| lighter | trader | 0.6 |
+| raider | trader | 0.85 |
+| cutter | trader | 0.95 |
+| companyShip | trader | 1 |
+
+Nothing is stretched, recoloured or composited. A damaged battery is the battery with its tint taken
+down to 0.72, drained toward grey by 0.55 before the light is applied so it still takes the light,
+and turned seven degrees on the ground about its anchor. The table is `UNIT_SPRITE.pieces` and
+`UNIT_SPRITE.scale`; a drawing arriving on the sheet under a kind's own name wins over both.
+
+### 88. The pool of shade had one cause, and it was not the one assumed
+
+The prompt supposed each building was shading twice, once by its baked drop shadow and once by the
+engine's stamp, with the stamps saturating where they overlapped. The baked drop shadows are inside
+the drawn silhouette and shade nothing outside it. The engine's stamp was the whole of the cause, and
+in two parts.
+
+A shadow was a trail of up to twenty-six soft discs, each taken out of the light one after another.
+The discs of one trail overlap heavily, so one tree's shadow summed to black along its whole length
+whatever the depth said, which is why decision 72 had to halve the depth to see any shape at all. A
+settlement then stamped seven of these on top of one another. A shadow is now composed as a whole,
+the deepest bite at each texel, and taken out of the light once, so a lone shadow is as dark as its
+depth says and no darker where its own discs overlap. Different things still add, so a wood is
+darker than a tree. A settlement's buildings compose as one group, so the ground under a settlement
+is no darker than under one building. The depth went from 0.5 to 0.86, which is a lone tree's shadow
+reaching what it did before. Measured on the stage, the ground through a settlement of six now reads
+138 to 234 of 255 where it read 0 for two tiles.
+
+The one thing left of the old assumption is a probe: a unit reads its light a little toward the sun
+by its own height, and a ship three people tall read it three tiles away, which was the next ship's
+shadow. The probe is capped at the same height the props' is.
+
+### 89. Settlements at the person's scale, four buildings at most
+
+The buildings were scaled against a reference width, and a person stood 2.8 times a cabin's wall.
+The sheet is now scaled from one measurement: the cabin's drawn wall is 70 px tall under its anchor,
+and a cabin's wall is about a person tall. The drawing looks down at the cabin from about thirty
+degrees, which shortens a standing height by its cosine, so the drawn wall is 0.87 of a person. A
+colonist beside a cabin stands at the eave; the roof above is what the drawing says, which puts the
+ridge a little over the brief's 1.4 people once the roof's depth is counted. A building is now a
+tile and more across and a settlement of four is well over its tile, which is the point: one tile of
+gameplay and rather more than one tile of place.
+
+A settlement shows at most four buildings, chosen by what it holds rather than shuffled: a dwelling
+always (the longhouse once eight live there, the cabin before), the hall where there is a meeting
+house, a press or a school, the frame of whatever is being built, then the barn for food or storage,
+the steading for horses, and the yard for industry, a wharf or works. Two to begin with, three at
+three people, four at six. The four stand on a small lattice, far ones first so the hall stands
+behind, mirrored or not from the settlement's id so two places are not the same picture.
+
+### 90. The arrival, drawn, and a frame loop while the lander steams
+
+The lander and the boat are the sheet's drawings. A hull is a water billboard: anchored at its
+waterline rather than its keel, with the hull below the line faded out over a short distance so the
+bow and the stern go under the way a hull does, reading its light at the waterline, and riding the
+water a little in the vertex shader as the frame clock runs (`uTime`, a uniform every material can
+read). The steam is a live effect, as asked: seven soft quads off the stacks in one instanced draw,
+each on its own phase of a 3.2 second cycle, rising up the screen and drifting off the wind, growing
+from a tenth of a tile to a third and thinning as they go.
+
+The architecture rule is that the renderer draws continuously only during a gesture, momentum, a
+glide or the arrival animation, and idle draws nothing. The opening image is a lander down and
+steaming, and steam that does not move is not steaming, so the arrival animation is read to begin
+when the game opens: while the game waits for its first tap the frame loop runs, at full resolution
+rather than the moving resolution, and the plume drifts. It ends with the landing. A wave's lander,
+which steams on the turn it came down, does not keep the loop running for a whole turn: its steam
+moves while the map is moved and stands still otherwise. That is the call: the opening image is
+seconds long and is the first thing anyone sees, and a turn is as long as the player makes it.
+
+Each wave of the recall fleet stands offshore as a lander while it is at sea, from the turn it splashes
+down until it lands, with steam on the first. Where it stands is offshore of the middle of the coast
+the wave might still land on, less what its heading has ruled out, which is exactly what the player
+is allowed to know and no more; a lander standing at the anchorage would give the landing away. The
+candidate anchorages are read through `src/render/selectors.ts`, a read-only copy of the fleet's own
+reading of the world, because the simulation does not export it and this session was not to touch
+the simulation. If the fleet's rule changes, the selector has to follow it, and that is written on
+both.
+
+### 91. An unflagged raider carries no ring; a flagged one carries its owner's
+
+The prompt said raiders show no owner ring or flag. The rival charters brief, section 8, says the
+mechanic is attribution: an unflagged raider is unattributed, and it becomes flagged when its charter
+is at war with you or when it is caught. The ring follows the attribution: a raider the simulation
+holds unflagged has no ring at all, and a raider it holds flagged has its owner's, because by then
+you know whose it is. The rings on the water lie at the waterline, under the hull, and the hull is
+drawn over them, so what shows is the ring's lower half below the hull, which reads as a mark on the
+water rather than a hoop the ship is standing in.
+
+### 92. The stack count is DOM, and it counts what the chooser lists
+
+Several of the player's units on one tile fan out and are told apart by the stack sheet when the tile
+is tapped. The count that says there are several before the tap counts the same thing the sheet
+lists, the player's units on the tile, so the two never disagree. It is a strip of DOM over the map
+rather than something drawn, because the map draws no text; it follows the camera from the renderer's
+frame hook and is hidden below the zoom where a unit is a mark, because a mark is one mark however
+many stand there. Quality is drawn: one chevron beside the ring for hardened and two for sworn, in
+the ring's colour, nothing for raw.
+
+### 93. What did not work the way the prompt assumed
+
+- **The lander's background is three boards, not two**, and the lower one is on a different grid.
+  See 82: this is why the whole extractor went to levels.
+- **"Drop the ship's rigging if it will not key cleanly."** It would not, and the obvious thinness
+  test did not drop it either; see 82 for what did. The rigging is gone and the ship is better for it
+  at the size it is seen.
+- **"Each building shades twice."** It did not; see 88. The fix was to the cause, which was in the
+  bake, and the test rig was not touched.
+- **The budget could not be met at the old person.** See 83. Nothing was dropped to meet it; two
+  pieces are stored smaller and every piece lost two bits a channel.
+- **Commit at the end of each phase.** Phases five and six landed in one commit: a hull drawn at its
+  waterline is the same code as the lander drawn at its waterline, and the two could not be split
+  across commits without one of them being broken. The chevrons of phase seven landed in the same
+  pass through the unit builder; the stack count is its own commit.
+- **The gallery's flat coast was under water.** The renderer's landform noise rolls under every map
+  and put most of the stage below the waterline; ploughed ground flattens it, so the stage is
+  ploughed. See 84.
+- **A ship read the next ship's shadow.** See 88, the probe.
+- **Smoke check one (boot under 2.5 s)** is environment bound, as decision 73 records: it failed at
+  3 to 4.5 s on this container earlier in the session and passed at 1.55 s on the final run, with
+  the same code either side of the difference. All ten passed on the final run.
+- **Scout.** The prompt says a scout uses the outrider. There is no scout kind in the state; the
+  outrider is the scout. No alias was added for a kind that does not exist.
+
+### Art debt
+
+Every drawing the game is still owed, and what stands in for it now:
+
+| Owed | Stands in now |
+|---|---|
+| Lighter | the trader at six tenths; wants a small open boat |
+| Raider | the trader at 0.85; wants a lean fast hull with no flag |
+| Cutter | the trader at 0.95; wants a heavier gun deck |
+| The boat that comes off the lander | the lighter's stand in at six tenths |
+| Company horse | the Company regular at full size, told by its ring; wants a rider |
+| Siege train, and damaged | the battery; wants a heavier piece on a limber |
+| Damaged battery | the battery darkened, drained and tilted; wants a broken carriage |
+| Company ship | the trader with the Company's dark ring; wants a darker, larger hull |
+| Middle era buildings (worked stone) | the built roof kit of `settlements.ts` |
+| Late era buildings (brick and metal) | the built roof kit |
+| The lander broken up on the shore after landing | nothing is drawn |
+| Predecessor settlements | built round roofs in ochre |
+| A colonist at work (a tile worker) | nothing on the tile; the settlement's buildings |
+| The early era frame piece as a building under construction | drawn only while something is being built |
+
+The seam for each is the same: a piece on the units sheet under the kind's own name, cut by
+`scripts/extract-sprites.py` from a job row giving its height in people and which way it faces, and
+packed by `scripts/clean-sprites.mjs`. Nothing in the renderer changes.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

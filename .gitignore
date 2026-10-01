@@ -4,3 +4,9 @@ dist/
 *.log
 .DS_Store
 scripts/__pycache__/
+# the smoke run and the shot rigs regenerate these; the pictures worth keeping are shots/*.png
+# with a number in front and shots/gallery/
+shots/shot-*.png
+shots-units/
+shots-settlement/
+shots-map/
