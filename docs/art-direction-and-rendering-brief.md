@@ -1,5 +1,7 @@
 # Art direction and rendering brief
 
+**Changed 1 October 2026.** The opening is now the one the original is loved for: you begin at sea in fog with no knowledge of the world, sail until you find land and choose your own ground, anchorages are gone and settlements may be founded almost anywhere. This brief gains a section on how unexplored ground is drawn, and the schematic view no longer lists anchorages.
+
 Written 21 August 2026. Self-contained. Companion to the browser game architecture brief, whose section
 1 requires that no art direction is settled until somebody has said out loud what makes it cheap.
 
@@ -203,10 +205,26 @@ than the one left behind, and a cool palette reads as hostile.
 | Detail | 72px | Full kit, props at full density, unit forms, road and river detail |
 | Working | 44px | Simplified kit, props thinned, units as forms. **The default** |
 | Overview | 16px | Terrain colour and shading, settlement marks in owner colour, props culled |
-| Fit | varies | Schematic. Terrain bands, settlements, anchorages. Above large maps this is not a rendered view |
+| Fit | varies | Schematic. Terrain bands, settlements, the coast. Above large maps this is not a rendered view |
 
 Per section 4 of the economy brief, **below 44 pixels a tile only settlement and unit markers are
 tappable**, with hit areas larger than their tile.
+
+---
+
+## 10a. Unexplored ground
+
+**Unexplored ground is not black.** It is the sea's own deep blue-grey haze, brighter toward the edge
+of what is known, and land fades into it rather than stopping. Remembered ground out of sight is drawn
+as known, slightly dimmed and desaturated.
+
+- **One shader mask from a per-tile visibility texture**, softened across tile edges with the same
+  blending the terrain uses in section 3
+- **No alpha cloud layers.** Overdraw is the one cost on-demand rendering does not rescue
+- **Any drift in the haze advances only when frames are drawn.** The frame loop is not kept running
+  for it
+- Other charters' units and ships appear only within sight. Settlements once seen stay shown as last
+  seen. The recall fleet's approach is always drawn
 
 ---
 

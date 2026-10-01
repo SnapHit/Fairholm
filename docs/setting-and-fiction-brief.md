@@ -1,5 +1,11 @@
 # Setting and fiction brief
 
+**Changed 1 October 2026.** Section 7 now opens the game at sea: you splash down in fog with no
+knowledge of the world, sail the lander until you find land, and choose your own ground, because that
+opening is the one the source game is loved for. Anchorages are gone, settlements may be founded almost
+anywhere, the Landing is only the first settlement's default name, and a new section 7a records the
+backstory and the five opening lines.
+
 Version 2, written 21 August 2026. **Supersedes version 1 of the same date.** Self-contained.
 Companion to the browser game architecture brief, the Colonization mechanics brief, the legal
 distinguishability constraint, the interaction brief and the session, map and economy brief.
@@ -188,29 +194,49 @@ visibly the question of why ships approach the coast at all on a world reached b
 **The crossing vessel never lands.** It arrives, holds off the planet, and leaves. Nobody in Fairholm
 ever sees it.
 
-**What comes down is a lander**, a heavy capsule that **splashes down offshore** at a designated point.
-Water landing is not a flourish; it is the cheapest way to put mass on a planet that has an ocean. No
-landing field, no infrastructure, no prepared ground, and the water absorbs the energy. On a crossing
-this marginal, cheapness decides everything.
+**What comes down is a lander**, a heavy capsule that **splashes down at sea**. Water landing is not a
+flourish; it is the cheapest way to put mass on a planet that has an ocean. No landing field, no
+infrastructure, no prepared ground, and the water absorbs the energy. On a crossing this marginal,
+cheapness decides everything.
 
-**The lander opens and disgorges a boat**, and the boat brings people and cargo to shore.
+**The lander is the first ship.** It comes down in open sea, in fog, four to six turns' sailing from
+the nearest coast with food, timber and fresh water, carrying the starting colonists and knowing
+nothing of the world. It moves wherever boats can go, open water and the major rivers. You sail until
+you find land, and you choose your own ground. There is no landing-site chooser: nobody tells you where
+to land.
 
-**The lander is never recovered. It is broken up.** The Company writes it off against the passage debt,
-which is part of why that debt is so large. **So the first metal in the colony is the thing that brought
-you, and you are still paying for it.**
+**The lander founds the first settlement and is consumed doing it.** It beaches on any legal land tile
+beside it and everyone aboard becomes the settlement's people; it must have at least one colonist
+aboard to do so. Colonists may go ashore to scout on foot, but nobody founds anything until the lander
+has, so the first settlement is always on the water and trade works from day one. Legal ground is
+nearly everywhere: any tile that is not mountain or water, with at least two clear tiles between it and
+the centre of any existing settlement, anyone's. The lander also carries a boat, which survives once
+the lander is gone as your first working ship, a lighter, on the water alongside.
+
+**The first lander is never recovered.** Beached, it is the settlement. The Company writes it off
+against the passage debt, which is part of why that debt is so large. **So the first metal in the
+colony is the thing that brought you, and you are still paying for it.**
+
+**Freight landers** come down offshore of any coastal settlement you own, are emptied, and are broken
+up. An inland settlement hauls to a coastal one.
 
 ### What this settles
 
 | Question | Answer |
 |---|---|
-| Why boats matter from turn one | Because you arrive offshore, not on a beach |
-| Why the recall fleet approaches by sea | Its landers splash down offshore and disgorge landing craft, which make for an anchorage |
-| Why the approach narrows over three turns | Splashdown is visible, the craft form up, then they commit to a heading. See section 10 of the military brief |
-| Why a blockade strangles | Cargo has to reach the water to get off-world at all |
+| Why boats matter from turn one | Because you begin at sea, and the lander that brings you is your first ship |
+| Why the first settlement is always on the water | Only the lander can found it, and the lander beaches from the sea or a major river |
+| Why the recall fleet approaches by sea | Its landers splash down offshore and motor in to any coast within two tiles of one of your settlements |
+| Why the approach narrows over three turns | Splashdown is visible whatever the fog hides, and the landers take three turns to motor in, so the stretch of coast they could reach narrows each turn. See section 10 of the military brief |
+| Why a blockade strangles | Cargo has to reach the water to get off-world at all, and a hostile armed ship on the water beside a settlement closes it |
 | Why no spacecraft is ever rendered closely | A splashdown is a mark on the water and a plume of steam |
 
-**The Landing** now earns its name: it is both the offshore splashdown zone and the shore facility that
-receives what comes off it. It is a two-way bottleneck, which is exactly what makes cutting it serious.
+**The Landing** is the default name of the first settlement, and nothing more: the place where the
+lander beached. It is not a fixed splashdown zone and not a shore facility, and there are no anchorages.
+Cargo reaches the water at any coastal settlement you own, ships unload onto any coastal land tile, and
+a coastal settlement works its water tiles without a wharf; the wharf, drydock and shipyard remain for
+building and repairing ships. Every coastal settlement is a door, which is exactly what makes shutting
+one serious.
 
 ### The two transport layers
 
@@ -220,7 +246,7 @@ They remain completely different systems and should never be confused.
 |---|---|---|
 | Who operates it | The Company. The player only consigns to it | The player |
 | Duration | Months each way | Turns |
-| What the player sees | A splashdown offshore, a boat coming ashore, and later the empty lander being broken up | Boats, haulers, roads, wharves |
+| What the player sees | A splashdown in fog at the start, and later freight landers splashing down off a coastal settlement, unloading, and being broken up | Boats, haulers, roads, wharves |
 | Mechanical role | Price lag, warehouse pressure, and why the recall fleet is a gamble | The logistics game |
 
 **The science fiction lives in the arrangement, never in the texture.** Keeping the vessel unseen and
@@ -229,11 +255,39 @@ the asset argument in section 12 of the architecture brief doing useful work.
 
 ### One consequence for the consignment office
 
-If cargo must physically reach the Landing, an inland consignment office would seem useless under
-blockade. It is not, because **it is a contractual device rather than a warehouse**. Goods are consigned
-to the Company's account and their agents arrange carriage at their own risk. Inland it cannot be seized
-or blockaded directly, and during a blockade it works at a smuggler's rate because that carriage becomes
-dangerous.
+If cargo must physically reach the water at a coastal settlement, an inland consignment office would
+seem useless under blockade. It is not, because **it is a contractual device rather than a warehouse**.
+Goods are consigned to the Company's account and their agents arrange carriage at their own risk.
+Inland it cannot be seized or blockaded directly, and during a blockade it works at a smuggler's rate
+because that carriage becomes dangerous.
+
+---
+
+## 7a. The first ship, and why you were sent
+
+**Settled 1 October 2026.** The backstory is five sentences long, and that is deliberate.
+
+The first ship took a hundred years to reach this world. Its people found Bloom, a flower that grows
+nowhere else, and from it they made cores, and cores cut the crossing to eight months. They shipped
+cores home. Then they went silent, and the cores stopped coming. The Company has sent you on what cores
+it had left, to start again.
+
+This is the root of three things already in this document: why the crossing is marginal (section 6),
+why cores are what the Company cannot do without (section 8), and why the predecessors know the ground
+and you do not (section 9).
+
+The five lines below are canonical and are what the player reads at the start, fading in one at a time
+over the splashdown until the first tap dismisses them.
+
+> "The first ship took a hundred years to reach this world."
+>
+> "Its people found Bloom, a flower that grows nowhere else."
+>
+> "From it they made cores, and cores cut the crossing to eight months."
+>
+> "Then they went silent, and the cores stopped coming."
+>
+> "The Company has sent you to start again. No one is waiting."
 
 ---
 
@@ -271,7 +325,9 @@ The full goods list, chain structure and depths are in the session, map and econ
 ## 9. The predecessors, who replace the native layer
 
 An earlier wave of settlers who came out under a worse charter and defaulted on it. They stayed because
-going home meant the debt following them.
+going home meant the debt following them. They are the first ship's people and their descendants, the
+ones who found Bloom and made the first cores. Going silent was their default: they stopped shipping
+cores home and stopped answering.
 
 - Human and immediately legible. No cultural translation required
 - Here long enough to know how the ground behaves, and the player does not

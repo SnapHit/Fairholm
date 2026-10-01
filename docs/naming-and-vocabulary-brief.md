@@ -1,5 +1,11 @@
 # Naming and vocabulary brief
 
+**Changed 1 October 2026.** The opening is replaced by the one the original game is loved for: you begin
+at sea in fog with no knowledge of the world, sail until you find land, and choose your own ground.
+Anchorages are removed entirely and settlements may be founded almost anywhere, so The Landing becomes
+the first settlement's default name, the lander joins the hulls as the first ship, and anchorage leaves
+the terms and the terrain.
+
 Written 21 August 2026. Self-contained. Companion to the legal distinguishability constraint, whose
 section 8.1 lists what may never be used, and the setting and fiction brief, which proposed most of the
 directions confirmed here.
@@ -78,8 +84,8 @@ stretch of coast**, and that is the name that appears everywhere in play. This i
 colonial naming actually worked and one fewer invented proper noun for the player to learn.
 
 - **The country is Fairholm**, and the game takes its name
-- **The Landing** is both the offshore splashdown zone where landers come down and the shore facility
-  that receives what comes off them. A two-way bottleneck, per section 7 of the setting brief
+- **The Landing** is the first settlement's default name. The lander beaches on the ground the player
+  chooses and the place is named for the act. The player may rename it like any other settlement
 - Settlements are named by the player, with a generated default drawn from a period-plausible list
 
 ---
@@ -130,8 +136,9 @@ shipping system directly.
 | Refined | **Attar** |
 | Finished | **Cores**, from Attar and Metal |
 
-**Bloom** is plain, works as a harvest noun, and carries a useful second meaning: a bloom is also a
-mass of worked iron, which is a quiet echo of the chain converging with Metal.
+**Bloom** is a flower that grows nowhere else. The word is plain, works as a harvest noun, and carries a
+useful second meaning: a bloom is also a mass of worked iron, which is a quiet echo of the chain
+converging with Metal.
 
 **Attar** is the correct chemical term for an oil distilled from flowers, so it survives the register
 test in section 10 on its own merits rather than as flavour.
@@ -192,7 +199,7 @@ Per the setting brief, and clean of section 8.1.
 | **A lander** | The capsule that splashes down offshore. Never recovered; broken up for its metal |
 | **The recall fleet** | What arrives after the declaration |
 | **The dispatch** | The log of everything that happened |
-| **An anchorage** | Where a fleet can land |
+| **A landing** | Where a wave of the recall fleet comes ashore, any coast near a settlement |
 
 ---
 
@@ -212,6 +219,8 @@ The three export refineries take the name of what they make: **linen works**, **
 
 - Land: **colonist, militia, outrider, battery, improver**, with quality tiers **raw, hardened, sworn**
 - Hulls: **lighter, trader, raider, cutter**
+- The first ship: **the lander**, which carries the starting colonists and is consumed by founding the
+  first settlement. The boat it carries survives as the player's first lighter
 - The Company's own: **regulars, horse, siege train**
 - Haulage: **hauler**
 
@@ -220,8 +229,7 @@ The three export refineries take the name of what they make: **linen works**, **
 ## 9. Terrain
 
 Grassland, plains, downs, marsh, highland, mountain, dry country, water. Forested: light woodland, deep
-timber, highland forest, coastal scrub. Features: minor river, major river, road, anchorage, old
-workings.
+timber, highland forest, coastal scrub. Features: minor river, major river, road, old workings.
 
 ---
 

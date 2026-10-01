@@ -1,5 +1,7 @@
 # Session, map and economy brief
 
+**Changed 1 October 2026.** The opening is replaced by the one the original game is loved for: you begin at sea in fog with no knowledge of the world, sail until you find land, and choose your own ground. Anchorages are removed entirely and settlements may be founded almost anywhere, so the generator invariants in section 8 now describe the splashdown, and a new subsection there records the founding and spacing rules.
+
 Version 2, written 21 August 2026. **Supersedes version 1 of the same date.** Self-contained.
 Companion to the browser game architecture brief, the Colonization mechanics brief, the legal
 distinguishability constraint, the setting and fiction brief, and the interaction, session and
@@ -251,15 +253,33 @@ every game. Naval *combat* can still be cut per the mechanics brief. Naval *haul
 **The generator must validate and retry.** Nine settings produce more combinations than can be tested,
 so: generate, check invariants, regenerate on failure. Minimum invariants:
 
-- The landing site has food, timber and fresh water within reach
+- **Every charter's splashdown is in open sea**, four to six turns' sailing from the nearest coast
+  that has food, timber and fresh water within reach. The distance is one named constant
+- Every charter's splashdown is comparably fair
+- No rival and no predecessor is visible from a splashdown
+- The coast comes into view at least one turn before the lander reaches it
 - At least two refining chains are viable somewhere reachable
 - A minimum number of predecessor settlements are reachable
 - No unique resource sits on an unreachable landmass
 - Every topology and every size produces a playable opening
-- **Anchorages are placed and reachable.** Not every coastal tile can take a landing. Anchorage count
-  and spacing scale with map size and coastline length, every charter starts at one, and no settlement
-  site of value is left with no defensible relationship to any of them. See section 9 of the military
-  brief
+
+### Founding and spacing
+
+Anchorages are gone, and with them every rule, bonus and generator step that hung off them. Two plain
+rules take their place:
+
+- **A settlement may be founded on any tile except mountains and water.** The first is founded by the
+  lander, which beaches on a legal land tile beside it and is consumed doing so, so the first settlement
+  is always on the water and trade works from day one. Founding near the predecessors is allowed and
+  raises their alarm as it already does
+- **Two settlements' centres must be at least three tiles apart in every direction**, so no two rings
+  ever share a tile. No tile with fewer than two clear tiles between it and an existing settlement's
+  centre is legal, anyone's, predecessors and rivals included
+
+**Water tiles are worked by any coastal settlement without a wharf.** The wharf, drydock and shipyard
+remain for building and repairing ships. Ships may unload onto any coastal land tile. Freight landers
+come down offshore of any coastal settlement the player owns, and inland settlements haul to a coastal
+one.
 
 ### The compensation
 

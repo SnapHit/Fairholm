@@ -1,5 +1,9 @@
 # Onboarding and the first session
 
+**Changed 1 October 2026.** The three landing sites are gone, and so are anchorages. The game now opens
+at sea, in fog, with nothing known: you sail until you sight land and choose your own ground, which is
+the opening the original is loved for, and a settlement may be founded almost anywhere.
+
 Written 21 August 2026. Self-contained. Companion to all existing briefs, and particularly the turn,
 queue and standing orders brief, whose machinery this reuses almost entirely.
 
@@ -37,29 +41,52 @@ the usual mistake.
 
 ### What happens instead
 
-**The game opens mid-arrival.** The camera is on a coastline that was generated from a seed while the
-page loaded. You are already here.
+**The game opens at sea, in fog.** The page loads into fog at working zoom, centred on the lander
+settling at splashdown. The world was generated from a seed while the page loaded, and none of it is
+known yet. You are already here, and you do not know where here is.
 
-**The specific image, settled 22 August 2026**, per section 7 of the setting brief:
+**The specific image, settled 1 October 2026**, per section 7 of the setting brief:
 
-- **Offshore, a lander is down and steaming.** A mark on the water and a plume
-- **A boat has come off it and is making for the coast**, with a wake
-- **Three candidate landing sites are offered**, each with one line of plain characterisation: good
-  timber and poor ore, sheltered but thin ground, open country with a river
-- **One tap chooses**, and the boat goes there
+- **The lander is settling at splashdown.** A mark on the water, a plume rising, a little open sea
+  around it and haze beyond. Nothing else is shown because nothing else is known
+- **Five lines fade in over that shot**, one at a time, about two seconds apart, in the theme's display
+  type, legible over the haze. They never block input and they are never a separate screen
+- **The first tap anywhere dismisses them and starts the music**
+- **Then you sail until you sight land.** The lander moves wherever boats can go, open water and major
+  rivers. The nearest viable coast is four to six turns out and comes into view at least a turn before
+  you reach it. Where you go ashore is up to you: beach the lander beside any land tile that is not
+  mountain and not too close to someone else's settlement, and everyone aboard becomes the settlement
 
-That single image explains the entire arrangement without a word of exposition: you came from
-somewhere else, you arrived on the water, and where you go ashore is up to you. It is also cheap to
-render, being a mark, a plume, a boat and a wake.
+There is no landing-site chooser and nothing is offered. You find your ground by sailing to it.
 
-Four things that single interaction does:
+The five lines, exactly:
 
-1. It is beautiful immediately, which is the only argument the first ten seconds can make
-2. The first decision is real and consequential, which is the promise the rest of the game keeps
-3. It teaches the core interaction, which is tapping the map, and it is the gesture that unlocks audio
-   and begins fetching the first track, per section 6 of the feel brief
-4. **It plants the central idea in fifteen seconds**: this ground is not that ground, and that will
-   decide what you can be
+> *The first ship took a hundred years to reach this world.*
+>
+> *Its people found Bloom, a flower that grows nowhere else.*
+>
+> *From it they made cores, and cores cut the crossing to eight months.*
+>
+> *Then they went silent, and the cores stopped coming.*
+>
+> *The Company has sent you to start again. No one is waiting.*
+
+That shot and those five sentences are the whole of the exposition: you came from somewhere else, you
+arrived on the water, you know nothing of what is here, and where you go ashore is up to you. It is
+also cheap to render, being a mark, a plume, a little water and haze.
+
+Four things that opening does:
+
+1. It is beautiful immediately, which is the only argument the first ten seconds can make. Fog, a
+   plume and a little water, with five quiet lines over them
+2. The first decision is real and consequential, which is the promise the rest of the game keeps. It
+   comes after the voyage rather than before it: you sail until land is sighted, you choose your own
+   ground, and that ground decides what you can be
+3. It teaches the core interaction, which is tapping the map. The first tap dismisses the lines, and it
+   is the gesture that unlocks audio and begins fetching the first track, per section 6 of the feel
+   brief. The taps after it move the lander
+4. **It plants the central idea before land is in sight**: nothing is known until you go and look,
+   and this ground is not that ground. What the fog gives up will decide what you can be
 
 Generation settings live behind a *customise* affordance for anyone who wants them, and default
 sensibly for everyone else. Returning players get their last settings.
@@ -146,7 +173,8 @@ lesson they will not retain past the next screen.
 
 ## 5. The curriculum
 
-Roughly, on a small map. Triggers, not turns; the turns are indicative.
+Roughly, on a small map. Triggers, not turns; the turns are indicative, and they count from founding,
+not from turn one. The four to six turns of sailing before the first settlement sit outside the table.
 
 | Phase | Goods visible | What is introduced |
 |---|---|---|
@@ -158,8 +186,9 @@ Roughly, on a small map. Triggers, not turns; the turns are indicative.
 | The world, ~140 to 220 | 18 | Rivals, arms, signatories, buy or build |
 | The end, 220 on | 18 | The fleet becomes visible, fortification starts to matter |
 
-**The critical window is the first fifty turns**, roughly twenty to thirty minutes, because that is
-where dumping is learned. Everything before it exists to get the player there still interested.
+**The critical window is the first fifty turns after founding**, roughly twenty to thirty minutes,
+because that is where dumping is learned. Everything before it exists to get the player there still
+interested.
 
 ---
 
@@ -167,8 +196,13 @@ where dumping is learned. Everything before it exists to get the player there st
 
 Before any of that, the opening must contain one complete satisfying loop, achievable in five minutes.
 
-**Land, assign two colonists, watch food and timber accumulate, build the first thing, see the
-settlement change.**
+**Sail, sight land, found, assign, build.** Sail through fog until the coast comes into view, beach the
+lander where you choose, assign two colonists, watch food and timber accumulate, build the first thing,
+see the settlement change.
+
+The five minutes count from founding, as the curriculum does. The voyage before it has to cost almost
+nothing: a sailing turn is a heading and a tap, and the coast appearing out of the haze is its own
+reward.
 
 That requires early turns to be genuinely fast, five to ten seconds each, which the one-decision queue
 already delivers. It also requires the settlement to visibly change when something is built, which the
@@ -222,9 +256,9 @@ That has to work on its own merits, and drop-off by turn number is what will sho
 
 | Arrival | Treatment |
 |---|---|
-| **New player** | Section 2. Three landing sites, no settings, gentlest defaults |
+| **New player** | Section 2. The fog opening, no settings, gentlest defaults |
 | **Returning player** | The return screen from section 9 of the interaction brief. Intent, what moved, three things needing them. **Never onboarding** |
-| **Shared seed link** | That world, that landing. Skip the site choice, since the point is the specific map. Show whatever the sharer said about it |
+| **Shared seed link** | That world, that splashdown. A shared seed gives the same world and the same splashdown; where you go ashore is still yours. Show whatever the sharer said about it |
 
 Conflating the first two is the common failure and it insults returning players.
 
@@ -244,9 +278,9 @@ Conflating the first two is the common failure and it insults returning players.
 The failure specific to strategy games is not misunderstanding a mechanic. It is not knowing what you
 are supposed to be doing.
 
-**A single persistent line states the current objective**, from turn one. Early it is concrete: get
-this settlement fed. Later it is the real one: you owe the Company for your passage, and you intend to
-stop owing them.
+**A single persistent line states the current objective**, from turn one. Early it is concrete: find
+land, then get this settlement fed. Later it is the real one: you owe the Company for your passage, and
+you intend to stop owing them.
 
 The setting supplies this for nothing. It uses the same surface as the return screen's intent line, so
 it costs no new interface.
@@ -275,7 +309,8 @@ brief.
 - **Whether twenty to thirty minutes to the dumping lesson is too long.** This is the biggest open risk
   in the document. It may need to arrive by turn fifteen
 - The trigger thresholds for every unlock
-- Whether three landing sites is the right number, or two, or five
+- Whether the voyage is the right length. Four to six turns of sailing before land is sighted is the
+  starting point, and it may need to be shorter
 - Whether the one-sentence explanations are read at all, which the drop-off curve will imply
 - Whether the tappable glossary in section 7.1 is used, which is worth counting because it is cheap to
   instrument and it says a great deal about whether the teaching is landing

@@ -1,5 +1,12 @@
 # Military and revolution brief
 
+**Changed 1 October 2026.** Anchorages are gone from this brief, along with every landing, blockade
+and generator rule that leaned on them; the recall fleet now lands on any coast within two tiles of
+one of your settlements, and sections 9, 10, 11, 14, 15 and 16 are changed to match. The reason is
+the new opening, the one the original is loved for: you begin at sea in fog with no knowledge of the
+world, sail until you find land and choose your own ground, so settlements may be founded almost
+anywhere and nobody's arrival is tied to a fixed landing point.
+
 Version 7, written 21 August 2026. **Supersedes versions 1 to 6 of the same date.** Self-contained.
 Companion to the colonists and labour brief, the rival charters brief, the session, map and economy
 brief, the turn, queue and standing orders brief, the interaction, session and persistence brief and
@@ -196,20 +203,23 @@ Sworn is the reward for having veterans alive when you declare.
 
 ---
 
-## 9. Anchorages, which make the coast readable
+## 9. Landings, which can come ashore anywhere near a settlement
 
-Not every coastal tile can take a landing. **The map generates a limited number of anchorages**, fixed
-at generation and deterministic from the seed, visible once the coast is explored. A fleet can only put
-troops ashore at an anchorage.
+There are no fixed landing points. **Any coastal land tile can take a landing**, and the recall fleet
+chooses its ground wave by wave rather than from a list the map drew at generation.
 
-1. **Coastal geography becomes readable for defensibility from turn one.** A settlement covering one
-   anchorage is defensible; one exposed to three is not
-2. **Fortification becomes an optimisation rather than a guess.** You cannot cover them all
-3. **Capture on landing applies to the landing tiles**, not the entire coast
-4. **Blockades sit at anchorages too**
+1. **Each wave chooses a coastal land tile within two tiles of one of the player's settlements**, at
+   random from the play stream. Nothing weights the choice and nothing in the save records it
+2. **The landers splash down offshore and motor in over three turns**, visibly, with the plausible
+   coast narrowing each turn, per section 10
+3. **Units on the landing tile when the wave arrives are captured**, not the entire coast
+4. **A settlement is blockaded when a hostile armed ship is on a water tile adjacent to it**
 
-The player's own arrival uses an anchorage, as do the rival charters'. **Generator note:** anchorage
-count and spacing scale with map size and coastline length.
+**The recall fleet's approach is always visible regardless of fog.** Ships, yours and anyone else's, may
+unload onto any coastal land tile. Defence therefore reads from your settlements rather than from the
+coast: every coastal settlement is a possible target, and its works and garrison are what you can plan
+against. The player's own arrival and the rival charters' follow the same freedom: a lander splashes down
+in open sea and founds wherever the ground is legal, with no fixed landing point to find first.
 
 ---
 
@@ -235,8 +245,8 @@ earlier** and the window is for the fast things only.
 
 ### The preparation sheet
 
-Fleet size and composition, how many colonists could be armed from Arms held, every anchorage with its
-works and covering settlement, your shipping, and what you would forfeit by declaring this turn.
+Fleet size and composition, how many colonists could be armed from Arms held, every coastal settlement
+with its works and garrison, your shipping, and what you would forfeit by declaring this turn.
 
 **It does not and cannot show where the fleet will land.**
 
@@ -247,15 +257,17 @@ the force they are arming get larger and chooses their moment against a number t
 
 ### Where it lands is genuinely unknown
 
-**Each wave picks its anchorage at random, independently.** No weighting, no telegraph, no pattern.
+**Each wave picks its coast at random, independently: a coastal land tile within two tiles of one of
+your settlements.** No weighting, no telegraph, no pattern.
 
 ### Three turns at sea, narrowing
 
-**A fleet is visible for three turns before it lands**, for every wave.
+**A fleet is visible for three turns before it lands**, for every wave. Its landers splash down offshore
+and motor in, in plain sight whatever the fog.
 
 - **Turn one.** Its heading rules out roughly half the coast
-- **Turn two.** The plausible anchorages narrow to a handful
-- **Turn three.** You can see which stretch of coast, not reliably which anchorage
+- **Turn two.** The plausible coast narrows to the tiles near a handful of settlements
+- **Turn three.** You can see which stretch of coast, not reliably which tile
 
 This is exactly why outriders move 3 and militia move 1.
 
@@ -263,7 +275,7 @@ This is exactly why outriders move 3 and militia move 1.
 
 | | Source | Persisted | Examples |
 |---|---|---|---|
-| **World randomness** | The world seed | Yes. Deterministic and versioned | Terrain, resources, anchorage placement, gold reserves |
+| **World randomness** | The world seed | Yes. Deterministic and versioned | Terrain, resources, splashdown placement, gold reserves |
 | **Play randomness** | A stream that is not persisted | No. Fresh on every load | Combat exchanges, landing selection, price jitter |
 
 A player reloading from before the declaration gets a **genuinely different war**. World randomness is
@@ -297,7 +309,8 @@ replaced once it is spent.
 Four mechanisms keep it dangerous:
 
 - **The fleet scales hard against grievance.** The single most important balance number in the game
-- **It arrives in waves at independently chosen anchorages**, each preceded by three turns of approach
+- **It arrives in waves on independently chosen coasts near your settlements**, each preceded by three
+  turns of approach
 - **It blockades**, so the economy is strained throughout
 - **Units on a landing tile when a wave arrives are captured.** Coastal batteries fire on adjacent
   hostile ships automatically
@@ -401,7 +414,7 @@ reserve. **Automation never fights**, so any unit that makes contact reverts to 
 4. **Fortification sets garrison capacity and battery slots, not only a multiplier.** Section 7. The
    original allows an unlimited stack, which is unbalanceable
 5. **Siege trains breach the works over time.** Section 11
-6. **Anchorages.** Section 9
+6. **Landings anywhere on the coast near a settlement, with no fixed landing points.** Section 9
 7. **No surprise confiscation, and a six-turn window whose purpose is the muster.** Section 10
 8. **Landings are randomly chosen per wave and not persisted in the save.** Section 10
 9. **Three turns of visible, progressively narrowing approach.** Section 10
@@ -417,8 +430,8 @@ reserve. **Automation never fights**, so any unit that makes contact reverts to 
   and are more important than the multipliers
 - **Breach rate.** Too fast and works are pointless; too slow and the sally loop never triggers
 - The number of exchanges. Three is a starting value
-- **The fleet growth curve, the six-turn window, the anchorage count, the three-turn approach and the
-  breach rate, tuned jointly.** One balance problem wearing five hats
+- **The fleet growth curve, the six-turn window, the landing radius of two tiles, the three-turn approach
+  and the breach rate, tuned jointly.** One balance problem wearing five hats
 - Wave size and interval
 - How much the approach narrows per turn
 - **The grievance cost of intervention**, which decides whether it is a genuine option or decoration
@@ -439,4 +452,6 @@ siege rather than a chore. It is the newest mechanism here and the least examine
 set up an artificial siege in the prototype and play it three times.
 
 The second riskiest is the narrowing curve in section 10, which is the difference between random
-landings feeling fair and feeling arbitrary.
+landings feeling fair and feeling arbitrary, and with it whether a landing anywhere near a settlement
+makes the coast unreadable for defence. The works and garrison at each coastal settlement are what the
+player can read now, and the test is whether that is enough to plan against.

@@ -1,5 +1,11 @@
 # Settlement screen and screen layout
 
+**Changed 1 October 2026.** Water tiles no longer need a wharf to be worked, so the ring's list of
+reasons a tile is unavailable drops that one. The opening is being replaced by the one the original
+game is loved for: you begin at sea in fog with no knowledge of the world, sail until you find land
+and choose your own ground, and anchorages are gone entirely, so settlements may be founded almost
+anywhere.
+
 Version 2, written 23 August 2026. Self-contained. Companion to the feel brief, the interaction brief,
 the art direction brief and section 8.2 of the legal distinguishability constraint.
 
@@ -70,8 +76,8 @@ allows. Section 8.2 requires the difference to be real, and the format enforces 
 - **The good it yields and how much**
 - **Who works it**, as a small marker, or nothing
 - **Improvements**: road, cleared, drained, and a mark for a prime resource
-- **Unavailable tiles are dimmed** and give their reason on tap: another settlement's, another
-  charter's ground, or water without a wharf
+- **Unavailable tiles are dimmed** and give their reason on tap: another settlement's or another
+  charter's ground
 
 The centre cell is the settlement, auto-worked, showing the settlement itself.
 
