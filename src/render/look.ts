@@ -389,18 +389,44 @@ export const SPRITE = {
 export const UNIT_SPRITE = {
   /** Which drawing a kind of unit is, where the sheet does not already have a piece of that name. A
    *  piece named for the kind wins without any entry here, so a new figure arriving on the sheet is
-   *  a manifest change and nothing else; this is for the kinds that borrow another's. */
-  pieces: { improver: 'colonist' } as Partial<Record<UnitKind, string>>,
-  /** How tall a drawing this many pixels tall stands on the ground, in tiles. A little over half a
-   *  tile for a figure: forty-odd device pixels at working zoom, which is where a person has to read
-   *  as a person and not as a smudge.
-   *
-   *  Every piece keeps its own proportions against the reference, the way the settlement sheet does,
-   *  so a drawing shorter than a person on the same sheet stands shorter on the ground. That is what
-   *  makes a new piece a manifest change and nothing more: a cannon drawn two thirds of a figure's
-   *  height is two thirds of a figure's height on the map, without a table of exceptions here. */
-  referenceHeight: 144,
+   *  a manifest change and nothing else; this is for the kinds that borrow another's. Aliases, never
+   *  fakes: a borrowed drawing is drawn as it is, at its own size, and the difference is a ring, a
+   *  badge or the damage below. See the art debt in DECISIONS.md for what is still owed. */
+  pieces: {
+    regulars: 'company-regular',
+    horse: 'company-regular',
+    siegeTrain: 'battery',
+    damagedSiegeTrain: 'battery',
+    damagedBattery: 'battery',
+    lighter: 'trader',
+    raider: 'trader',
+    cutter: 'trader',
+    companyShip: 'trader',
+  } as Partial<Record<UnitKind, string>>,
+  /** How tall a standing person is on the ground, in tiles. A little over half a tile: forty-odd
+   *  device pixels at working zoom, which is where a person has to read as a person and not as a
+   *  smudge. Every other piece stands against this by its own height in people, which the sheet's
+   *  manifest carries (personPx, how many pixels a person is in that piece), so a piece stored at
+   *  a lower resolution still stands at its own size. The table itself, in people, is in
+   *  scripts/extract-sprites.py where the pixels are made: person 1, outrider 1.35, hauler 1 and
+   *  about 2.4 long, battery 0.6, trader 3 to the masthead, lander 1.8. */
   tileHeight: 0.52,
+  /** For a sheet cut before manifests carried a person: how many pixels tall a person was. */
+  referenceHeight: 144,
+  /** What a kind that borrows another's drawing is drawn at, as a share of the drawing's own size.
+   *  The smaller hulls borrow the trader's; the Company's horse borrows the regular's at full size
+   *  and is told from it by its ring alone. */
+  scale: { lighter: 0.6, raider: 0.85, cutter: 0.95 } as Partial<Record<UnitKind, number>>,
+  /** What damage does to a drawing: darker, drained toward grey, and knocked a few degrees askew on
+   *  the ground. Degrees, turned clockwise seen from above. */
+  damaged: { darken: 0.72, desaturate: 0.55, tiltDeg: 7 },
+  /** What a drawn unit casts, as the engine's occluder: most of its drawn height, so its shadow lies
+   *  about as far as a thing of that height does, and a fifth of its drawn width across, which is
+   *  what a wagon or a horse comes to seen from above against a tree. A person at a true shoulder's
+   *  width is two texels of the shadow map and invisible beside a boulder that puts the same
+   *  darkness into a quarter of the distance, so there is a floor on the width. A hull on the water
+   *  casts no tall shadow: it lies in the water, so its height is this instead. */
+  shadow: { heightShare: 0.85, widthShare: 0.2, minRadius: 0.14, hullHeight: 0.14 },
   /** A hair off the ground, so a figure is not fighting the terrain for the same depth. */
   lift: 0.03,
   /** What full sun does to the drawing. It is drawn flat and pale, so it can take the light a
@@ -409,13 +435,6 @@ export const UNIT_SPRITE = {
   /** How much brighter the figure's sunward side is than its far side. A standing form catches
    *  the low sun on one flank; this is that, on a drawing that has no flanks of its own. */
   sunSide: 0.3,
-  /** What a figure casts, in tiles: how tall the engine should think it is and how wide. As tall as
-   *  it stands, so its shadow lies as far as a small tree's does, and wider than a person really is.
-   *  A shadow's length is its height over the tangent of the sun, so a figure's is spread over
-   *  nearly two tiles, and at a true shoulder's width that is two texels of the shadow map and
-   *  invisible beside a boulder that puts the same darkness into a quarter of the distance. */
-  occluderHeight: 0.5,
-  occluderRadius: 0.14,
   /** The owner's mark: a ring on the ground under the feet, in charter colour. The drawing is cream
    *  and tan and a tint would ruin it, and at this size a ring reads better than a coloured coat. */
   /** The owner's mark under the feet. Dark rather than pale, and only mostly opaque: in bone at full

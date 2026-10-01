@@ -40,6 +40,9 @@ export interface AtlasPiece {
   facing?: 'left' | 'right' | 'front'
   /** The row a hull sits in the water on, from the top of the piece, where the piece is a hull. */
   waterline?: number
+  /** How many pixels a standing person is in this piece, so that a piece stored at a lower
+   *  resolution still stands at its own height on the ground. Absent on a sheet cut before this. */
+  personPx?: number
 }
 
 /** A sheet as the artist ships it: the image, its size, and the pieces on it by name. Adding a
@@ -66,6 +69,7 @@ export function manifestFrom(json: unknown, name: string): AtlasManifest {
     const piece: AtlasPiece = { x: p.x as number, y: p.y as number, w: p.w as number, h: p.h as number, anchorX: p.anchorX as number, anchorY: p.anchorY as number }
     if (p.facing === 'left' || p.facing === 'right' || p.facing === 'front') piece.facing = p.facing
     if (typeof p.waterline === 'number') piece.waterline = p.waterline
+    if (typeof p.personPx === 'number' && p.personPx > 0) piece.personPx = p.personPx
     pieces[key] = piece
   }
   return { texture: o.texture, size: [o.size[0] as number, o.size[1] as number], pieces }
@@ -133,6 +137,13 @@ export interface Billboard {
   sunSide: number
   /** How tall it is for the purpose of finding its own light, in tiles. */
   probeHeight: number
+  /** Drawn the other way round: a profile drawn facing left that is going right. The flip is in the
+   *  picture only; the light still comes from the side of the map it comes from. */
+  flip: boolean
+  /** How far toward grey the drawing goes, nought to one. A damaged piece loses its colour. */
+  desaturate: number
+  /** Turned on the ground about its anchor by this many radians: a damaged piece is knocked askew. */
+  tilt: number
 }
 
 /** A unit quad lying in the ground plane, with v running up the screen so the top of a drawing is
@@ -149,16 +160,22 @@ const BILLBOARD_VS = /* glsl */ `
 attribute vec4 aRect;
 attribute vec3 aFoot;
 attribute vec4 aStyle;
+attribute vec4 aExtra;
 varying vec2 vUv;
 varying vec2 vLocal;
 varying vec3 vFoot;
 varying vec3 vTint;
 varying vec4 vStyle;
+varying vec4 vExtra;
 void main() {
-  vUv = vec2(aRect.x + uv.x * aRect.z, aRect.y + uv.y * aRect.w);
+  // a flipped picture reads its sheet from right to left; the quad itself is not turned, so the
+  // side the light falls on stays the side the light comes from
+  float u = mix(uv.x, 1.0 - uv.x, aExtra.x);
+  vUv = vec2(aRect.x + u * aRect.z, aRect.y + uv.y * aRect.w);
   vLocal = uv;
   vFoot = aFoot;
   vStyle = aStyle;
+  vExtra = aExtra;
   vTint = vec3(1.0);
   #ifdef USE_INSTANCING_COLOR
     vTint = instanceColor;
@@ -178,6 +195,7 @@ varying vec2 vLocal;
 varying vec3 vFoot;
 varying vec3 vTint;
 varying vec4 vStyle;
+varying vec4 vExtra;
 
 void main() {
   // both sheets are sampled, so the mip level is chosen outside any branch
@@ -207,7 +225,9 @@ void main() {
   // loses them where the map says the light has gone
   vec3 full = key + uAmbientColour * uAmbientStrength;
   float norm = max(0.001, dot(full, vec3(0.2126, 0.7152, 0.0722)));
-  vec3 c = texel.rgb * vTint * (lit / norm) * vStyle.x;
+  // a damaged piece drains toward grey before the light is applied, so it still takes the light
+  vec3 drawn = mix(texel.rgb, vec3(dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722))), vExtra.y);
+  vec3 c = drawn * vTint * (lit / norm) * vStyle.x;
   gl_FragColor = vec4(finish(c, vFoot), texel.a);
 }
 `
@@ -221,6 +241,7 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
   const rect = new Float32Array(sorted.length * 4)
   const foot = new Float32Array(sorted.length * 3)
   const style = new Float32Array(sorted.length * 4)
+  const extra = new Float32Array(sorted.length * 4)
   const blank = sheets[0]
   const material = new THREE.ShaderMaterial({
     vertexShader: BILLBOARD_VS,
@@ -237,14 +258,31 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
   // after it. A billboard cannot be depth sorted against a form: it has no depth
   mesh.renderOrder = -1
   const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3()
+  const turn = new THREE.Matrix4(), back = new THREE.Matrix4()
+  const up = new THREE.Vector3(0, 1, 0)
   sorted.forEach((b, i) => {
     const pc = b.piece
     const size = sizes[b.sheet] ?? sizes[0]
-    const originX = b.x - (pc.anchorX / pc.w) * b.width
-    const originZ = b.z - (pc.anchorY / pc.h) * b.height
-    p.set(originX, b.y + b.lift, originZ)
-    sc.set(b.width, 1, b.height)
-    m.compose(p, q, sc)
+    // a flipped picture's anchor is as far from its right edge as it was from its left
+    const anchorX = b.flip ? pc.w - pc.anchorX : pc.anchorX
+    const ax = (anchorX / pc.w) * b.width
+    const az = (pc.anchorY / pc.h) * b.height
+    if (b.tilt) {
+      // turned on the ground about the anchor: the quad's corner is moved so the anchor is at the
+      // origin, the turn is made there, and the whole thing is set down at the foot
+      p.set(b.x, b.y + b.lift, b.z)
+      q.setFromAxisAngle(up, b.tilt)
+      sc.set(1, 1, 1)
+      m.compose(p, q, sc)
+      back.makeTranslation(-ax, 0, -az)
+      turn.makeScale(b.width, 1, b.height)
+      m.multiply(back).multiply(turn)
+    } else {
+      p.set(b.x - ax, b.y + b.lift, b.z - az)
+      q.identity()
+      sc.set(b.width, 1, b.height)
+      m.compose(p, q, sc)
+    }
     mesh.setMatrixAt(i, m)
     mesh.setColorAt(i, b.tint)
     // the sheet's origin is its top left and a texture's is its bottom left
@@ -259,10 +297,13 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
     style[i * 4 + 1] = b.sunSide
     style[i * 4 + 2] = b.probeHeight
     style[i * 4 + 3] = b.sheet
+    extra[i * 4] = b.flip ? 1 : 0
+    extra[i * 4 + 1] = b.desaturate
   })
   geo.setAttribute('aRect', new THREE.InstancedBufferAttribute(rect, 4))
   geo.setAttribute('aFoot', new THREE.InstancedBufferAttribute(foot, 3))
   geo.setAttribute('aStyle', new THREE.InstancedBufferAttribute(style, 4))
+  geo.setAttribute('aExtra', new THREE.InstancedBufferAttribute(extra, 4))
   mesh.instanceMatrix.needsUpdate = true
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
   return mesh

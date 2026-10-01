@@ -19,11 +19,17 @@
 // Which drawing a kind of unit is comes from the sheet's manifest first, by the kind's own name, and
 // from UNIT_SPRITE.pieces second, for kinds that borrow another's. A new figure on the sheet under
 // its kind's name is a manifest change and nothing else.
+//
+// A profile is drawn facing left. A unit going right, by the next tile on its path or the place its
+// order is taking it, is drawn mirrored; the light stays on the side of the map it comes from. Scale
+// is in world terms: a person is a fixed height, and every other piece stands against that by its
+// own height in people, which the manifest carries. A damaged battery is the battery darkened,
+// drained and knocked askew, not another drawing.
 
 import * as THREE from 'three'
 import type { GameState, Unit, UnitKind } from '../sim/state'
 import { hex, type RGB } from './palette'
-import { UNITS, UNIT_SPRITE } from './look'
+import { UNITS, UNIT_SPRITE, LIGHT } from './look'
 import { surfaceMaterial, flatMaterial, type LightUniforms } from './shading'
 import type { Occluder } from './shadow'
 import type { AtlasManifest, AtlasPiece, Billboard } from './billboards'
@@ -63,6 +69,46 @@ export function pieceFor(kind: UnitKind, sheet: AtlasManifest): AtlasPiece | nul
   if (own) return own
   const alias = UNIT_SPRITE.pieces[kind]
   return alias ? sheet.pieces[alias] ?? null : null
+}
+
+export function isHull(kind: UnitKind): boolean {
+  return kind === 'lighter' || kind === 'trader' || kind === 'raider' || kind === 'cutter' || kind === 'companyShip'
+}
+
+export function isDamaged(kind: UnitKind): boolean {
+  return kind === 'damagedBattery' || kind === 'damagedSiegeTrain'
+}
+
+/** Where a unit is going next, as a tile: the first tile of its path, or the place its order is
+ *  taking it. Null when it is standing. Read from the state and nothing else. */
+export function nextTileOf(s: GameState, u: Unit): number | null {
+  if (u.path.length) return u.path[0]
+  const o = u.order
+  if (!o) return null
+  switch (o.kind) {
+    case 'goto': return o.tile
+    case 'patrol': return o.tiles[o.next] ?? null
+    case 'haul': { const stop = o.stops[o.next]; return stop ? s.settlements[stop.settlement]?.tile ?? null : null }
+    case 'improve': return o.tasks[0]?.tile ?? null
+    default: return null
+  }
+}
+
+/** True when a unit is going to the right of where it stands, which is when a profile drawn
+ *  facing left is mirrored. A standing unit faces the way it was drawn. */
+export function goesRight(s: GameState, u: Unit): boolean {
+  const next = nextTileOf(s, u)
+  if (next === null || next === u.tile) return false
+  const w = s.world.width
+  return next % w > u.tile % w
+}
+
+/** How large a piece stands on the ground for a kind, in tiles: against the person, by the piece's
+ *  own height in people, times whatever share a borrowing kind is drawn at. */
+export function drawnSize(kind: UnitKind, piece: AtlasPiece): { width: number; height: number } {
+  const personPx = piece.personPx ?? UNIT_SPRITE.referenceHeight
+  const height = (piece.h / personPx) * UNIT_SPRITE.tileHeight * (UNIT_SPRITE.scale[kind] ?? 1)
+  return { width: height * (piece.w / piece.h), height }
 }
 
 /** Where a ring of this size has to sit to lie over the ground rather than in it.
@@ -193,18 +239,28 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
     const rings = new THREE.InstancedMesh(ringGeometry(), ringMat, drawn.length)
     rings.renderOrder = -2
     const marks = new THREE.InstancedMesh(geometryFor('disc'), mat, drawn.length)
-    const tint = new THREE.Color(1, 1, 1)
+    const plain = new THREE.Color(1, 1, 1)
+    const d = UNIT_SPRITE.damaged
+    const hurt = new THREE.Color(d.darken, d.darken, d.darken)
     drawn.forEach((e, i) => {
       const y = heightAt(e.x, e.z)
-      // against the reference rather than to a fixed height, so a piece drawn shorter than the
-      // figure stands shorter on the ground
-      const height = (e.piece.h / UNIT_SPRITE.referenceHeight) * UNIT_SPRITE.tileHeight
-      const width = height * (e.piece.w / e.piece.h)
+      const { width, height } = drawnSize(e.unit.kind, e.piece)
+      const damaged = isDamaged(e.unit.kind)
+      const hull = isHull(e.unit.kind)
+      // the light is read a little toward the sun, clear of the piece's own shadow, and no further:
+      // a ship three people tall read its light from three tiles away, which was the next ship's
+      // shadow. A hull lies in the water and reads its light at the waterline
+      const sh = UNIT_SPRITE.shadow
+      const probe = hull ? sh.hullHeight : Math.min(height, LIGHT.propShadowHeightMax)
       billboards.push({
-        sheet: sheetIndex, piece: e.piece, x: e.x, z: e.z, y, width, height, lift: UNIT_SPRITE.lift, tint,
-        exposure: UNIT_SPRITE.exposure, sunSide: UNIT_SPRITE.sunSide, probeHeight: UNIT_SPRITE.occluderHeight,
+        sheet: sheetIndex, piece: e.piece, x: e.x, z: e.z, y, width, height, lift: UNIT_SPRITE.lift,
+        tint: damaged ? hurt : plain,
+        exposure: UNIT_SPRITE.exposure, sunSide: UNIT_SPRITE.sunSide, probeHeight: probe,
+        flip: e.piece.facing === 'left' && goesRight(s, e.unit),
+        desaturate: damaged ? d.desaturate : 0,
+        tilt: damaged ? (d.tiltDeg * Math.PI) / 180 : 0,
       })
-      occluders.push({ x: e.x, z: e.z, height: UNIT_SPRITE.occluderHeight, radius: UNIT_SPRITE.occluderRadius })
+      occluders.push({ x: e.x, z: e.z, height: hull ? sh.hullHeight : height * sh.heightShare, radius: Math.max(sh.minRadius, width * sh.widthShare) })
       const oc = ownerColour(e.unit)
       col.setRGB(oc[0] * UNIT_SPRITE.ring.strength, oc[1] * UNIT_SPRITE.ring.strength, oc[2] * UNIT_SPRITE.ring.strength)
       q.identity()

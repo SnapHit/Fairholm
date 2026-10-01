@@ -94,6 +94,7 @@ export function layOut(
     out.push({
       sheet, piece, x, z, y: heightAt(x, z), width, height, lift: SPRITE.lift, tint: colour.clone(),
       exposure: SPRITE.exposure, sunSide: 0, probeHeight: SPRITE.occluderHeight,
+      flip: false, desaturate: 0, tilt: 0,
     })
   }
   return out

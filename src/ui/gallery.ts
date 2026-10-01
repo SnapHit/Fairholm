@@ -54,8 +54,8 @@ function stageTile(x: number, z: number): Tile {
   return t
 }
 
-function stageUnit(id: number, owner: number, kind: UnitKind, tile: number, flagged = true): Unit {
-  return { id, owner, kind, tile, quality: 'raw', moves: 0, cargo: {}, colonist: null, order: null, path: [], damage: 0, progress: 0, since: {}, flagged }
+function stageUnit(id: number, owner: number, kind: UnitKind, tile: number, flagged = true, going: number[] = []): Unit {
+  return { id, owner, kind, tile, quality: 'raw', moves: 0, cargo: {}, colonist: null, order: null, path: going, damage: 0, progress: 0, since: {}, flagged }
 }
 
 function stageSettlement(id: number, tile: number, pop: number): Settlement {
@@ -81,10 +81,14 @@ export function stageState(turn: number): GameState {
   const units: Unit[] = []
   let id = 1
   const owners = base.charters.map(c => c.id)
-  // the land rows, one per owner, from the shore down
+  // the land rows, one per owner, from the shore down. Every second row is on its way to the right,
+  // so the profiles in it are mirrored and the two can be compared
   owners.forEach((owner, row) => {
     const z = STAGE.shore + 3 + row
-    STAGE.landKinds.forEach((kind, k) => units.push(stageUnit(id++, owner, kind, at(2 + k * 2, z))))
+    STAGE.landKinds.forEach((kind, k) => {
+      const tile = at(2 + k * 2, z)
+      units.push(stageUnit(id++, owner, kind, tile, true, row % 2 ? [tile + 1] : []))
+    })
   })
   // the Company's row, with a colonist for scale
   const companyRow = STAGE.shore + 3 + owners.length + 1

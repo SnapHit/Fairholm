@@ -59,11 +59,12 @@ await page.waitForTimeout(400)
 const made = await page.evaluate(() => {
   const a = window.fairholm
   const st = a.state.settlements[0]
-  st.stock.arms = (st.stock.arms ?? 0) + 50
-  st.stock.tooling = (st.stock.tooling ?? 0) + 50
+  for (const g of Object.keys(st.stock)) st.stock[g] += 200
   const before = a.state.units.length
-  try { a.dispatch({ t: 'equip', settlement: 0, colonist: 0, as: 'militia' }) } catch (e) { return 'militia failed: ' + e.message }
-  try { a.dispatch({ t: 'equip', settlement: 0, colonist: 0, as: 'improver' }) } catch (e) { return 'improver failed: ' + e.message }
+  const failed = []
+  for (const as of ['militia', 'improver', 'outrider', 'hauler', 'battery']) {
+    try { a.dispatch({ t: 'equip', settlement: 0, colonist: 0, as }) } catch (e) { failed.push(as + ': ' + e.message) }
+  }
   a.closeSheet()
   // This seed puts the settlement in a pocket of water and wood with no open land within four
   // tiles, and a figure standing under a wood stands in the wood's shadow, where nothing it casts
@@ -90,8 +91,11 @@ const made = await page.evaluate(() => {
   }
   const out = a.state.units.find(u => u.kind === 'improver')
   if (best !== null && out) out.tile = best
+  // the hauler is sent to the right of where it stands, so it is drawn going that way
+  const hauler = a.state.units.find(u => u.kind === 'hauler')
+  if (hauler) hauler.path = [hauler.tile + 1]
   window.__openUnit = out ? out.id : null
-  return `${before} -> ${a.state.units.length} units: ${a.state.units.map(u => u.kind).join(', ')}; improver walked to ${best}`
+  return `${before} -> ${a.state.units.length} units: ${a.state.units.map(u => u.kind).join(', ')}; improver walked to ${best}${failed.length ? '; failed: ' + failed.join('; ') : ''}`
 })
 console.log(made)
 await page.waitForTimeout(400)
