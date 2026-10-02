@@ -7,7 +7,8 @@
 // season palettes, the same billboard layer. What it stands on them is a stage rather than a game:
 // a flat coast built by hand, with every kind of unit in every owner's colour in a row beside a
 // colonist for scale, three settlements of two, six and twelve people behind them, every hull on
-// the water, the lander offshore with its plume, and a wood at one side to compare shadows against.
+// the water, the lander offshore in fog, steaming in the first season, a wave of the recall fleet motoring in, and a
+// wood at one side to compare shadows against.
 //
 // It never touches the player's save and nothing in the game links to it. It is reached by typing
 // the address, and that is the whole of its interface, apart from a season to pick and the pinch
@@ -42,10 +43,20 @@ const STAGE = {
   settlements: [2, 6, 12],
   /** Which turn stands for each season: the first month of each. */
   seasonTurns: [1, 4, 7, 10],
+  /** Where the player's lander lies at sea, and from which column the water is unexplored, so the
+   *  lander sits in fog with its own sight known around it, as the opening finds it. */
+  lander: [22, 4] as [number, number],
+  fogFrom: 19,
 }
 
 function stageTile(x: number, z: number): Tile {
-  if (z < STAGE.shore) { const t = blankTile('water'); t.explored = true; return t }
+  if (z < STAGE.shore) {
+    const t = blankTile('water')
+    // the water to the right of the hulls is unexplored but for what the lander can see
+    const inSight = Math.max(Math.abs(x - STAGE.lander[0]), Math.abs(z - STAGE.lander[1])) <= C.lander.sight
+    t.explored = x < STAGE.fogFrom || inSight
+    return t
+  }
   // grassland, ploughed: the renderer rolls a landform under every map that can carry low ground
   // under the waterline, and a stage wants its floor above it everywhere. Ploughed ground is
   // flattened to less than half the roll, which with this seed keeps the whole stage dry
@@ -116,7 +127,7 @@ export function stageState(turn: number): GameState {
   for (const st of settlements) tiles[st.tile].worked = st.id
   // the player's lander at sea in fog, off to the right of the hulls, as the opening finds it; and
   // a wave of the recall fleet motoring in toward the coast beside the middle settlement
-  const splash = at(22, 4)
+  const splash = at(STAGE.lander[0], STAGE.lander[1])
   const lander = stageUnit(id++, 0, 'lander', splash)
   lander.aboard = [{ id: 9000, standing: 'contracted', speciality: null, job: { kind: 'idle' }, arrived: 1 }]
   units.push(lander)
