@@ -3,12 +3,13 @@
 //
 // A fresh game on a fixed seed, sailed the way a player would and with the player's own gestures: a
 // tap on the lander, then the first move by tap and hold on a tile of water on a heading that is
-// sensible but not straight at the coast, then on toward land and two moves along the coast by the
-// compass in the sheet and Go, ending each turn with the button, then a tap on the shore for the
-// founding preview. Each move is drawn travelling with the fog lifting, and a frame is taken part
-// way through the first to see that. Then a recall fleet wave approaching through the fog over three turns,
-// and a save from an earlier build turned away. The pictures are for a person to look at; the
-// numbers printed beside them are what can be measured.
+// sensible but not straight at the coast, which plots a course, and a tap on the course's end, which
+// sails it; then on toward land and two moves along the coast, each a hold on the tile six out,
+// panning to it with a drag when it is off the screen, and the Go control; ending each turn with the
+// button; then a tap on the shore for the founding preview. Each move is drawn travelling with the
+// fog lifting, and a frame is taken part way through the first to see that. Then a recall fleet wave
+// approaching through the fog over three turns, and a save from an earlier build turned away. The
+// pictures are for a person to look at; the numbers printed beside them are what can be measured.
 //
 // Run with:  node scripts/opening.mjs
 //            OUT=shots/opening SEED=fairholm-opening CHROMIUM=/opt/pw-browsers/chromium node scripts/opening.mjs
@@ -104,8 +105,50 @@ const selectLander = async () => {
   return page.evaluate(() => document.querySelector('#sheet .panel')?.textContent?.slice(0, 40) ?? '')
 }
 
+/** Where a turn's sailing straight along a heading would end, as far as the map and the land the
+ *  player knows of allow: the tile a player aiming that way would hold. */
+const headingEnd = (heading) => page.evaluate((d) => {
+  const a = window.fairholm, s = a.state, w = s.world.width, h = s.world.height
+  const u = s.units.find(x => x.owner === 0 && x.kind === 'lander')
+  let x = u.tile % w, z = Math.floor(u.tile / w), last = null
+  for (let k = 0; k < 6; k++) {
+    x += d[0]; z += d[1]
+    if (x < 0 || z < 0 || x >= w || z >= h) break
+    const t = s.world.tiles[z * w + x]
+    if (t.explored && t.terrain !== 'water') break
+    last = z * w + x
+  }
+  return last
+}, heading)
+
+/** Arm the wait for a committed move to be drawn to its end. */
+const armMoveWait = () => page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
+
+/** Tap and hold a tile, panning to it first with a drag if it is not on the map above the sheet:
+ *  the hold plots a course and nothing moves. What was plotted, and whether anything moved. */
+const holdTile = async (tile) => {
+  const before = await where()
+  const p = await bringOnScreen(tile)
+  const panned = await page.evaluate(() => window.__panned ?? 0)
+  await page.mouse.move(p[0], p[1])
+  await page.mouse.down()
+  await page.waitForTimeout(HOLD_MS)
+  await page.mouse.up()
+  await page.waitForTimeout(500)
+  const after = await page.evaluate(() => { const a = window.fairholm; const l = a.state.units.find(u => u.owner === 0 && u.kind === 'lander'); return { route: a.route, tile: l?.tile, sheet: document.querySelector('#sheet .preview')?.textContent?.slice(0, 200) ?? '' } })
+  return { held: tile, onScreen: p.map(Math.round), panned, plotted: !!after.route?.ok, moved: after.tile !== before.tile, turns: after.route?.ok ? after.route.turnEnds.length : null, preview: after.sheet, id: before.id, from: [before.x, before.z], exploredBefore: before.explored }
+}
+
+/** Commit the plotted course: a tap on its end, or the Go control in the sheet. */
+const confirm = async (how) => {
+  await armMoveWait()
+  if (how === 'go') { await page.locator('#sheet .preview .btn.primary').click(); return }
+  const e = await page.evaluate(() => { const a = window.fairholm, w = a.state.world.width, r = a.route; return a.scene.cam.worldToScreen((r.end % w) + 0.5, Math.floor(r.end / w) + 0.5) })
+  await tapAt(e[0], e[1])
+}
+
 /** The first move, by the map's own gesture: tap and hold a tile of water out along a heading, the
- *  furthest one a move reaches that is on the screen above the sheet. */
+ *  furthest one a move reaches that is on the screen above the sheet, then tap the course's end. */
 const holdToward = async (heading) => {
   const p = await where()
   const tile = await page.evaluate(({ heading, p }) => {
@@ -116,33 +159,24 @@ const holdToward = async (heading) => {
       if (x < 0 || z < 0 || x >= w || z >= h) break
       const [sx, sy] = a.scene.cam.worldToScreen(x + 0.5, z + 0.5)
       if (sx < 24 || sx > p.W - 24 || sy < p.top + 24 || sy > p.sheetTop - 24) break
-      best = { k, x, z, sx, sy }
+      best = { k, x, z, tile: z * w + x }
     }
     return best
   }, { heading, p })
   if (!tile) return { error: 'no tile on the screen along that heading' }
-  await page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
-  await page.mouse.move(tile.sx, tile.sy)
-  await page.mouse.down()
-  await page.waitForTimeout(HOLD_MS)
-  await page.mouse.up()
-  return { from: [p.x, p.z], held: [tile.x, tile.z], tilesOut: tile.k, onScreen: [Math.round(tile.sx), Math.round(tile.sy)], exploredBefore: p.explored, id: p.id }
+  const held = await holdTile(tile.tile)
+  return { ...held, tilesOut: tile.k }
 }
 
-/** A move by the compass in the sheet: tap the heading, then Go. A turn's sailing, whether or not
- *  its end is on the screen. */
-const compassToward = async (heading) => {
-  const name = `${heading[1] < 0 ? 'north' : heading[1] > 0 ? 'south' : ''}${heading[0] && heading[1] ? '-' : ''}${heading[0] < 0 ? 'west' : heading[0] > 0 ? 'east' : ''}`
-  const p = await where()
-  const button = page.locator(`#sheet button[aria-label="Sail ${name}"]`)
-  if (!(await button.count())) return { error: `no ${name} heading in the sheet` }
-  if (await button.isDisabled()) return { error: `the ${name} heading goes nowhere` }
-  await button.click()
-  await page.waitForTimeout(300)
-  const preview = await page.evaluate(() => document.querySelector('#sheet .preview')?.textContent?.slice(0, 160) ?? '')
-  await page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
-  await page.locator('#sheet .preview .btn.primary').click()
-  return { heading: name, from: [p.x, p.z], preview, exploredBefore: p.explored, id: p.id }
+/** A turn's sailing along a heading: the tile six out held, after a pan if it is off the screen,
+ *  then the course committed with the Go control. */
+const sailHeading = async (heading) => {
+  const end = await headingEnd(heading)
+  if (end === null) return { error: 'that heading goes nowhere' }
+  const held = await holdTile(end)
+  if (!held.plotted) return { ...held, error: 'the hold plotted nothing' }
+  await confirm('go')
+  return held
 }
 
 /** Drag the map, as a finger would, until a tile is in the strip above the sheet; where it is then. */
@@ -159,6 +193,7 @@ const bringOnScreen = async (tile) => {
     const cx = p.W / 2, cy = (p.top + p.sheetTop) / 2
     if (p.sx > 30 && p.sx < p.W - 30 && p.sy > p.top + 30 && p.sy < p.sheetTop - 30) return [p.sx, p.sy]
     // a slow drag, so it pans without a fling
+    await page.evaluate(() => { window.__panned = (window.__panned ?? 0) + 1 })
     const dx = Math.max(-150, Math.min(150, cx - p.sx)), dy = Math.max(-150, Math.min(150, cy - p.sy))
     await page.mouse.move(cx, cy); await page.mouse.down()
     for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + dx * i / 12, cy + dy * i / 12); await page.waitForTimeout(30) }
@@ -241,6 +276,9 @@ const off = toward[0] !== 0 && toward[1] !== 0 ? [toward[0], 0] : toward[0] === 
 // held half way through, because a headless browser draws too few frames to catch the middle
 await page.evaluate(() => { window.fairholm.scene.holdMoveAt = 0.5 })
 const m1 = await holdToward(off)
+note('first move, the hold', { plotted: m1.plotted, moved: m1.moved, preview: m1.preview })
+await shot('02a-first-course-plotted')
+await confirm('tap')
 const started = await page.waitForFunction(() => { const sc = window.fairholm.scene; return sc.moving && sc.ghostAt(sc.cam.view.activeUnit ?? -1) !== null }, null, { timeout: 10000 }).then(() => true, () => false)
 if (!started) {
   console.log('the hold did not start a move', JSON.stringify(m1), JSON.stringify(await page.evaluate(() => { const a = window.fairholm; return { active: a.scene.cam.view.activeUnit, sheet: a.sheet, view: a.scene.cam.view, moving: a.scene.moving, toast: document.querySelector('#toast')?.textContent, lander: a.state.units.find(u => u.kind === 'lander' && u.owner === 0)?.tile } })))
@@ -249,13 +287,13 @@ if (!started) {
 }
 await page.waitForTimeout(1500)
 const mid1 = await midMove(m1.id)
-await shot('02a-first-move-under-way')
+await shot('02b-first-move-under-way')
 note('first move, half way', mid1)
 await page.evaluate(() => { window.fairholm.scene.holdMoveAt = null })
 await waitMove()
 const t2 = await seen()
 note('first move, by a hold', { heading: off, ...m1, ...t2 })
-await shot('02-after-the-first-move')
+await shot('02c-after-the-first-move')
 
 // ---- 3: the move on which land is sighted -----------------------------------------------------
 let sightedOn = t2.landKnown > 0 ? 1 : 0
@@ -263,7 +301,7 @@ let moveNo = 1
 for (let k = 0; k < 3 && !sightedOn; k++) {
   await endTurn()
   await selectLander()
-  const m = await compassToward(toward)
+  const m = await sailHeading(toward)
   await page.waitForTimeout(300)
   const mid = await midMove(m.id)
   await waitMove()
@@ -284,7 +322,8 @@ const alongHeading = () => page.evaluate(() => {
   const r = 3
   let best = null
   for (const d of [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]) {
-    const end = a.headingTarget(u, d[0], d[1])
+    let ex = u.tile % w, ez = Math.floor(u.tile / w), end = null
+    for (let k = 0; k < 6; k++) { ex += d[0]; ez += d[1]; if (ex < 0 || ez < 0 || ex >= w || ez >= h) break; const tt = s.world.tiles[ez * w + ex]; if (tt.explored && tt.terrain !== 'water') break; end = ez * w + ex }
     if (end === null) continue
     // the tiles a straight run to the end would see, and how many of them are new, and whether
     // known land stays in sight at the end
@@ -317,7 +356,7 @@ for (let k = 0; k < 2; k++) {
   const pick = await alongHeading()
   const along = pick.d
   await page.evaluate(() => { window.fairholm.scene.holdMoveAt = 0.5 })
-  const m = await compassToward(along)
+  const m = await sailHeading(along)
   await page.waitForFunction(() => { const sc = window.fairholm.scene; return sc.moving && sc.ghostAt(sc.cam.view.activeUnit ?? -1) !== null }, null, { timeout: 10000 }).catch(() => {})
   await page.waitForTimeout(1500)
   const mid = await midMove(m.id)
@@ -365,11 +404,10 @@ else if (near?.site !== undefined) {
   // a turn's sailing to the water beside the best site in sight, by a hold on it
   await endTurn()
   await selectLander()
-  const p = await bringOnScreen(near.water)
-  await page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
-  await page.mouse.move(p[0], p[1]); await page.mouse.down(); await page.waitForTimeout(HOLD_MS); await page.mouse.up()
+  const held = await holdTile(near.water)
+  await confirm('tap')
   await waitMove()
-  note('sailed to the best site seen, by a hold', { water: near.water, onScreen: p.map(Math.round) })
+  note('sailed to the best site seen, by a hold and a tap on its end', { water: near.water, plotted: held.plotted, movedOnHold: held.moved, onScreen: held.onScreen })
   shoreAt = (await besideShore())?.shore ?? null
 }
 let preview = null

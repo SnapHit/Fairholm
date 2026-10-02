@@ -5,23 +5,24 @@
 // go away by a tap outside them or a swipe down. There are no confirmation dialogs: anything within
 // a turn can be undone.
 
-import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings, Settlement, BuildingLine } from '../sim/state'
+import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings, Settlement, BuildingLine, Unit } from '../sim/state'
 import { applyAction, createGame, type Action } from '../sim/actions'
 import { deriveQueue, unitLabel } from '../sim/queue'
 import { SYSTEMS } from '../sim/systems'
 import { SEASON_NAMES, season, year } from '../sim/turn'
 import { randomSeed, playRng } from '../sim/rng'
 import { C } from '../sim/constants'
-import { findPath, isAfloat, maxMoves } from '../sim/units'
+import { findPath } from '../sim/units'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
 import { openingAction } from '../sim/autopilot'
-import { unitVisible } from '../sim/fog'
+import { planRoute, type RoutePlan } from '../sim/route'
 import { Scene } from '../render/scene'
 import { pick, tileUnderPoint } from '../render/picking'
 import { Input } from './input'
 import { MusicPlayer } from './audio'
 import { mountStackCounts, type StackCounts } from './stacks'
+import { mountRouteLayer, type RouteLayer } from './route'
 import { h, clear, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
@@ -45,7 +46,9 @@ export class App {
   sheet: SheetSpec = { kind: 'queue' }
   sheetHistory: SheetSpec[] = []
   undoStack: { snapshot: GameState; label: string }[] = []
-  pathPreview: number[] | null = null
+  /** The route the player has plotted for the active unit with a hold, or the reason there is none:
+   *  nothing has moved, and a tap on its end or the Go control commits it. Feel brief section 4. */
+  route: RoutePlan | null = null
   /** The colonist being placed, while the player is choosing where they should work. */
   pick: { settlement: number; colonist: number } | null = null
   /** The tile the founding control is looking at: the shore the lander would beach on, or the
@@ -69,6 +72,7 @@ export class App {
   turnStartedAt = performance.now()
   private toastTimer: number | null = null
   private stacks: StackCounts
+  private routeLayer: RouteLayer
 
   constructor(root: HTMLElement, state: GameState, resumed: boolean, notice: string | null = null) {
     installTheme()
@@ -91,7 +95,8 @@ export class App {
     this.attachSheetSwipe()
     this.scene = new Scene(this.canvas)
     this.stacks = mountStackCounts(root, this.scene)
-    this.scene.onFrame = () => this.stacks.place()
+    this.routeLayer = mountRouteLayer(root, this.scene)
+    this.scene.onFrame = () => { this.stacks.place(); this.routeLayer.place() }
     this.music = new MusicPlayer(state.settings.audio)
     this.music.onChange = (a) => { this.state.settings.audio = { ...this.state.settings.audio, ...a }; this.renderAudio() }
     this.input = new Input(this.canvas, this.scene.cam, {
@@ -228,7 +233,7 @@ export class App {
     if (!ok) { this.scene.beaching = false; this.scene.updateOverlay(this.state); this.scene.requestDraw(); this.renderSheet(); return Promise.resolve(false) }
     const st = this.state.settlements.find(x => x.owner === 0 && x.tile === shore)
     this.scene.cam.view.selectedTile = shore
-    this.paintPath()
+    this.paintRoute()
     if (!lander || !st) { if (st) this.open({ kind: 'settlement', id: st.id }); this.afterSelect(); return Promise.resolve(true) }
     return new Promise(resolve => {
       this.scene.animateBeaching(this.state, from, shore, () => {
@@ -280,7 +285,7 @@ export class App {
       if (this.state.telemetry.founded === this.state.turn && this.state.settlements.filter(x => x.owner === 0).length === 1) Telemetry.founded(this.state.turn)
       if (this.state.telemetry.secondSettlement === this.state.turn) Telemetry.secondSettlement(this.state.turn)
     }
-    this.pathPreview = null
+    this.route = null
     this.scene.rebuild(this.state, 'dynamic')
     this.refresh()
     return true
@@ -295,7 +300,7 @@ export class App {
     const play = this.state.rng.play
     this.state = u.snapshot
     this.state.rng.play = play
-    this.pathPreview = null
+    this.route = null
     this.pick = null
     this.foundTarget = null
     this.scene.foundPreview = null
@@ -357,6 +362,7 @@ export class App {
     Save.clearLocal()
     this.state = s
     this.undoStack = []
+    this.route = null
     this.pick = null
     this.sheetHistory = []
     this.scene.cam.view.selectedTile = null
@@ -373,6 +379,7 @@ export class App {
       this.releaseUi()
       this.state = s
       this.undoStack = []
+      this.route = null
       this.pick = null
       this.scene.cam.view.selectedTile = null
       this.scene.cam.view.activeUnit = null
@@ -393,13 +400,17 @@ export class App {
   // ---- input routing ---------------------------------------------------------------------------
   tap(px: number, py: number) {
     const s = this.state
-    const p = pick(s, this.scene.cam, px, py, this.scene.unitPositions)
     const v = this.scene.cam.view
+    // the end of a route the player has just plotted: the one tap on the map that commits anything
+    if (this.route?.ok && this.onRouteEnd(px, py)) { void this.commitRoute(); return }
+    const p = pick(s, this.scene.cam, px, py, this.scene.unitPositions)
+    // any other tap puts a plotted route away first
+    const hadRoute = this.route !== null
+    if (hadRoute) this.clearRoute(false)
     if (p.unit !== null) {
       const u = s.units.find(x => x.id === p.unit)!
       if (u.owner === 0) {
         v.selectedTile = u.tile
-        this.pathPreview = null
         const stack = s.units.filter(x => x.tile === u.tile && x.owner === 0)
         if (stack.length > 1 && v.activeUnit === null) this.open({ kind: 'stack', tile: u.tile })
         else { v.activeUnit = u.id; this.open({ kind: 'unit', id: u.id }) }
@@ -416,10 +427,6 @@ export class App {
     if (p.settlement !== null) {
       const st = s.settlements[p.settlement]
       v.selectedTile = st.tile
-      if (v.activeUnit !== null) {
-        // a unit bound for a settlement: preview the path rather than open the sheet
-        if (this.previewPath(st.tile)) { this.open({ kind: 'unit', id: v.activeUnit }); this.afterSelect(); return }
-      }
       v.activeUnit = null
       this.open(st.owner === 0 ? { kind: 'settlement', id: st.id } : { kind: 'tile', tile: st.tile })
       this.afterSelect()
@@ -428,9 +435,15 @@ export class App {
     if (p.predecessor !== null) {
       const pr = s.predecessors[p.predecessor]
       v.selectedTile = pr.tile
-      if (v.activeUnit !== null && this.previewPath(pr.tile)) { this.open({ kind: 'unit', id: v.activeUnit }); this.afterSelect(); return }
       v.activeUnit = null
       this.open({ kind: 'predecessor', id: pr.id })
+      this.afterSelect()
+      return
+    }
+    // a tap away from a route only puts it away: the unit stays chosen, ready for another hold
+    if (hadRoute && v.activeUnit !== null && s.units.some(u => u.id === v.activeUnit)) {
+      v.selectedTile = s.units.find(u => u.id === v.activeUnit)!.tile
+      this.open({ kind: 'unit', id: v.activeUnit })
       this.afterSelect()
       return
     }
@@ -439,9 +452,8 @@ export class App {
       if (v.activeUnit !== null) {
         const au = s.units.find(x => x.id === v.activeUnit)
         // the lander beside the shore, or a colonist on its own ground: the tap looks at founding
-        // there rather than at going there
-        if (au && au.owner === 0 && this.foundingLook(au, p.tile)) { this.pathPreview = null; this.setFoundTarget(p.tile); this.open({ kind: 'unit', id: au.id }); this.afterSelect(); return }
-        if (this.previewPath(p.tile)) { if (this.foundTarget !== null) this.setFoundTarget(null); this.open({ kind: 'unit', id: v.activeUnit }); this.afterSelect(); return }
+        // there, and the founding control in the sheet is what founds
+        if (au && au.owner === 0 && this.foundingLook(au, p.tile)) { this.setFoundTarget(p.tile); this.open({ kind: 'unit', id: au.id }); this.afterSelect(); return }
         v.activeUnit = null
       }
       if (this.foundTarget !== null) this.setFoundTarget(null)
@@ -452,31 +464,99 @@ export class App {
     // a tap below working zoom on nothing: deselect and let the map be the whole screen again
     v.selectedTile = null
     v.activeUnit = null
-    this.pathPreview = null
     if (this.foundTarget !== null) this.setFoundTarget(null)
     this.closeSheet()
     this.afterSelect()
   }
 
+  /** Whether a point on the screen is on the end of the plotted route: the tile itself, and never
+   *  less than a thumb's width across, so it can be tapped at a zoom where ordinary tiles cannot. */
+  private onRouteEnd(px: number, py: number): boolean {
+    const r = this.route
+    if (!r || !r.ok) return false
+    const w = this.state.world.width
+    const [sx, sy] = this.scene.cam.worldToScreen((r.end % w) + 0.5, Math.floor(r.end / w) + 0.5)
+    const half = Math.max(this.scene.cam.view.zoom / 2, C.feel.routeEndHitPx)
+    return Math.abs(px - sx) <= half && Math.abs(py - sy) <= half
+  }
+
   private afterSelect() {
     this.scene.updateRings(this.state)
-    this.paintPath()
+    this.paintRoute()
     this.scene.requestDraw()
   }
 
-  /** Compute a path preview for the active unit to a tile. Returns whether a path exists. */
-  previewPath(tile: number): boolean {
-    const v = this.scene.cam.view
-    const u = this.state.units.find(x => x.id === v.activeUnit)
-    if (!u || u.owner !== 0 || tile === u.tile) { this.pathPreview = null; return false }
-    const path = this.pathTo(u, tile)
-    this.pathPreview = path && path.length ? path : null
-    return !!this.pathPreview
+  /** Draw the plotted route, or take it away. */
+  paintRoute() {
+    const r = this.route
+    const u = r ? this.state.units.find(x => x.id === r.unit) : undefined
+    // the shore beside the lander is marked by the founding ring, not crossed out
+    const drawn = r && u && (r.ok || r.shore === null) ? r : null
+    this.routeLayer.show(this.state, drawn, u ? u.tile : -1)
   }
 
-  paintPath() {
-    this.scene.pathTiles = this.pathPreview
-    this.scene.updateOverlay(this.state)
+  /** Plot where a unit of the player's would go if sent to a tile, and show it: the route on the map
+   *  with where each turn ends, or why it cannot go. Nothing moves. */
+  plot(u: Unit, tile: number) {
+    this.scene.endRunningMove()
+    const r = planRoute(this.state, u, tile)
+    this.route = r
+    // the selection stays on the unit; the route's own end marks the tile held
+    this.scene.cam.view.selectedTile = u.tile
+    this.scene.cam.view.activeUnit = u.id
+    // the lander holding the shore beside it: the founding control looks at that shore
+    if (!r.ok && r.shore !== null) this.setFoundTarget(r.shore)
+    else if (this.foundTarget !== null) this.setFoundTarget(null)
+    this.open({ kind: 'unit', id: u.id })
+    this.afterSelect()
+    this.keepInView(tile)
+  }
+
+  /** Put the plotted route away. */
+  clearRoute(render = true) {
+    const r = this.route
+    this.route = null
+    // a shore the route pointed the founding control at goes with it
+    if (r && !r.ok && r.shore !== null && this.foundTarget === r.shore) { this.foundTarget = null; this.scene.foundPreview = null; this.scene.updateOverlay(this.state) }
+    this.paintRoute()
+    if (render) { this.renderSheet(); this.scene.requestDraw() }
+  }
+
+  /** Go: the plotted route, as the move, the attack or the boarding it shows. A walk that ends
+   *  beside the target takes the last step only if there is movement left this turn; otherwise the
+   *  unit waits beside it, and the last step is the player's to plot and confirm again. */
+  async commitRoute(): Promise<boolean> {
+    const r = this.route
+    if (!r || !r.ok) return false
+    const u = this.state.units.find(x => x.id === r.unit)
+    if (!u) { this.clearRoute(); return false }
+    this.route = null
+    if (r.kind === 'move') return this.moveTo(u.id, r.end)
+    if (r.path.length && !(await this.moveTo(u.id, r.path[r.path.length - 1]))) return false
+    const w = this.state.world.width, h = this.state.world.height
+    const nu = this.state.units.find(x => x.id === u.id)
+    if (!nu || !neighbours8(w, h, nu.tile).includes(r.end)) return true
+    if (r.kind === 'attack') {
+      if (nu.moves <= 0) { this.toast('Beside them, with no moves left. The attack waits for next turn.'); return true }
+      this.commitAttack(nu.id, r.end)
+      return true
+    }
+    const lander = this.state.units.find(x => x.tile === r.end && x.owner === 0 && x.kind === 'lander')
+    if (lander) this.dispatch({ t: 'embark', unit: nu.id, lander: lander.id }, 'Came aboard')
+    this.afterSelect()
+    return true
+  }
+
+  /** Keep a tile on the map rather than under the sheet, moving the camera only if it must. */
+  private keepInView(tile: number) {
+    const w = this.state.world.width
+    const [sx, sy] = this.scene.cam.worldToScreen((tile % w) + 0.5, Math.floor(tile / w) + 0.5)
+    const hud = this.hud.getBoundingClientRect().height
+    const landscape = this.root.classList.contains('landscape')
+    const right = landscape && this.sheetShowing() ? this.root.clientWidth - this.sheetEl.offsetWidth : this.root.clientWidth
+    const bottom = !landscape && this.sheetShowing() ? this.root.clientHeight - this.sheetEl.offsetHeight : this.root.clientHeight - this.queuebar.offsetHeight
+    const m = C.feel.routeEndHitPx
+    if (sx < m || sx > right - m || sy < hud + m || sy > bottom - m) this.showAboveSheet(tile)
   }
 
   doubleTap(px: number, py: number) {
@@ -488,91 +568,29 @@ export class App {
     this.scene.requestDraw()
   }
 
+  /** A hold. With one of the player's units chosen, it plots a route to the tile held and moves
+   *  nothing; the route's end or the Go control commits. It works at any zoom where the route can
+   *  be read, below the one where ordinary taps reach tiles, because a slightly wrong tile shows in
+   *  the plot and is put right by holding again. With nothing chosen, a hold is a tap. */
   hold(px: number, py: number) {
     const s = this.state
     const v = this.scene.cam.view
     const t = tileUnderPoint(s, this.scene.cam, px, py)
     if (t === null) return
-    if (v.activeUnit !== null) {
-      const u = s.units.find(x => x.id === v.activeUnit)
-      if (u && u.owner === 0) {
-        // only an enemy the player can see: a hold on the fog never attacks what is hidden in it
-        const enemy = s.units.find(x => x.tile === t && x.owner !== 0 && (x.owner === -1 || s.charters[x.owner]?.relation === 'war') && unitVisible(s, x))
-        if (enemy) { this.commitAttack(u.id, t); return }
-        // a hold on the shore beside the lander, or on the ground a colonist stands on, founds there;
-        // the control in the bottom third does the same, and undo takes it back
-        if (this.foundingLook(u, t)) { void this.found(u.id, u.kind === 'lander' ? t : undefined); return }
-        if (this.previewPath(t)) { this.commitMove(u.id); return }
-      }
-    }
-    // hold on a thing with nothing active: select it and open it, the same as a tap
+    const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit) : undefined
+    if (u && u.owner === 0 && v.zoom >= C.feel.routeHoldFloor) { this.plot(u, t); return }
     this.tap(px, py)
   }
 
-  commitMove(unitId: number) {
-    const u = this.state.units.find(x => x.id === unitId)
-    if (!u) return
-    const path = this.pathPreview ?? (this.scene.cam.view.selectedTile !== null ? this.pathTo(u, this.scene.cam.view.selectedTile) : null)
-    if (!path || !path.length) { this.toast('No way through'); return }
-    void this.moveTo(unitId, path[path.length - 1])
-  }
-
-  /** Where a unit sailing straight along a heading would be after a turn's sailing: as far as the
-   *  map and the land the player knows of allow, with water nobody has seen taken as open. Null
-   *  when the heading goes nowhere. */
-  headingTarget(u: import('../sim/state').Unit, dx: number, dz: number): number | null {
-    const w = this.state.world.width, hgt = this.state.world.height
-    let x = u.tile % w, z = Math.floor(u.tile / w), last: number | null = null
-    for (let k = 0; k < maxMoves(u); k++) {
-      x += dx; z += dz
-      if (x < 0 || z < 0 || x >= w || z >= hgt) break
-      const t = this.state.world.tiles[z * w + x]
-      if ((t.explored || !C.flags.fogOfWar) && t.terrain !== 'water') break
-      last = z * w + x
-    }
-    return last
-  }
-
-  /** Show the way a heading would sail, the same as tapping its end: Go in the sheet, or a hold on
-   *  the tile, sets off. The control in the bottom third for a move whose end may be off the screen. */
-  previewHeading(dx: number, dz: number) {
-    const v = this.scene.cam.view
-    const u = this.state.units.find(x => x.id === v.activeUnit)
-    if (!u || u.owner !== 0) return
-    const t = this.headingTarget(u, dx, dz)
-    if (t === null || !this.previewPath(t)) { this.toast('No way through'); return }
-    v.selectedTile = t
-    if (this.foundTarget !== null) this.setFoundTarget(null)
-    this.afterSelect()
-    this.renderSheet()
-  }
-
-  /** The way a unit of the player's would go to a tile, planned on what is known: through ground
-   *  nobody has seen as though it were open. A ship or the lander asked to go to land it cannot
-   *  enter goes to the water beside it instead, the nearest by the way it would sail. */
-  pathTo(u: import('../sim/state').Unit, tile: number): number[] | null {
-    const direct = findPath(this.state, u, u.tile, tile)
-    if (direct || !isAfloat(u.kind)) return direct
-    const w = this.state.world.width, h = this.state.world.height
-    let best: number[] | null = null
-    for (const n of neighbours8(w, h, tile)) {
-      if (n === u.tile) return []
-      const t = this.state.world.tiles[n]
-      if (t.explored && t.terrain !== 'water') continue
-      const p = findPath(this.state, u, u.tile, n)
-      if (p && (!best || p.length < best.length)) best = p
-    }
-    return best
-  }
-
-  /** Move a unit of the player's toward a tile with one action: as far as it can this turn, along a
-   *  path planned on what is known, stopping where unseen land turns out to be in the way. The move
+  /** Move a unit of the player's toward a tile: as far as it can this turn, along the path planned
+   *  on what is known, stopping where unseen land turns out to be in the way. Called by a route
+   *  being committed, never by a gesture directly. The move
    *  is drawn travelling, the fog lifting along the way, the camera following; it resolves when
    *  the drawing is done, with whether the unit moved at all. */
   moveTo(unitId: number, tile: number): Promise<boolean> {
     const u = this.state.units.find(x => x.id === unitId)
     if (!u) return Promise.resolve(false)
-    const planned = this.pathTo(u, tile)
+    const planned = findPath(this.state, u, u.tile, tile)
     if (!planned || !planned.length) { this.toast('No way through'); return Promise.resolve(false) }
     const start = u.tile
     this.scene.prepareMove(this.state, [unitId])
@@ -637,15 +655,10 @@ export class App {
     this.afterSelect()
   }
 
-  private holdPreviewed = false
+  /** The ring that fills under the finger from the first frame of a hold. Nothing is plotted until
+   *  it is full, so a hold let go early, or turned into a pan, leaves everything as it was. */
   holdRing(px: number, py: number, k: number) {
-    if (k < 0) { this.ring.style.display = 'none'; this.holdPreviewed = false; return }
-    // the target shows what will happen before the hold completes
-    if (!this.holdPreviewed && this.scene.cam.view.activeUnit !== null) {
-      this.holdPreviewed = true
-      const t = tileUnderPoint(this.state, this.scene.cam, px, py)
-      if (t !== null && this.previewPath(t)) { this.scene.cam.view.selectedTile = t; this.afterSelect(); if (this.sheet.kind === 'unit') this.renderSheet() }
-    }
+    if (k < 0) { this.ring.style.display = 'none'; return }
     const r = this.canvas.getBoundingClientRect()
     this.ring.style.display = 'block'
     this.ring.style.left = (r.left + px) + 'px'
@@ -669,7 +682,7 @@ export class App {
   back() {
     const prev = this.sheetHistory.pop()
     this.sheet = prev ?? { kind: 'queue' }
-    if (this.sheet.kind === 'queue') { this.queueExpanded = true; this.scene.cam.view.activeUnit = null; this.pathPreview = null; this.afterSelect() }
+    if (this.sheet.kind === 'queue') { this.queueExpanded = true; this.scene.cam.view.activeUnit = null; this.route = null; this.afterSelect() }
     if (this.sheet.kind !== 'unit' && this.foundTarget !== null) this.setFoundTarget(null)
     this.renderSheet()
   }
@@ -809,6 +822,9 @@ export class App {
 
   // ---- rendering -------------------------------------------------------------------------------
   refresh() {
+    // a route belongs to the state it was plotted on; a state that has moved on has dropped it
+    if (this.route && !this.state.units.some(u => u.id === this.route!.unit)) this.route = null
+    this.paintRoute()
     this.queue = deriveQueue(this.state, SYSTEMS)
     this.stacks.rebuild(this.state)
     this.renderHud()
@@ -889,8 +905,9 @@ export class App {
     const full = showing && isFullScreenSheet(this.sheet)
     this.sheetEl.classList.toggle('open', showing)
     this.sheetEl.classList.toggle('full', full)
-    // a unit of the player's open in the sheet makes the map its target: a tap there plans a way,
-    // a hold goes, so nothing covers it. Any other sheet is dismissed by a tap away from it
+    // a unit of the player's open in the sheet makes the map its target: a hold there plots a
+    // route and the route's end commits it, so nothing covers it. Any other sheet is dismissed by a
+    // tap away from it
     const live = this.sheet.kind === 'unit' && this.state.units.some(u => u.id === (this.sheet as { id: number }).id && u.owner === 0)
     this.scrim.classList.toggle('show', showing && !full && !live)
     clear(this.sheetBody)

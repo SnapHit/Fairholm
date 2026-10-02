@@ -105,6 +105,20 @@ body {
 
 /* ---- the count on a stacked tile, following the map ------------------------------------------- */
 #stacks { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+/* the plotted route: over the map and its fog, under everything else, never in the way of a touch */
+#route { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+#route .leg { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+#route .leg.halo { stroke: var(--route-halo); stroke-width: var(--route-halo-width); }
+#route .leg.known { stroke: var(--route-line); stroke-width: var(--route-width); }
+#route .leg.guess { stroke: var(--route-line); stroke-width: var(--route-guess-width); stroke-dasharray: var(--route-guess-dash); }
+#route .leg.strike { stroke: var(--loss); stroke-width: var(--route-width); stroke-dasharray: var(--route-strike-dash); }
+#route .end { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 3px; }
+#route.attack .end { fill: var(--loss-soft); stroke: var(--loss); }
+#route .cross { fill: none; stroke: var(--loss); stroke-width: 4px; stroke-linecap: round; }
+#route .turn circle { fill: var(--surface-base); stroke: var(--route-line); stroke-width: 2px; }
+#route .turn text { fill: var(--route-line); font: var(--weight-strong) var(--text-tiny) var(--font); }
+#route .odds rect { fill: var(--loss); }
+#route .odds text { fill: var(--ink); font: var(--weight-strong) var(--text-tiny) var(--font); }
 #stacks .stack {
   position: absolute; left: 0; top: 0;
   min-width: var(--stack-badge); height: var(--stack-badge); padding: 0 var(--space-2);
@@ -289,20 +303,9 @@ p { margin: var(--space-3) 0; }
 
 /* while a move is drawn the sheet keeps what it said before it, and nothing on it can be pressed */
 #sheet.held > * { pointer-events: none; }
-/* the lander's headings: a small compass of buttons, each the size a thumb needs */
-.sail-row { display: flex; gap: var(--space-6); align-items: center; }
-.sail-row > .muted { flex: 1; }
-.sail-row > .preview { flex: 1; margin: 0; min-width: 0; }
-.compass { display: grid; grid-template-columns: repeat(3, var(--tap-min)); grid-template-rows: repeat(3, var(--tap-min)); gap: var(--space-2); flex: none; }
-.compass .heading {
-  font: inherit; font-size: var(--text-lead); color: var(--ink); background: var(--surface-raised);
-  border: var(--line-hair) solid var(--line); border-radius: var(--radius-md); padding: 0;
-  display: flex; align-items: center; justify-content: center;
-}
-.compass .heading span { display: block; line-height: 1; }
-.compass .heading.on { background: var(--ink); color: var(--surface-base); border-color: var(--ink); }
-.compass .heading:disabled { opacity: 0.3; }
-.compass .hub { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); font-size: var(--text-small); }
+/* a plotted route's controls: go, put away, and the shortcut said quietly beside them */
+.route-go { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); flex-wrap: wrap; }
+.route-go .muted { font-size: var(--text-small); }
 .preview { background: var(--surface-raised); border-radius: var(--radius-md); padding: var(--space-5) var(--space-6); margin: var(--space-4) 0; }
 .preview .big { font-size: var(--text-head); font-weight: var(--weight-strong); }
 input[type=range] { width: 100%; margin: var(--space-5) 0; accent-color: var(--accent); }

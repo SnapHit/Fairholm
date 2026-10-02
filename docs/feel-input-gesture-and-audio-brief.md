@@ -1,5 +1,10 @@
 # Feel: input, gesture and audio
 
+**Changed 2 October 2026, for movement.** All movement is one gesture: tap and hold the tile to go to.
+The hold plots the route and moves nothing; a tap on the route's end, or the Go control in the bottom
+third, commits it. A tap on the map never commits anything, except on the end of a route the player
+has just plotted. Sections 1, 4 and 5 say so.
+
 Written 22 August 2026. Self-contained. Companion to the browser game architecture brief, the
 interaction, session and persistence brief and the art direction and rendering brief.
 
@@ -17,12 +22,16 @@ Three gestures. There are no others, and nothing in the game may require anythin
 |---|---|---|
 | **Pinch** | Zoom, continuous | Yes |
 | **Drag** | Pan | Yes |
-| **Tap** | Select and activate | **Yes. Never destructive** |
-| **Tap and hold** | Commit. The unit acts | No. This is the verb |
+| **Tap** | Select and inspect | **Yes. Never commits anything**, except on the end of a route the player has just plotted |
+| **Tap and hold** | Plot a route for the selected unit to the tile held. Nothing moves | Yes. A route is a plan |
 
-**The rule underneath: tap is safe, hold commits.** That is the "first tap is never destructive" rule
-from section 2 of the interaction brief, implemented as a gesture instead of as a two-step interface. It
-is one consistent idea across the whole game.
+**The rule underneath: tap selects and inspects, tap and hold plots a route, and the route's end or the
+Go control commits.** A tap on the map never commits anything, except on the end of a route the player
+has just plotted, so nothing on the map happens without the player having first seen what it will do.
+That is the "first tap is never destructive" rule from section 2 of the interaction brief, implemented
+as a gesture instead of as a two-step interface. It is one consistent idea across the whole game, and
+it applies to every unit: colonists, soldiers, haulers, ships and the lander. There is no other way to
+move a unit.
 
 ---
 
@@ -86,28 +95,58 @@ is one of the most frequently seen surfaces in the game.
 
 ---
 
-## 4. Tap and hold: the verb
+## 4. Tap and hold: plotting a route
 
-**With a unit active, tap and hold on a target tile commits an action**: move there, or attack what is
-there. The game decides which from what occupies the target, and shows which before the hold completes.
+**With a unit active, tap and hold on a tile plots a route there.** Nothing moves. The player then
+agrees and goes, or picks somewhere else:
+
+- **Hold a tile:** the route appears on the map from the unit to that tile
+- **Tap the same tile, the route's end, to go.** The Go control in the bottom third does the same
+- **Hold a different tile** to plot again. **Tap anywhere else** to put the route away; the unit stays
+  selected, ready for another hold
+
+### What the route shows
+
+- **The path itself**, drawn clearly over the terrain and the fog in the theme's colours
+- **Where each turn ends**, as numbered markers, so a trip of several turns shows how long it takes
+- **Stretches through ground nobody has seen drawn differently**, because the planner is guessing
+  there: a course through unseen water stops at any coast it meets
+- **An attack.** If the last step is an attack, the route says so and shows the odds, computed from
+  the same best of three resolution the fight uses, and says when it would be a declaration of war.
+  An attack needs a hold and then a tap on the route's end or the Attack control; a hold alone never
+  attacks
+- **Why not.** If the tile cannot be reached, the route says why instead of drawing a way: a ship
+  holding land, a land unit holding water, a unit with no moves left, terrain or others' units in the
+  way. The lander holding land is pointed at the founding control, which is how it goes ashore
+
+### Reach
+
+A move of several tiles can be further than a tappable zoom shows. Two things answer that:
+
+- **The unit stays selected while the map is panned**, so the player can pan to a far tile and hold it
+- **A destination hold works at zoomed-out levels where ordinary taps do not**, down to the zoom where
+  the route can still be read. The 44 point floor in section 5 exists to stop a mis-tap committing the
+  wrong thing; a hold commits nothing, so a slightly wrong tile shows in the plot and is put right by
+  holding again. The tap that commits, on the route's end, answers across at least 44 points
 
 ### What makes it feel right rather than sluggish
 
 - **250 milliseconds**, not the platform default of 500
 - **Immediate visual feedback from the first frame of contact.** A ring fills under the finger, and the
-  target tile shows what will happen. The player never waits without knowing they are waiting
+  route appears the moment it is full. The player never waits without knowing they are waiting
 - **Moving beyond a small threshold cancels the hold and becomes a pan.** This must be tuned carefully,
   because thumbs are imprecise
 - **Releasing early cancels with no effect and no penalty**
 
 ### The discoverable path, which is required
 
-Hold is the fast path. It is also invisible to anyone who has not been told, so **every action reachable
-by hold must also be reachable by an explicit control in the bottom third** while a unit is active.
+The tap on the route's end is the fast path. It is also invisible to anyone who has not been told, so
+**every plotted route also has an explicit control in the bottom third**, Go, or Attack for an attack,
+which does the same thing.
 
-Both do the same thing. The hold is for the player who has learned it; the control is for everyone else
+Both do the same thing. The tap is for the player who has learned it; the control is for everyone else
 and for the first hour. Per section 4.6 of the onboarding brief, the first few queue items teach the
-hold in their wording.
+hold as plotting a course in their wording.
 
 ---
 
@@ -117,8 +156,12 @@ hold in their wording.
 - **Double-tap for anything except zoom**
 - **Multi-finger gestures beyond pinch**
 - **Any action that is only reachable by hold**, per section 4
-- **Confirmation dialogs.** Undo instead, backed by the action log
-- **Anything requiring precision below 44 pixels**
+- **A tap on the map that commits anything**, except a tap on the end of a route just plotted
+- **Any way to move a unit other than the plotted route**
+- **Confirmation dialogs.** Undo instead, backed by the action log. The plotted route is not one: it is
+  the plan, shown on the map, and it is where the move is committed
+- **Anything requiring precision below 44 pixels**, except the destination hold of section 4, which
+  commits nothing and is put right by holding again
 
 ---
 

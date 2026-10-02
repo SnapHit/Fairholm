@@ -172,7 +172,6 @@ export class Scene {
   private cloudTime = 0
   private lastFrame = 0
   overlayMode: 'none' | 'yields' | 'territory' | 'threat' = 'none'
-  pathTiles: number[] | null = null
   onFrame: (() => void) | null = null
 
   constructor(canvas: HTMLCanvasElement) {
@@ -801,10 +800,6 @@ export class Scene {
         const a = WAVE_COAST.alphaFrom + (WAVE_COAST.alphaTo - WAVE_COAST.alphaFrom) * Math.max(0, Math.min(1, k))
         for (const t of waveCandidates(s, wave)) setOverlayTile(tex, w, t, wc, a)
       }
-    }
-    // a path preview for the active unit
-    if (this.pathTiles && this.pathTiles.length) {
-      this.pathTiles.forEach((t, i) => setOverlayTile(tex, w, t, [0.96, 0.93, 0.82], i === this.pathTiles!.length - 1 ? 0.75 : 0.42))
     }
     // the founding preview: the nine tiles a settlement here would work
     if (this.foundPreview) {

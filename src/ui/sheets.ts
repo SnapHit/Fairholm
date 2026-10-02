@@ -11,7 +11,7 @@ import { neighbours8, isLand } from '../sim/worldgen'
 import { turnsToCoast } from '../sim/autopilot'
 import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, recompute } from '../sim/market'
 import { maxMoves, cargoCapacity, equipCost, isHull, unitAttack, unitDefence } from '../sim/units'
-import { settlementKnown, unitVisible, sightMask } from '../sim/fog'
+import { sightMask } from '../sim/fog'
 import { signatoryList } from '../sim/grievance'
 import { term, TERMS } from './glossary'
 import { h, button, row, muted, fmt, signed, plural } from './dom'
@@ -24,6 +24,8 @@ import { settlementScreen, terrainLayers, tileGoodOrder } from './settlement'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
 import type { App } from './app'
+import type { RoutePlan } from '../sim/route'
+import { oddsWords } from './route'
 import type { Action } from '../sim/actions'
 
 export type SheetSpec =
@@ -524,25 +526,26 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
     : `${mine ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name} · ${u.moves}/${maxMoves(u)} moves · ${u.quality}${u.colonist ? ` · ${colonistLabel(u.colonist)}` : ''}`
   const panel = h('div', { class: 'panel' }, header(app, [T(app, u.kind, unitLabel(u.kind))], sub))
   if (!mine) { panel.append(muted(`Attack ${unitAttack(u, 'open')}, defence ${unitDefence(u, !!here)}.`)); return panel }
-  const path = app.pathPreview
-  if (lander) {
-    // the lander's whole business is the shore beside it: where it can go ashore, what the ground
-    // there would give, and the one control that founds. Interaction brief section 8
-    panel.append(landerControls(app, s, u))
-  }
-  if (path && path.length && !lander) panel.append(h('div', { class: 'preview' }, ...pathWords(s, u, path), row(...pathControls(app, s, u, path))))
-  else if (!lander) panel.append(h('p', { class: 'muted' }, 'Tap a tile to plan a move, then hold it to go.'))
-  else if (!(path && path.length) && !neighbours8(w, s.world.height, u.tile).some(n => isLand(s.world.tiles[n]))) {
+  // the route plotted for it, or why there is none; otherwise how to plot one. Feel brief section 4
+  const r = app.route && app.route.unit === u.id ? app.route : null
+  if (r) panel.append(routeBlock(app, s, u, r))
+  else if (!lander) panel.append(h('p', { class: 'muted' }, u.kind === 'colonist' && s.units.some(x => x.owner === 0 && x.kind === 'lander' && neighbours8(w, s.world.height, x.tile).includes(u.tile))
+    ? 'Tap and hold a tile to plot a course there, or hold the lander to go back aboard.'
+    : 'Tap and hold a tile to plot a course there. Nothing moves until you tap the course\'s end, or Go.'))
+  else if (!neighbours8(w, s.world.height, u.tile).some(n => isLand(s.world.tiles[n]))) {
     const turns = turnsToCoast(s)
     // once land is in sight the sheet says so rather than talking of a coast that cannot be seen
     const sight = sightMask(s)
     const landInSight = s.world.tiles.some((t, i) => sight[i] === 1 && t.terrain !== 'water')
     panel.append(h('p', { class: 'muted' }, landInSight
-      ? 'Land in sight. Sail in beside it to see the ground and where you could go ashore.'
-      : `Open sea.${isFinite(turns) && turns > 0 ? ` The nearest coast you could found on is about ${plural(turns, 'turn')} away, though you cannot see it yet.` : ''}`))
+      ? 'Land in sight. Hold a tile of water beside it to plot a course there, then tap the course\'s end, or Go, to sail.'
+      : `Open sea.${isFinite(turns) && turns > 0 ? ` The nearest coast you could found on is about ${plural(turns, 'turn')} away, though you cannot see it yet.` : ''} Hold where you want to go to plot a course; tap its end, or Go, to sail.`))
   }
-  // the compass, unless a shore is in focus for founding, which is then the sheet's whole business
-  if (lander && app.foundTarget === null) panel.append(compass(app, s, u))
+  if (lander) {
+    // the lander's whole business is the shore beside it: where it can go ashore, what the ground
+    // there would give, and the one control that founds. Interaction brief section 8
+    panel.append(landerControls(app, s, u))
+  }
   const actions: HTMLElement[] = []
   if (u.kind === 'colonist' && !here) {
     // a colonist founds where it stands, once the lander has founded the first settlement
@@ -552,8 +555,6 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
     if (!own) actions.push(muted('The lander founds the first settlement. Beach it first; a colonist may found after that.'))
     else if (!focused) actions.push(button('Found a settlement here', () => app.setFoundTarget(u.tile), 'small'))
     else actions.push(foundPreview(app, s, u.tile, problem, () => app.found(u.id, u.tile)))
-    const beside = s.units.find(x => x.owner === 0 && x.kind === 'lander' && neighbours8(w, s.world.height, x.tile).includes(u.tile))
-    if (beside) actions.push(button('Go back aboard the lander', () => app.dispatch({ t: 'embark', unit: u.id, lander: beside.id }, 'Came aboard'), 'small ghost'))
   }
   if (here && here.owner === 0) {
     if (u.colonist) actions.push(button(u.kind === 'colonist' ? 'Join the settlement' : 'Stand down', () => app.dispatch({ t: 'disband', unit: u.id }, u.kind === 'colonist' ? 'Joined' : 'Stood down'), 'small'))
@@ -582,59 +583,46 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   return panel
 }
 
-/** What a planned way comes to, in words: where it goes, as far as the player knows, and how long. */
-function pathWords(s: GameState, u: Unit, path: number[]): HTMLElement[] {
-  const dest = path[path.length - 1]
-  // only what the player knows: a destination nobody has seen is fog, whatever is really there,
-  // and a unit out of sight is not named
-  const known = !C.flags.fogOfWar || s.world.tiles[dest].explored
-  const blind = C.flags.fogOfWar && path.some(t => !s.world.tiles[t].explored)
-  const ds = known ? s.settlements.find(x => x.tile === dest && settlementKnown(x)) : undefined
-  const enemy = s.units.find(x => x.tile === dest && x.owner !== 0 && unitVisible(s, x))
-  let cost = 0
-  for (const t of path) cost += Math.max(0.5, t === u.tile ? 0 : 1)
-  const turns = Math.max(1, Math.ceil(cost / Math.max(1, maxMoves(u))))
-  return [
-    h('div', { class: 'big' }, ds ? `To ${ds.name}` : enemy ? `Toward ${unitLabel(enemy.kind)}` : !known ? 'Into the fog' : s.world.tiles[dest].terrain === 'water' ? 'Across open water' : `To ${TERRAIN_NAMES[s.world.tiles[dest].terrain]}`),
-    h('div', {}, `${path.length} tiles, about ${plural(turns, 'turn')}.${blind ? ' It stops at any coast on the way.' : ''}`),
-  ]
-}
-
-/** The controls under a planned way: go, attack what is there if it can be seen, or put it away. */
-function pathControls(app: App, s: GameState, u: Unit, path: number[]): HTMLElement[] {
-  const dest = path[path.length - 1]
-  const enemy = s.units.find(x => x.tile === dest && x.owner !== 0 && unitVisible(s, x))
-  return [
-    button('Go', () => app.commitMove(u.id), 'primary'),
-    enemy ? button('Attack', () => app.commitAttack(u.id, dest), 'danger') : null,
-    button('Clear', () => { app.pathPreview = null; app.paintPath(); app.scene.requestDraw(); app.renderSheet() }, 'ghost'),
-  ].filter((x): x is HTMLElement => x !== null)
-}
-
-/** Eight headings round the lander, each showing where a turn's sailing that way would end. A
- *  move's end is often off the screen at a zoom where tiles can be tapped, so this is how the whole
- *  distance is reached from the bottom third (feel brief section 4: every hold has a control there). */
-function compass(app: App, s: GameState, u: Unit): HTMLElement {
-  const path = app.pathPreview
-  const end = path && path.length ? path[path.length - 1] : null
-  const cells: HTMLElement[] = []
-  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-    if (!dx && !dz) { cells.push(h('div', { class: 'hub', 'aria-hidden': 'true' })); continue }
-    const name = `${dz < 0 ? 'north' : dz > 0 ? 'south' : ''}${dz && dx ? '-' : ''}${dx < 0 ? 'west' : dx > 0 ? 'east' : ''}`
-    const target = app.headingTarget(u, dx, dz)
-    const angle = Math.atan2(dz, dx) * 180 / Math.PI
-    cells.push(h('button', {
-      class: 'heading' + (target !== null && target === end ? ' on' : ''), type: 'button', 'aria-label': `Sail ${name}`,
-      disabled: target === null ? true : undefined,
-      onClick: () => app.previewHeading(dx, dz),
-    }, h('span', { style: `transform: rotate(${angle}deg)` }, '→')))
+/** The plotted route in the sheet: where it goes as far as the player knows, how many turns and
+ *  where they end, an attack's odds and what it would start, and the control that goes, which does
+ *  what a tap on the route's end does. Or, where there is no way, why. */
+function routeBlock(app: App, s: GameState, u: Unit, r: RoutePlan): HTMLElement {
+  const clear = button('Clear', () => app.clearRoute(), 'ghost')
+  if (!r.ok) {
+    // the shore beside the lander is not a place to sail to but the place to found: the founding
+    // control below is already looking at it
+    if (r.shore !== null) return h('div', { class: 'preview' }, h('div', { class: 'big' }, 'Go ashore here'), h('div', {}, r.words))
+    return h('div', { class: 'preview none' }, h('div', { class: 'big warn' }, 'Not there'), h('div', {}, r.words), row(clear))
   }
-  // beside it, the way planned and the control that goes, or what a heading does
-  const side = path && path.length
-    ? h('div', { class: 'preview' }, ...pathWords(s, u, path), row(...pathControls(app, s, u, path)))
-    : muted(`A heading shows a turn's sailing, ${C.lander.moves} tiles, and Go sets off. Or hold a tile of water.`)
-  return h('div', { class: 'section sail' },
-    h('div', { class: 'sail-row' }, h('div', { class: 'compass', role: 'group', 'aria-label': 'Sail a heading' }, ...cells), side))
+  const t = s.world.tiles[r.end]
+  const known = !C.flags.fogOfWar || t.explored
+  const afloat = u.kind === 'lander' || isHull(u.kind)
+  const ds = known ? s.settlements.find(x => x.tile === r.end && x.owner === 0) : undefined
+  const blind = r.unseen.some(Boolean)
+  const turns = r.turnEnds.length
+  const lines: string[] = []
+  let title: string, go: string, cls = 'primary'
+  if (r.kind === 'attack') {
+    title = `Attack ${r.target}`
+    go = 'Attack'
+    cls = 'danger'
+    lines.push(r.odds === null ? 'The odds cannot be known until they are in sight.' : r.odds >= 0.995 ? 'Nothing there can stand against it.' : `It wins about ${oddsWords(r.odds).toLowerCase()} times.`)
+    if (r.path.length) lines.push(r.arrives === 1 ? `It closes in ${plural(r.path.length, 'tile')} and attacks this turn.` : `It takes ${plural(r.arrives, 'turn')} to close in, then stops beside them: the attack waits for you to plot it again.`)
+    if (r.declares !== null) lines.push(`This is a declaration of war on ${s.charters[r.declares].name}.`)
+  } else if (r.kind === 'board') {
+    title = 'Back aboard the lander'
+    go = 'Go aboard'
+    lines.push(r.arrives === 1 ? 'It goes aboard this turn.' : `It reaches the lander in ${plural(r.arrives, 'turn')}, and goes aboard then.`)
+  } else {
+    title = ds ? `To ${ds.name}` : !known ? 'Into the fog' : t.terrain === 'water' ? 'Across open water' : `To ${TERRAIN_NAMES[t.terrain]}`
+    go = 'Go'
+    lines.push(turns <= 1 ? `${plural(r.path.length, 'tile')}, this turn.` : `${plural(r.path.length, 'tile')}, ${turns} turns: the numbers mark where each turn ends.`)
+  }
+  if (blind) lines.push(afloat ? 'Through water nobody has seen: it stops at any coast it meets.' : 'Through ground nobody has seen: it stops where the ground will not let it on.')
+  return h('div', { class: 'preview' + (r.kind === 'attack' ? ' attack' : '') },
+    h('div', { class: 'big' }, title),
+    ...lines.map(l => h('div', {}, l)),
+    h('div', { class: 'route-go' }, button(go, () => { void app.commitRoute() }, cls), clear, muted('or tap the end of the course')))
 }
 
 /** What the control that clears a standing order says, in the order's own plain words. */
@@ -713,7 +701,7 @@ function stackSheet(app: App, s: GameState, tile: number): HTMLElement {
   return h('div', { class: 'panel' }, header(app, here ? `At ${here.name}` : 'On this tile', plural(units.length, 'unit')),
     ...units.map(u => line([h('b', {}, unitLabel(u.kind)), muted(` · ${u.quality}${u.colonist ? ', ' + colonistLabel(u.colonist) : ''}`)],
       u.order ? u.order.kind : `${u.moves}/${maxMoves(u)} moves`,
-      () => { app.scene.cam.view.activeUnit = u.id; app.pathPreview = null; app.sheetHistory = []; app.open({ kind: 'unit', id: u.id }); app.scene.updateRings(s); app.scene.requestDraw() })))
+      () => { app.scene.cam.view.activeUnit = u.id; app.clearRoute(false); app.sheetHistory = []; app.open({ kind: 'unit', id: u.id }); app.scene.updateRings(s); app.scene.requestDraw() })))
 }
 
 function cargoSheet(app: App, s: GameState, u: Unit): HTMLElement {

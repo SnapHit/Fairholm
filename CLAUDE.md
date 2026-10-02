@@ -51,10 +51,14 @@ Built with TypeScript, Vite and three.js; no UI framework; self-hosted on Cloudf
 
 ## The three gestures
 
-Pinch zooms (continuous, anchored on the centroid). Drag pans. Tap selects and is always safe.
-Tap-and-hold for 250 ms commits (move or attack) with a filling ring from the first frame; moving
-14 px cancels it into a pan. Every hold action also has a control in the bottom third. No drag and
-drop. No confirmation dialogs: undo instead. Below 44 px a tile, tiles are not tappable.
+Pinch zooms (continuous, anchored on the centroid). Drag pans. Tap selects and inspects. Tap and
+hold plots a route for the selected unit to the tile held, with a filling ring from the first frame;
+moving 14 px cancels it into a pan. Nothing moves until the route's end is tapped or the Go control
+in the bottom third is pressed. **A tap on the map never commits anything, except on the end of a
+route the player has just plotted.** A hold elsewhere plots again; a tap elsewhere puts the route away.
+This is the only way to move any unit, the lander included. No drag and drop. No confirmation dialogs:
+undo instead. Below 44 px a tile, tiles are not tappable; a destination hold still works down to the
+overview zoom, because it commits nothing.
 
 ## Repository layout
 

@@ -33,6 +33,16 @@ section says which ones are load-bearing.
 | Small maps often fail to place four charters | Placement too strict | `C.worldgen.rivalSplashdownGive`, `maxAttempts` | Raise | Generation time on a failed seed |
 | The recall fleet arrives too suddenly or too slowly | Approach length | `C.military.approachTurns`, `approachMoves` | Raise or lower | Not the lander: the fleet's landers have their own constant |
 
+## Moving a unit feels slow, fiddly, or easy to get wrong
+
+| Symptom | Likely cause | Constant | Direction | Also affects |
+|---|---|---|---|---|
+| The ring takes too long to fill before a route appears | Hold too long | `HOLD_MS` in `src/ui/theme.ts` | Lower | Pans that linger start to plot; feel brief section 8 says shorten this before anything else |
+| Routes appear when the player meant to pan | Hold too short, or the pan threshold too wide | `HOLD_MS`, `C.feel.holdCancelPx` | Raise, lower | The same trade from the other side |
+| A far tile cannot be held without zooming in | Hold floor too high | `C.feel.routeHoldFloor` | Lower | Below about 16 a slow unit's numbered turn ends overlap |
+| A tap meant for the map commits the route | The end's hit area too wide at wide zoom | `C.feel.routeEndHitPx` | Lower, not below 22 | Below 22 the end is under the 44 point floor |
+| The route is hard to see on light ground | Line or halo too thin | `--route-width`, `--route-halo-width` in `src/ui/theme.ts` | Raise | Nothing else |
+
 ## Immigration stalls
 
 | Symptom | Likely cause | Constant | Direction | Also affects |

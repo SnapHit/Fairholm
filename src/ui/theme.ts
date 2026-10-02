@@ -24,6 +24,14 @@ export const SHEET_DISMISS_PX = 72
 /** Nothing the player must hit is ever smaller than this. Feel brief section 5. */
 export const TAP_MIN_PX = 44
 
+/** The plotted route (src/ui/route.ts). Its end is a ring the size of the tile and never smaller
+ *  than this radius, so it reads as something to tap; each turn's end is a numbered disc of this
+ *  radius; an attack's odds sit in a pill this tall above the end. */
+export const ROUTE_END_TILE = 0.42
+export const ROUTE_END_MIN_PX = 15
+export const ROUTE_TURN_PX = 11
+export const ROUTE_ODDS_H_PX = 22
+
 /** The opening's five lines, onboarding brief section 2: one fades in every two seconds or so, each
  *  over this long, and the first tap anywhere takes them all away over the same time. */
 export const OPENING_LINE_MS = 2000
@@ -83,6 +91,16 @@ export const TOKENS: Record<string, string> = {
   '--warn': '#e3a44a',
   '--danger-surface': '#6a2a22',
   '--danger-line': '#8a3a2e',
+
+  // The plotted route over the map: a bone line on a dark halo so it reads on grass and sea alike,
+  // dotted where nobody has seen the ground, the loss colour for an attack's last step
+  '--route-line': '#e9e2cc',
+  '--route-halo': 'rgba(23,24,26,0.6)',
+  '--route-width': '4px',
+  '--route-halo-width': '8px',
+  '--route-guess-width': '3.5px',
+  '--route-guess-dash': '1 7',
+  '--route-strike-dash': '7 5',
 
   // Lines. Used sparingly: the settlement screen has none at all.
   '--line': '#3a3f46',

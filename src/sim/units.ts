@@ -4,7 +4,7 @@
 import { C } from './constants'
 import type { GameState, Unit, UnitKind, Colonist, HullKind, LandKind } from './state'
 import { neighbours8 } from './worldgen'
-import { revealFrom } from './fog'
+import { revealFrom, sightMask, unitVisible } from './fog'
 
 export const HULLS: HullKind[] = ['lighter', 'trader', 'raider', 'cutter']
 export function isHull(kind: UnitKind): boolean { return (HULLS as string[]).includes(kind) }
@@ -76,12 +76,19 @@ export function enterCost(s: GameState, u: Unit, tile: number): number {
  *  sailed and a colonist into country nobody has walked. The move finds out the truth as it goes:
  *  `advance` stops where the next tile turns out to be land the lander cannot enter, which is the
  *  coast. Everyone else's paths are planned on the ground as it is. */
-export function findPath(s: GameState, u: Unit, from: number, to: number, maxLen = 400): number[] | null {
+export function findPath(s: GameState, u: Unit, from: number, to: number, maxLen = 400, ignoreUnits = false): number[] | null {
   if (from === to) return []
   const w = s.world.width, h = s.world.height
   const N = w * h
   const blind = C.flags.fogOfWar && u.owner === 0
   const tiles = s.world.tiles
+  // the player's ways go round the armed units of others the player can see, because a unit stops
+  // before one anyway (advance); the destination is left open, so a route can end in an attack
+  let blocked: Set<number> | null = null
+  if (u.owner === 0 && !ignoreUnits) {
+    const mask = C.flags.fogOfWar ? sightMask(s) : null
+    blocked = new Set(s.units.filter(o => o.owner !== u.owner && isArmed(o.kind) && (!mask || unitVisible(s, o, mask))).map(o => o.tile))
+  }
   const distv = new Float64Array(N).fill(Infinity)
   const prev = new Int32Array(N).fill(-1)
   distv[from] = 0
@@ -101,6 +108,7 @@ export function findPath(s: GameState, u: Unit, from: number, to: number, maxLen
       if (!isFinite(c)) continue
       // blocked by a hostile unit or foreign settlement, where it is known to be there
       if (!unknown && n !== to && s.settlements.some(st => st.tile === n && st.owner !== u.owner)) continue
+      if (blocked && n !== to && blocked.has(n)) continue
       const nd = d + c + ((n % w) !== (i % w) && Math.floor(n / w) !== Math.floor(i / w) ? C.terrain.diagonalTieBreak : 0)
       if (nd < distv[n]) { distv[n] = nd; prev[n] = i; push(nd, n) }
     }

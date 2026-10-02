@@ -96,11 +96,13 @@ function promote(s: GameState, u: Unit, ctx: TurnContext) {
   if (chance(ctx.rngPlay, p)) { u.quality = QUALITY[i + 1]; if (u.owner === 0) ctx.log({ kind: 'war', text: `A ${unitLabel(u.kind)} is now ${u.quality}.`, tile: u.tile }) }
 }
 
-/** One fight. Returns true when the attacker won. */
-export function fight(s: GameState, attacker: Unit, tile: number, ctx: TurnContext): boolean {
+/** The strengths a fight between this attacker and the best defender on a tile is fought at, after
+ *  works, terrain and ambush, or null when nothing there would defend. Shared by the fight and by
+ *  the odds a plotted route shows, so the two cannot drift apart. */
+export function fightStrengths(s: GameState, attacker: Unit, tile: number): { A: number; D: number; defender: Unit } | null {
   const defender = bestDefender(s, tile, attacker.owner)
+  if (!defender) return null
   const st = settlementAt(s, tile)
-  if (!defender) return true
   let A = unitAttack(attacker, st ? 'settlement' : 'open')
   let D = defenceOf(s, defender, tile)
   // ambush: militia or outriders in cover against regulars in the open flip the terrain bonus
@@ -110,6 +112,42 @@ export function fight(s: GameState, attacker: Unit, tile: number, ctx: TurnConte
     const bonus = (C.military.terrainDefence[t.terrain] ?? 1) * (t.forest ? C.military.forestDefence : 1)
     A *= bonus; D /= bonus
   }
+  return { A, D, defender }
+}
+
+/** What an undefended rival settlement resists with: its people, behind its works. */
+function peopleResist(st: Settlement): number {
+  return C.military.units.militia.defence * C.military.fortMultipliers[st.buildings.works]
+}
+
+/** The chance an attack on a tile wins, read off the same resolution `fight` uses: best of
+ *  `C.military.exchanges` exchanges, each won at A / (A + D). With nothing there to defend, a rival
+ *  settlement still resists with its people; anything else falls. */
+export function attackOdds(s: GameState, attacker: Unit, tile: number): number {
+  const f = fightStrengths(s, attacker, tile)
+  const st = settlementAt(s, tile)
+  if (!f) {
+    if (st && st.owner > 0 && st.abstractPop > 0) { const A = unitAttack(attacker, 'settlement'); return A / (A + peopleResist(st)) }
+    return 1
+  }
+  if (f.A <= 0) return 0
+  const p = f.A / (f.A + f.D), n = C.military.exchanges
+  // more exchanges won than lost: the sum over every winning count of its binomial term
+  let win = 0
+  for (let k = Math.floor(n / 2) + 1; k <= n; k++) {
+    let ways = 1
+    for (let j = 0; j < k; j++) ways = ways * (n - j) / (j + 1)
+    win += ways * Math.pow(p, k) * Math.pow(1 - p, n - k)
+  }
+  return win
+}
+
+/** One fight. Returns true when the attacker won. */
+export function fight(s: GameState, attacker: Unit, tile: number, ctx: TurnContext): boolean {
+  const f = fightStrengths(s, attacker, tile)
+  const st = settlementAt(s, tile)
+  if (!f) return true
+  const { A, D, defender } = f
   if (A <= 0) return false
   let wins = 0, losses = 0
   for (let i = 0; i < C.military.exchanges; i++) {
@@ -171,7 +209,7 @@ export function attackWith(s: GameState, u: Unit, tile: number, ctx: TurnContext
   if (won && st && st.owner !== 0 && !bestDefender(s, tile, 0)) {
     if (st.abstractPop > 0 && st.owner > 0) {
       // an undefended rival settlement still resists with its people
-      const resist = C.military.units.militia.defence * C.military.fortMultipliers[st.buildings.works]
+      const resist = peopleResist(st)
       const A = unitAttack(u, 'settlement')
       if (next(ctx.rngPlay) < A / (A + resist)) takeSettlement(s, st, 0, ctx)
       else ctx.log({ kind: 'war', text: `${st.name} held behind its people.`, tile })

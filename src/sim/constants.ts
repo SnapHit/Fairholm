@@ -474,6 +474,14 @@ export const C = {
     tapMaxPx: 8,
     doubleTapMs: 300,
     tileTapFloor: 44,          // below this many pixels a tile, tiles are not tappable
+    /** A hold plots a route, and nothing commits until the route's end or Go is tapped, so a hold
+     *  reaches tiles below the tap floor: down to this many pixels a tile, the overview zoom, where
+     *  the route and its numbered turn ends can still be read. A slightly wrong tile shows in the
+     *  plot and is put right by holding again. Below it a hold is a tap. */
+    routeHoldFloor: 16,
+    /** The end of a plotted route answers a tap across the whole tile, and never less than this
+     *  many pixels either side of its middle, so it can be tapped at a zoom where tiles cannot. */
+    routeEndHitPx: 22,
     lodCull: 40,               // section 2, hysteretic
     lodRestore: 48,
     zoom: { fit: 0, overview: 16, working: 44, detail: 72, min: 6, max: 110 },

@@ -47,8 +47,9 @@ await page.waitForTimeout(1200)
 // loaded machine can hold up, so the check reads the state and not the timer
 const tapped = await page.evaluate(() => ({ showing: window.fairholm.opening ? window.fairholm.opening.showing : false, fading: !!document.querySelector('#opening.gone'), gone: !document.querySelector('#opening'), music: window.fairholm.music.position > 0 || window.fairholm.music.playing }))
 check('2 the first tap dismisses the lines', !tapped.showing && (tapped.gone || tapped.fading), JSON.stringify(tapped))
-// one move, by the player's own gestures: a tap on the lander, then a tap and hold on the water
-// toward the coast, as far along the way as is on the screen above the sheet. The heading is the
+// one move, by the player's own gestures: a tap on the lander, a tap and hold on the water toward
+// the coast, as far along the way as is on the screen above the sheet, which plots a course and
+// moves nothing, then a tap on the course's end, which sails it. The heading is the
 // one toward the nearest coast, which is what a player who guessed right would sail. The hold is
 // held well past its length, because a software renderer draws few frames and the hold completes
 // on a frame
@@ -85,18 +86,26 @@ const aim = await page.evaluate(async () => {
 })
 let sailed = { skipped: aim.skipped }
 if (!aim.skipped && aim.best) {
-  await page.evaluate(() => { window.__sawMoving = false; const sc = window.fairholm.scene; const tick = () => { if (sc.moving) window.__sawMoving = true; else requestAnimationFrame(tick) }; requestAnimationFrame(tick) })
+  const before = await page.evaluate(() => window.fairholm.state.units.find(u => u.owner === 0 && u.kind === 'lander').tile)
+  // the hold plots a course and moves nothing
+  // whether a move is drawn travelling, caught as it starts: a short move can be over before a
+  // software renderer has drawn more than a frame or two
+  await page.evaluate(() => { window.__sawMoving = false; const sc = window.fairholm.scene; const real = sc.animateMoves.bind(sc); sc.animateMoves = (...args) => { const r = real(...args); if (sc.moving) window.__sawMoving = true; return r } })
   await page.mouse.move(aim.best.sx, aim.best.sy)
   await page.mouse.down()
   await page.waitForTimeout(1500)
   await page.mouse.up()
+  await page.waitForTimeout(500)
+  const plotted = await page.evaluate(() => { const a = window.fairholm; return { ok: !!a.route?.ok, end: a.route?.end, tile: a.state.units.find(u => u.owner === 0 && u.kind === 'lander').tile, moved: window.__sawMoving } })
+  // a tap on the course's end sails it
+  await page.touchscreen.tap(aim.best.sx, aim.best.sy)
   await page.waitForFunction(() => window.__sawMoving, null, { timeout: 10000 }).catch(() => {})
   await page.waitForFunction(() => !window.fairholm.scene.moving, null, { timeout: 20000 }).catch(() => {})
-  sailed = await page.evaluate((k) => ({ travelling: window.__sawMoving, tilesOut: k, landBefore: 0, landAfter: window.fairholm.state.world.tiles.filter(t => t.explored && t.terrain !== 'water').length, sheetAfter: window.fairholm.sheet.kind, toast: document.querySelector('#toast')?.textContent }), aim.best.k)
-  sailed.aim = { ...aim, lp }
+  sailed = await page.evaluate((k) => ({ travelling: window.__sawMoving, tilesOut: k, landBefore: 0, landAfter: window.fairholm.state.world.tiles.filter(t => t.explored && t.terrain !== 'water').length, tileAfter: window.fairholm.state.units.find(u => u.owner === 0 && u.kind === 'lander')?.tile, sheetAfter: window.fairholm.sheet.kind, toast: document.querySelector('#toast')?.textContent }), aim.best.k)
+  sailed.plotted = { ...plotted, stillAt: plotted.tile === before }
   sailed.landBefore = aim.land
 } else if (!aim.skipped) sailed = { error: 'no tile of the way on the screen', sheet: aim.sheet }
-check('2 a tap on the lander and one hold on the water sail it, drawn travelling, and sight land', !!sailed.skipped || (sailed.travelling && sailed.landBefore === 0 && sailed.landAfter > 0), JSON.stringify(sailed))
+check('2 a hold plots a course without moving, and a tap on its end sails it, drawn travelling, sighting land', !!sailed.skipped || (sailed.plotted.ok && sailed.plotted.stillAt && !sailed.plotted.moved && sailed.travelling && sailed.tileAfter === sailed.plotted.end && sailed.landBefore === 0 && sailed.landAfter > 0), JSON.stringify(sailed))
 // the rest of the voyage: the machine sails the lander to the coast and founds, through the game's own actions
 const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
 await page.waitForTimeout(400)

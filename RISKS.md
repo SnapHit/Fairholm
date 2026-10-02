@@ -94,6 +94,13 @@ These are finished and might be wrong. Unfinished things are in the README and a
     settlement with four batteries lifts a blockade in two turns on average; one with none never
     does. `C.naval.batteryFire`.
 
+14. **The plotted route has not been played.** Added 2 October 2026. Every move is now a hold and
+    then a tap on the route's end or Go (decisions 127 to 133). That is one more touch than the hold
+    that used to commit, for the most common action in the game. Feel brief section 8 already names
+    the fallback: shorten the hold and strengthen the feedback before anything else. Whether the
+    numbered turn ends read at a glance, and whether `C.feel.routeHoldFloor` is the right zoom to stop
+    accepting destination holds, were judged from headless screenshots on one seed.
+
 ## 2. What was rushed, and what more room would have bought
 
 - **The sheets.** Every sheet exists and is reachable, but none of them was designed. The settlement
@@ -113,8 +120,8 @@ These are finished and might be wrong. Unfinished things are in the README and a
 - **Onboarding beyond the queue.** The intent ladder (fed, first consignment, second settlement,
   refine) and the one-sentence explanations are in; there is no guidance on the first hold, no
   highlighting of the first tappable tile, and the five lines over the splashdown are the only
-  scripted moment. The lander's queue card says to tap it and hold a water tile or pick a heading in
-  its sheet; nothing shows which way land lies, by design.
+  scripted moment. The lander's queue card says to tap it, hold where to go to plot a course, and tap
+  the course's end or Go; nothing shows which way land lies, by design.
 - **The return screen's "what moved"** takes the last three dispatch entries of the current turn,
   which after a reload is usually empty because the save is written after the turn's dispatch is
   already in the log for the previous turn. It works; it is often thin.
