@@ -77,7 +77,20 @@ These are finished and might be wrong. Unfinished things are in the README and a
 
 11. **Worldgen site descriptions and validation** were tested for existence, not for honesty. "Good
     timber, poor ore, a river" is computed from reach-two tiles; nobody has checked that it matches
-    what the player sees on landing.
+    what the player sees on the ground.
+
+12. **The voyage and the fog have not been played.** Added 2 October 2026. The lander sails one tile
+    a turn and the splashdown is four to six tiles from a viable coast (decision 94); the autopilot
+    founds on turns three to seven across twenty-seven worlds, and a player who sails the wrong way
+    first has nothing but the haze to tell them so. The haze's colours, the frontier's softness, the
+    remembered ground's dimming and the opening type size were judged from headless screenshots on
+    one seed. Whether four turns of fog before the first decision hooks or bores is the thing this
+    session could not measure. `C.lander.*`, `FOG` in `src/render/look.ts`.
+
+13. **Battery fire is the first implementation of a rule the brief calls "automatic".** Decision 110.
+    Half a hit a battery a turn, four hits to drive the Company's escort off, no slot cap. A
+    settlement with four batteries lifts a blockade in two turns on average; one with none never
+    does. `C.naval.batteryFire`.
 
 ## 2. What was rushed, and what more room would have bought
 
@@ -90,13 +103,16 @@ These are finished and might be wrong. Unfinished things are in the README and a
 - **Rival behaviour.** Rivals grow numbers, found settlements, sell into the market, and at war spawn
   single militia. They have no ships, no improvers, no roads, no response to being attacked except
   more militia. Observable depth was the brief's instruction; this is shallower than observable.
-- **The fleet's narrowing approach is invisible on the map.** The wave card says how many stretches
-  of coast remain; nothing is drawn. The threat overlay shows landed units only.
+- **The fleet's narrowing approach** is drawn now (decision 111): the landers through the fog and
+  the plausible coast tinted, narrowing. What is not drawn is any hint of the heading before the
+  first turn's narrowing, and the tint at a third of the approach is faint enough to miss.
 - **Naval.** Engagement rules are a sketch. Player hulls cannot be ordered to attack. Raiders go
   home after one raid by being deleted. Blockade ships never move.
 - **Onboarding beyond the queue.** The intent ladder (fed, first consignment, second settlement,
   refine) and the one-sentence explanations are in; there is no guidance on the first hold, no
-  highlighting of the first tappable tile, and the landing cards are the only scripted moment.
+  highlighting of the first tappable tile, and the five lines over the splashdown are the only
+  scripted moment. The lander's queue card says to tap it and hold a water tile; nothing shows
+  which way land lies, by design.
 - **The return screen's "what moved"** takes the last three dispatch entries of the current turn,
   which after a reload is usually empty because the save is written after the turn's dispatch is
   already in the log for the previous turn. It works; it is often thin.
@@ -161,16 +177,23 @@ Places where a change in one file breaks something in a distant file without the
   renderer's colour lookup, the picking sheet's label. A new owner value (a fallen rival's Company
   holdings, say) would need every one of those touched; the renderer would crash on
   `s.charters[owner].colour`.
-- **Difficulty's `startingColonists` and the landing's spare colonist.** `land` in `actions.ts`
-  puts `startingColonists` in the settlement and adds a separate debtor unit when the count is at
-  least three, so generous terms give six people, punitive two. The grievance gate test depends on
-  the five.
+- **Difficulty's `startingColonists` are the lander's passengers.** `createGame` puts them aboard;
+  `found` makes them the settlement. There is no spare colonist unit any more (decision 100). The
+  grievance gate test depends on the five of standard terms.
+- **`App.found` predicts the ids the `found` action will give the new settlement and the boat**
+  (`settlements.length` and `nextId`) so the beaching can hold them at nothing before the action
+  runs (decision 109). Anything that creates a settlement or a unit inside `found` before those two
+  breaks the fade silently: the wrong pictures fade in.
+- **The fog's visibility texture is written by the renderer from `tile.explored` and `sightMask`**
+  after every state change, and `reveal` in `src/sim/fog.ts` is what sets `explored`. `applyAction`
+  and `runTurn` both call `reveal`; a new way of moving a unit that bypasses `applyAction` leaves
+  ground the unit stands on unexplored and drawn as haze under it.
 - **The fleet cadence reads `waves.length`** to decide when the next wave is due; the win check
   reads the pool and the units. Both are in `fleet.ts` but `military.ts` removes Company units and
   `naval.ts` removes blockade ships, so the win condition is spread across three files.
-- **Rivals are founded by `foundRivals` from the `land` action**, not by the rivals system, and
-  only if `s.flags.rivals`, the state copy, is true. The rivals system checks `C.flags.rivals`. They
-  agree today only because the copy is made from the constant.
+- **Rivals' landers sail and found inside the rivals system** (`rivalVoyages`), by the autopilot in
+  `src/sim/autopilot.ts`, which is also what the tests use to get a game ashore. A change to the
+  autopilot's site score moves every pin at once and changes where every rival settles.
 - **`withTerms` in `app.ts` wraps any word that is a glossary key.** The glossary keys include
   every good, `turn`, `free`, `master`, `works`, `quality`. Adding a key such as `the` or `turn`
   variants would make every card a mess of dotted underlines; adding `free` already underlines the
@@ -219,9 +242,10 @@ A future agent could violate any of these and neither the compiler nor the suite
 - **Each queue group has a plural title in `GROUP_TITLES`** if it can hold more than one item.
   Groups without one fall back to "N items: first title".
 - **`explain` is one sentence, shown once, per group.** Nothing checks it is one sentence.
-- **The save schema.** `SCHEMA_VERSION` is 1. `transits` was added to `GameState` after the first
-  saves existed and `fromSave` tolerates its absence with `?? []`. The next field added must either
-  do the same or bump the version; nothing reminds anyone.
+- **The save schema.** `SCHEMA_VERSION` is 2 since the fog opening, and the local storage key
+  carries it. `readLocal` also finds a save under any earlier key so that the boot can refuse it in
+  words and clear it (decision 113). The next field added must either tolerate its absence or bump
+  the version; nothing reminds anyone.
 - **`forestClearsTo` agrees with worldgen's forest placement.** It does not, see section 3.
 - **Garrison capacity and battery slots** (`C.military.garrisonCapacity`, `batterySlots`) are
   constants nothing reads. A tuner will change them and see nothing happen.
@@ -243,9 +267,9 @@ Including the simplifications. Decisions with a number are explained in `DECISIO
 - **Garrison caps and battery slots per works tier are not enforced.** Constants exist; nothing
   limits how many units sit inside a palisade or how many batteries count.
 - **Signatory seven (cheaper batteries) grants nothing.** `equipCost` ignores signatories.
-  Signatory six (reveal terrain) is a no-op while fog is off. The build specification said effects
-  beyond the first four may be inert; the first four all work, and eight of the remaining eight
-  work, with these two exceptions.
+  Signatory six (reveal terrain) is still a no-op with the fog on; nothing reads it. The build
+  specification said effects beyond the first four may be inert; the first four all work, and eight
+  of the remaining eight work, with these two exceptions.
 - **The clerk rule has no teeth.** `clerksRequired` only excuses that many idle colonists from the
   idle card. `clerkShortfall` is never read, so administrative overhead does not reduce output. The
   colonists brief describes it as a soft pressure on size; here it is a label.
@@ -258,8 +282,9 @@ Including the simplifications. Decisions with a number are explained in `DECISIO
   surplus destination is never executed** by the orders system.
 - **Transits are abstract** (decision 5); the turn-queue brief's haul circuits with a risk posture
   exist only for hand-equipped haulers, and no sheet authors a circuit.
-- **Blockade is scoped to waves at sea** (decision 12). **The Company sacks rather than holds**
-  (decision 20). **Intervention** is a flat accrual (decision 22).
+- **Blockade is adjacency**: a hostile armed ship on a water tile beside a settlement, the
+  Company's always, a rival's only when flagged (military brief section 9 as changed). **The Company
+  sacks rather than holds** (decision 20). **Intervention** is a flat accrual (decision 22).
 - **Rival declarations** on hard and punitive resolve by a coin weighted on strength, at random,
   with no war on the map. The rival charters brief describes a war the player can see.
 - **The market's rival coupling** adds 0.3 of each rival's sales as pressure on two random goods a
@@ -269,8 +294,10 @@ Including the simplifications. Decisions with a number are explained in `DECISIO
   grace period. The remaining systems proposal implied a per-good rate; this is a hard cap.
 - **Imported machines** fail on a rising chance with age; the proposal gave no curve, so it is
   linear in `consume`.
-- **The narrowing approach** excludes a share of anchorages each turn at random rather than by
-  distance from the wave. The brief wanted the coast to rule itself out plausibly.
+- **The narrowing approach** excludes a share of the remaining coast tiles each turn at random
+  rather than by distance from the wave. The brief wanted the coast to rule itself out plausibly.
+  What is drawn (decision 111) is honest about what the simulation knows, so the tint can shrink
+  away from the landers rather than toward them.
 - **Season affects only colour.** The session brief says so; some readers expected yields.
 - **"Everything reachable lives in the bottom third."** The speaker icon and the intent line are
   at the top, per the feel brief's own exception for the speaker; the intent line is editable from
@@ -295,8 +322,8 @@ Honestly: most of the product surface.
   overlays, or context loss in a real browser.
 - **Predecessor actions.** Zero tests call `offer`, `learn` or `stationAgent`. The alarm and closure
   logic, the preference rotation and the gift are untested.
-- **Naval.** Zero tests of `buildHull`, `engage`, raider spawning, repair, cargo capture, blockade
-  ship behaviour.
+- **Naval.** Zero tests of `buildHull`, `engage`, raider spawning, repair, cargo capture. Battery
+  fire, the blockade by adjacency and the wave's approach are tested in `tests/war.test.ts`.
 - **Rival war parties, rival declarations, relations changing.** The rivals test checks counts and
   the absence of crashes only; in it no rival ever left peace.
 - **Siege breach, sacking, the loss condition, the landing falling, capture.** The autopilot in
@@ -309,7 +336,10 @@ Honestly: most of the product surface.
   by a seed known to need them.
 - **Massive maps.**
 - **Export and import** in the sim tests (the smoke script covers them in the browser).
-- **Telemetry counters.**
+- **Telemetry counters**, including the two added for the opening (the turn the first settlement
+  was founded and the turns at sea before it).
+- **The renderer's fog**: that a unit out of sight is not drawn is asserted only through
+  `unitVisible` in the simulation, not by reading a frame back.
 - **Determinism of the world stream** across play (that `s.rng.world` is untouched by a turn).
 - **The queue's opportunity lapsing** (`noteUnresolved` counting appearances) and the `dismiss`
   action's effect on subsequent turns.

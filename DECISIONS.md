@@ -1431,10 +1431,268 @@ The seam for each is the same: a piece on the units sheet under the kind's own n
 `scripts/extract-sprites.py` from a job row giving its height in people and which way it faces, and
 packed by `scripts/clean-sprites.mjs`. Nothing in the renderer changes.
 
+## The opening at sea, session of 1 and 2 October 2026
+
+The three offered landing sites and the anchorages are gone. The game opens with the lander at sea in
+fog, the player sails until land is sighted and founds nearly anywhere, and the fog is on. Setting
+brief section 7, onboarding brief section 2, session brief section 8, military brief sections 9 to 11
+and art direction brief section 10a were changed first; these are the calls the build made under them.
+
+### 94. The lander sails one tile a turn, and the splashdown is four to six tiles out
+
+**What.** `C.lander.moves` is 1 and the one named distance is `C.lander.voyageTurns` 5 with
+`voyageSlack` 1, so a splashdown lies four to six tiles of open water from the nearest viable coast
+and the voyage is four to six turns. `src/sim/worldgen.ts`, `voyageBand`.
+
+**Why.** The prompt asked for four to six turns' sailing and left the speed open. At two tiles a turn
+the band is eight to twelve tiles, and on a small continent map open sea that far from every viable
+coast often does not exist: the generator found no splashdown on half the small seeds tried and fell
+back to the edge on most of the rest. At one tile a turn the band is four to six tiles and every one
+of twenty-seven seed, size and shape combinations found four splashdowns within it, nothing in sight
+at any of them. A capsule with a boat's motor is not fast, and a turn of the voyage is a heading and a
+tap, so the pace is right for what it is. Measured: the autopilot sights land on turn two or three
+and founds on turns three to seven across those twenty-seven worlds.
+
+**Symptom if wrong.** The voyage feels like filler. **Change** `voyageTurns` first, `moves` second,
+and know that the second needs a larger map.
+
+### 95. A viable coast needs water within reach, not a river
+
+**What.** `landingViable` counts sea or river as the fresh water a coast must have within reach,
+as it did for the old landing sites. `src/sim/worldgen.ts`.
+
+**Why.** The prompt's "fresh water" read strictly is a river within reach. Measured strictly, several
+small maps had five or six viable coast tiles and one large continent had none, which starves the
+splashdown search and makes the first game a hunt for one bay. The loose rule keeps the band
+meaningful on every map, and the autopilot's site score still prefers a river. **Confidence** medium.
+
+### 96. The predecessors' alarm has a crowding term
+
+**What.** A player settlement within `C.predecessors.crowdingReach` (3) tiles of a predecessor
+centre counts as one of their tiles taken, every turn, on top of tiles actually worked.
+`src/sim/predecessors.ts`.
+
+**Why.** Founding near the predecessors must raise their alarm as it did. With settlements three tiles
+apart in every direction (decision 98) a ring never overlaps their territory, so the old alarm, which
+counted worked tiles of theirs, could never fire from founding alone. The crowding term is what
+"founding near them raises alarm" means once rings cannot overlap. **Confidence** medium.
+
+### 97. The rivals' landers carry no one, and their first settlement is called by their name
+
+**What.** A rival's lander has an empty `aboard`; when it founds, the settlement gets
+`abstractPop` 3 and the name "<first word of the charter> Landing". `src/sim/rivals.ts`,
+`rivalVoyages`.
+
+**Why.** Rival population has been abstract since the first build; putting named colonists aboard a
+rival lander would have made them the only rival people with names. They sail by the same autopilot
+the tests use and found by the player's own rules, which is what the prompt asked; their founding is
+logged only when the tile is in sight.
+
+### 98. Spacing is three in every direction, and a tile two clear tiles away is the nearest allowed
+
+**What.** `foundingProblem` refuses a tile whose Chebyshev distance to any settlement or predecessor
+centre is below `C.founding.spacing` (3), and the reason names the settlement. `src/sim/settlement.ts`.
+
+**Why.** "Fewer than two clear tiles between" and "at least three tiles apart in every direction" are
+the same rule said twice, and Chebyshev distance is the one under which a ring never shares a tile.
+The forty-settlement stress test moved to a larger map rather than relaxing it.
+
+### 99. The Company's ships do not march
+
+**What.** `moveHostiles` skips anything afloat, and the threat items do too. `src/sim/military.ts`.
+
+**Why.** The first whole-game run under the new fleet lost The Landing to the Company before any wave
+had landed: the escort that lies off the settlement a wave makes for was an armed hostile unit on a
+tile beside the settlement, and the march loop walked it in from the water and took the undefended
+place. A ship blockades and fights ships; it does not take ground.
+
+### 100. The spare colonist is gone
+
+**What.** Everyone the lander carries becomes the settlement's people; there is no separate colonist
+unit on landing. To put a colonist on the map, equip one as `colonist` from the roster, which costs
+nothing. `src/sim/actions.ts`.
+
+**Why.** The old landing dropped a debtor unit beside the settlement when three or more colonists
+arrived, so that there was something to move on turn one. Now the player has sailed for four turns
+and the thing to move is the boat; a loose colonist with nothing to do was a queue item, not a
+beginning. The difficulty table still decides how many are aboard.
+
+### 101. Ships unload beside a coastal settlement; the shore itself has no store
+
+**What.** `load` and `unload` work for a hull on water beside one of the player's coastal settlements,
+as well as for a unit standing in one. Nothing is unloaded onto open ground. `src/sim/actions.ts`,
+`settlementToTrade`.
+
+**Why.** "Ships may unload onto any coastal land tile" is read as: a ship needs no wharf and no
+anchorage to trade with a settlement on the coast, any coast. Goods put down on a bare beach would need
+a stockpile model the game does not have and would spoil by the existing rule anyway. Freight landers
+come down offshore of any coastal settlement the player owns by the same reading.
+
+### 102. `Charter.landing` is where the first settlement was founded
+
+**What.** Before founding it holds the splashdown; after, the first settlement's tile. `src/sim/state.ts`,
+`actions.ts`. `landingSettlement` reads it as before.
+
+**Why.** Everything that said "the Landing" (passages arriving, the Company marching, the loss
+condition) keyed on this field. Keeping the field and changing what fills it left those rules standing.
+
+### 103. The fog is one texture and one function, and the haze is the season's own
+
+**What.** The scene writes a texture a texel a tile after every state change: red explored, green in
+sight now, blue how deep into the unknown, by a breadth first spread from the explored tiles out to
+`FOG.depthTiles`. Every fragment shader on the map calls `fogged()` from `shading.ts`, which samples
+that texture four times half a tile apart, wanders the frontier with a slow noise, blends the lit colour
+toward a haze that is lighter at the frontier and deeper beyond it, dims and greys remembered ground
+out of sight, and gives the haze the same grain as everything else. The haze's two colours are per
+season in `look.ts` beside the water's. The drift reads the cloud clock, which advances only when a
+frame is drawn. Nothing beyond the map is known, so the water plane past the edge and the clear colour
+are haze too. `src/render/shading.ts`, `scene.ts`, `look.ts` (`FOG`).
+
+**Why.** Art brief section 10a as written: not black, the sea's blue-grey, brighter toward the edge of
+the known, land fading in rather than stopping, one mask, no alpha layers, drift only when drawn.
+Applying it after `finish()` rather than before keeps the haze the colour the file says. The frontier
+soft band and the wander together take about a tile, which is about the terrain's own blend radius.
+Ten draw calls either way.
+
+**Symptom if wrong.** The frontier reads as a square: raise `FOG.edgeSoft` or `edgeWander`. The haze
+reads as a void: raise `hazeEdge` or `driftStrength`.
+
+### 104. What is unseen is not built
+
+**What.** `buildUnits`, `buildSettlements`, `buildArrival` and `pick` take the fog as a filter: a
+unit out of sight, a settlement never seen or a predecessor people never found is not built at all,
+so it cannot be drawn, tapped, counted on a tile sheet or found by the stack count. A rival settlement
+out of sight is built from its `seen` snapshot, the people and buildings it had when last seen. The
+recall fleet's landers are drawn through the fog by a per instance flag. With the flag off nothing is
+filtered. `src/render/*.ts`, `src/sim/fog.ts`.
+
+**Why.** Drawing a hidden unit in haze colour would still leave it tappable, and the stack count would
+still count it. Filtering at the build is the only place all three agree. The predecessors use their
+existing `scouted` flag, which `reveal` now also sets.
+
+### 105. The opening's lines are the display face at twenty-two pixels
+
+**What.** `--text-opening` is 1.375rem and the five lines use it; the display size is 1.625rem.
+`src/ui/theme.ts`, `style.css`, `opening.ts`.
+
+**Why.** At twenty-six pixels on a 390 wide phone the five sentences wrapped to twelve rows and covered
+the picture they are meant to sit over, lander included. At twenty-two they take under half the
+screen above the lander and are legible over the haze with a doubled text shadow. The prompt says
+the theme's display type; the theme has one face, and this is it one size down.
+
+### 106. A splashdown prefers to lie clear of the map's edge
+
+**What.** The generator prefers splashdown candidates whose whole sight square lies on the map and
+falls back to the rest only when a tight map leaves nothing else. `src/sim/worldgen.ts`, `offEdge`,
+`preferOffEdge`.
+
+**Why.** The first opening shot had the lander two tiles from the map's edge with its known square cut
+off on one side, and the camera could not centre on it. Made a rule rather than a preference it starved
+small continent maps of splashdowns (two found where four are needed), so it is a preference. It moved
+the fifty turn pin, which is re-recorded with its old values in `tests/pins.test.ts`.
+
+### 107. The scrim dismisses on pointerdown, not click
+
+**What.** `#scrim` closes the sheet on `pointerdown`. `src/ui/app.ts`.
+
+**Why.** Found by the opening rig's one real touch tap: a tap on the map opened a tile sheet, the
+scrim came up under the finger before the browser's synthesised click arrived, the click landed on the
+scrim and closed the sheet the same tap had opened. The dismissing tap begins on the scrim; the
+browser's click does not. This predates the session and would have shown on a real phone.
+
+### 108. The founding control: the shore as chips, the ring as a preview, the hold as a shortcut
+
+**What.** The lander's sheet lists each land tile beside it as a chip (bearing and ground words).
+Picking one shows the nine tiles the settlement would work with the best yield of each, a sentence
+about the ground, and the one control that founds; or "Not here" and the reason: water, mountain, or
+too close to which settlement, with the spacing rule in a sentence. A colonist standing on legal
+ground gets the same once the first settlement exists. The map paints the ring in bone or in the loss
+colour while the control is in focus and glides so the shore sits in the strip above the sheet. A hold
+on the shore with the lander active founds too, as the hold commits a move; undo takes it back. One of
+the lander's people can go ashore to scout and come back aboard. `src/ui/sheets.ts`,
+`landerControls`, `foundPreview`; `app.ts`, `setFoundTarget`, `found`, `showAboveSheet`.
+
+**Why.** Interaction brief section 8 (every hold action has a control in the bottom third; no
+confirmation dialogs, undo instead) and the prompt's preview. Unexplored ring tiles show as unknown,
+because the player has not seen them.
+
+### 109. The beaching is a picture over a state that has already moved on
+
+**What.** `App.found` works out the ids the action will give the settlement and the boat
+(`settlements.length`, `nextId`), tells the scene to hold those at nothing, applies the action, then
+runs the beaching: a billboard of the lander moves from where it lay onto the shore and fades while
+the settlement's pictures and the boat come up, over `ARRIVAL.beach.ms`. The settlement screen opens
+when it is done. Nothing in the state moves during it. `src/render/scene.ts`, `prepareBeaching`,
+`animateBeaching`; `billboards.ts`, `aFade` and `setBillboardFade`.
+
+**Why.** The state is the truth and the renderer draws it; an animation that lagged the state would
+have let a tap land on a settlement that was not yet drawn. Predicting the ids is the one coupling,
+and it holds because `foundSettlement` and `makeUnit` take them from the state in order.
+
+### 110. Coastal batteries fire from the settlement, once a turn, before the ships do
+
+**What.** Every battery standing on one of the player's settlements fires once a turn at each hostile
+armed ship on the water beside the settlement; a hit does a round's damage. A hull founders by the
+naval rule; the Company's landing craft, which has no hull entry, is driven off after
+`C.naval.batteryFire.companyShipEndurance` hits. A damaged battery hits half as often. A raider hit
+from the shore is flagged. `src/sim/naval.ts`, `batteryFire`.
+
+**Why.** Military brief section 11 says batteries fire on adjacent hostile ships automatically and
+the prompt said "as before", but nothing before did it; this is the first implementation. Battery
+slots per works tier are still not enforced (the long standing gap), so every battery on the tile
+fires. **Confidence** low on every number.
+
+### 111. The plausible coast is painted while a wave is at sea
+
+**What.** While a wave is at sea the coast it might still come ashore on is tinted in the loss colour,
+faint at first and stronger as the approach narrows. `src/render/scene.ts`, `look.ts` (`WAVE_COAST`).
+
+**Why.** Military brief section 10 wants three turns of visible, progressively narrowing approach,
+and art brief section 11 forbids permanent overlays. A wave at sea is three turns of war, not a
+permanent state, and the landers are already drawn through the fog; the coast they might reach is
+the other half of the same picture. It is on by itself because a player who has to find an overlay
+mode to see where the enemy may land has already lost the three turns.
+
+### 112. The settlement screen never dimmed water for lack of a wharf
+
+**What.** Nothing was removed. `ringCells` in `src/ui/selectors.ts` dims a cell for being worked by
+another settlement, held by another charter, predecessor ground or barren; there was no wharf rule to
+take out, and `workableTiles` in the simulation had none either (decision 44 left it out). Water
+tiles show their food in the founding preview and the ring without a wharf, as the prompt asks.
+
+### 113. What did not work the way the prompt assumed
+
+- **"Fresh water" as a river.** See 95: on some maps there are no such coasts at all.
+- **Two tiles a turn.** See 94: the band at that speed finds no open sea on small continents.
+- **Settlements two clear tiles apart never overlap predecessor territory**, so the old alarm could
+  not rise from founding; see 96.
+- **A splashdown clear of the edge as a rule** starved small maps; it is a preference. See 106.
+- **"Coastal batteries fire on adjacent hostile ships as before."** Nothing before fired. See 110.
+- **"Settlement screen stops dimming water for lack of a wharf."** It never did. See 112.
+- **The display type for the five lines** covered the picture at its own size. See 105.
+- **The adversarial review workflow** the session was to run on phase one hit the account's session
+  limit and returned nothing; a self review stood in for it, and the opening rig's first real touch
+  tap found the scrim bug (107) that a code review would not have.
+- **The build specification's acceptance check two** still says three landing sites are offered. The
+  specification is not one of the seven briefs the prompt named, so it was left as written and the
+  check's wording in `CLAUDE.md` and in `scripts/smoke.mjs` was changed to what the game now does.
+- **The military brief's section 3 table** carries two em dashes from before this session, on
+  lines the prompt did not ask to change; they are left and noted here.
+- **The old save key** carried the schema version, so a save from an earlier build was never read
+  and the player saw a silent new game rather than the plain message the prompt asked for.
+  `readLocal` now finds a save under any earlier key so that `fromSave` can refuse it in words and
+  the boot can say so and clear it.
+
+### Art debt, continued
+
+| Owed | Stands in now |
+|---|---|
+| The lander beached and broken up on the shore | the beaching fades the lander's own picture out over the shore; nothing remains drawn |
+| The Company's landers at sea | the lander's own drawing |
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).
-- Fog of war (`C.flags.fogOfWar: false`, structure in place).
 - A goods-for-goods predecessor exchange (decision 13).
 - Patrol and haul orders have no sheet to author them; the sim runs them and the unit sheet can
   clear them. A route-building sheet is the next interface piece.
@@ -1454,5 +1712,9 @@ packed by `scripts/clean-sprites.mjs`. Nothing in the renderer changes.
   arrangement, ring beside buildings, was not attempted.
 - Deleting the keys of `C.art` and `C.feel` that the renderer no longer reads (decisions 55 and 63).
 - Weather beyond the cloud shadow: the art brief's colour grade and fog density are not built.
-- The narrowing approach, the routes overlay and the fleet's position at sea are still undrawn.
+- The routes overlay named in `ViewState` is still undrawn.
+- Rival charters' ships and landers are drawn only in sight, and a rival's later settlements are
+  founded only within six tiles of its own; nothing lets a rival expand across water.
+- Battery slots per works tier: every battery on a settlement fires (decision 110).
+- Signatory six (reveal terrain) is still inert with the fog on.
 - A worker for the season re-bake (decision 61), and a lazily built fine prop tier (decision 64).

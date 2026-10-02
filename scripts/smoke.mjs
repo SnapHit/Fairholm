@@ -43,8 +43,10 @@ await page.screenshot({ path: `${OUT}/shot-arrival.png` })
 // the first tap anywhere takes the lines away and starts the music
 await page.touchscreen.tap(195, 300)
 await page.waitForTimeout(1200)
-const tapped = await page.evaluate(() => ({ lines: !!document.querySelector('#opening'), music: window.fairholm.music.position > 0 || window.fairholm.music.playing }))
-check('2 the first tap dismisses the lines', !tapped.lines, JSON.stringify(tapped))
+// the lines are gone the moment the tap lands; the element follows after its fade, on a timer a
+// loaded machine can hold up, so the check reads the state and not the timer
+const tapped = await page.evaluate(() => ({ showing: window.fairholm.opening ? window.fairholm.opening.showing : false, fading: !!document.querySelector('#opening.gone'), gone: !document.querySelector('#opening'), music: window.fairholm.music.position > 0 || window.fairholm.music.playing }))
+check('2 the first tap dismisses the lines', !tapped.showing && (tapped.gone || tapped.fading), JSON.stringify(tapped))
 // the voyage: the machine sails the lander to the coast and founds, through the game's own actions
 const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
 await page.waitForTimeout(400)

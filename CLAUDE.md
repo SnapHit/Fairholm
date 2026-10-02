@@ -100,7 +100,7 @@ specification section 6 before touching a constant.
 ## Acceptance checks (build specification section 15)
 
 1. Loads and shows a coastline in about a second
-2. Three landing sites offered; one tap starts the game
+2. Opens at sea in fog with the five lines; the first tap dismisses them, and the lander can be sailed to a coast and beached to found
 3. Tiles are tappable at working zoom and not at overview
 4. A worker can be assigned and output appears next turn
 5. A quiet turn is one tap

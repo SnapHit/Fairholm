@@ -49,7 +49,9 @@ const settle = async (ms = 500) => {
   await page.waitForFunction(() => !window.fairholm.scene.loopRunning, null, { timeout: 15000 }).catch(() => {})
   await page.waitForTimeout(ms)
 }
-const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` })
+// jpeg, as the gallery's pictures are: these are for looking at, and thirteen of them at a phone's
+// two times resolution are ten megabytes as png
+const shot = (name) => page.screenshot({ path: `${OUT}/${name}.jpg`, type: 'jpeg', quality: 90 })
 
 // ---- 1: turn one, the lines ---------------------------------------------------------------------
 // the lines arrive one every two seconds; the fifth is in a little after eight and a half
@@ -267,6 +269,24 @@ if (wave && wave.turnsToLand !== undefined) {
     await shot(`08${'bc'[k - 1]}-the-wave-${k}-turn-on`)
   }
 }
+
+// ---- 9: a save from an earlier build is turned away in plain words --------------------------------
+await page.evaluate(() => {
+  // the app saves when the page goes out of sight, which a reload is; hold that off so the old
+  // save is what the boot finds
+  window.fairholm.save = () => {}
+  localStorage.clear()
+  localStorage.setItem('fairholm.save.v1', JSON.stringify({ schemaVersion: 1, worldgenVersion: 1, seed: 'old', settings: {}, turn: 40 }))
+})
+await page.reload()
+await page.waitForFunction(() => !!window.fairholm && window.fairholm.state, null, { timeout: 30000 })
+await page.waitForTimeout(600)
+const oldSave = await page.evaluate(() => ({
+  turn: window.fairholm.state.turn, lander: !!window.fairholm.state.units.find(u => u.owner === 0 && u.kind === 'lander'),
+  toast: document.querySelector('#toast')?.textContent || '', oldKeyLeft: localStorage.getItem('fairholm.save.v1') !== null,
+}))
+note('old save', oldSave)
+await shot('09-an-old-save-turned-away')
 
 const perf = await page.evaluate(() => ({ calls: window.fairholm.scene.renderer.info.render.calls, tris: window.fairholm.scene.renderer.info.render.triangles }))
 note('draw', perf)

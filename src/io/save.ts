@@ -132,9 +132,20 @@ export function writeLocal(s: GameState): boolean {
   }
 }
 
+/** Every key a save of any schema has been kept under. The key carries the schema, so a save from
+ *  an earlier build is not read by mistake; it is still found, so it can be turned away in plain
+ *  words rather than ignored in silence. */
+function saveKeys(): string[] {
+  const out: string[] = []
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('fairholm.save.')) out.push(k) } } catch { /* nothing stored */ }
+  return out
+}
+
+/** The saved game, or the most recent save of an earlier schema, which fromSave will refuse with
+ *  a message the boot can show. Null when nothing is saved at all. */
 export function readLocal(): SaveState | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? (() => { const old = saveKeys().sort().pop(); return old ? localStorage.getItem(old) : null })()
     if (!raw) return null
     return JSON.parse(raw) as SaveState
   } catch {
@@ -142,8 +153,9 @@ export function readLocal(): SaveState | null {
   }
 }
 
+/** Clear the saved game, under this schema's key and any earlier one. */
 export function clearLocal() {
-  try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+  try { localStorage.removeItem(STORAGE_KEY); for (const k of saveKeys()) localStorage.removeItem(k) } catch { /* ignore */ }
 }
 
 export function readLastSettings(): Partial<Settings> | null {
