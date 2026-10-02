@@ -1440,6 +1440,8 @@ and art direction brief section 10a were changed first; these are the calls the 
 
 ### 94. The lander sails one tile a turn, and the splashdown is four to six tiles out
 
+**Superseded by 114.** The voyage was a crawl; the lander now sails six tiles a turn.
+
 **What.** `C.lander.moves` is 1 and the one named distance is `C.lander.voyageTurns` 5 with
 `voyageSlack` 1, so a splashdown lies four to six tiles of open water from the nearest viable coast
 and the voyage is four to six turns. `src/sim/worldgen.ts`, `voyageBand`.
@@ -1682,6 +1684,8 @@ tiles show their food in the founding preview and the ring without a wharf, as t
   and the player saw a silent new game rather than the plain message the prompt asked for.
   `readLocal` now finds a save under any earlier key so that `fromSave` can refuse it in words and
   the boot can say so and clear it.
+- **The voyage itself.** One tile a turn made the several turns before founding time spent reaching
+  land rather than choosing it. Decisions 114 to 126 below make the lander fast.
 
 ### Art debt, continued
 
@@ -1689,6 +1693,196 @@ tiles show their food in the founding preview and the ring without a wharf, as t
 |---|---|
 | The lander beached and broken up on the shore | the beaching fades the lander's own picture out over the shore; nothing remains drawn |
 | The Company's landers at sea | the lander's own drawing |
+
+## The fast lander, session of 2 October 2026
+
+The lander sails six tiles a turn and sees three, the splashdown moves in so that land is sighted in
+the first move or two, one gesture sails the whole distance and is drawn travelling with the fog
+lifting and the camera following. Setting brief section 7, onboarding brief sections 2, 5, 6 and 12
+and session brief section 8 were changed first, each with a dated line at its top.
+
+### 114. Six tiles a turn, sight three, and a splashdown five to eight tiles out
+
+**What.** `C.lander.moves` 6; the lander's sight is 3 (`sightOf` in `src/sim/fog.ts`); the
+splashdown band is `C.lander.splashdown`, near 5 and far 8 tiles of open water from the nearest
+viable coast. Rival landers read the same `maxMoves`. The recall fleet's landers do not: their
+approach is `C.military.approachTurns` 3 at `C.military.approachMoves` 1 tile a turn, its own
+constant, exactly as before. The boat the lander leaves is a lighter at the lighter's speed.
+`WORLDGEN_VERSION` is 3, so every seed makes a new world and older saves are refused in words.
+
+**Why.** The near edge is the sight and two: nothing in sight at splashdown, and a tile of haze
+beyond it, so the opening shows open sea and nothing else. The far edge is a move and the sight less
+one: a lander sailing straight at the coast it was measured against sights land within its first
+move from anywhere in the band. Measured before placement was tuned: every splashdown in the band
+sighted land on the first move when sailed straight at its coast. The autopilot looks three turns
+of sailing out (`C.lander.autopilot`), which at this speed is eighteen tiles.
+
+**Symptom if wrong.** Land is in sight too soon and there is no voyage: raise `near`. Land takes
+more than two moves: lower `far`. The coast is reached before anything has been compared: lower
+`moves`, and know the band follows from it.
+
+### 115. "Any sensible direction" means toward the coast, within forty five degrees
+
+**What.** From a splashdown, the sensible headings are those of the eight within forty five degrees
+of the bearing to the coast it was measured against (`sensibleHeadings`), and on every one of them
+land is sighted within `C.worldgen.sightedWithinMoves` 2 moves (`sightsLandSensibly`). The generator
+places in tiers: every charter sensible, then the player only, then none; clear of the edge for
+everyone, then for the player only, then anyone; full separation before six tenths of it; and the
+most headings with land in two moves before fewer. Last, a rival may come down
+`C.worldgen.rivalSplashdownGive` 1 tile nearer its coast than the player. Validation refuses a world
+whose player splashdown fails the sensible rule, and the generator tries again, up to
+`C.worldgen.maxAttempts` 24. `src/sim/worldgen.ts`.
+
+**Why.** "Any direction" cannot hold: from open sea out of sight of land, the land lies on one side.
+A player who heads anywhere near the right way should see it within a move or two; one who sails
+straight away from it should not. Measured on sixty seeds a shape: every small, standard and large
+world valid with the player sensible (180 of 180 small, 120 of 120 small archipelago, 60 of 60
+standard, 30 of 30 large); every charter sensible on 143 of 180 small, 58 of 60 standard, 30 of 30
+large; at most six attempts and 67 ms for the slowest world.
+
+**Symptom if wrong.** A player who sails a reasonable way sees nothing for three moves: check
+`sightedWithinMoves` and `far` together.
+
+### 116. A course is planned on what is known and stops at the coast it meets
+
+**What.** The player's paths are planned on what is known: water nobody has seen counts as open
+(`findPath`, `blind`). The unit lifts the fog from every tile it passes (`revealFrom` at every step
+of `advance`), and a course that meets land it did not know of stops beside it with the order
+cleared; one that meets a settlement it did not know of stops before it. Of two ways equally long,
+the straighter is planned: a diagonal step is reckoned `C.terrain.diagonalTieBreak` dearer.
+`src/sim/units.ts`, `src/sim/orders.ts`.
+
+**Why.** Planning round land the player has not seen would tell them where it is. The tie break was
+found by looking: a lander sent due south zigzagged on an equally short course into unseen water and
+found the coast there, three tiles short of where it was sent. It moved no pin.
+
+### 117. Movement comes back at the start of the turn loop
+
+**What.** Every unit's moves are restored at the start of `runTurn`, before orders run, rather than
+at its end. `src/sim/turn.ts`.
+
+**Why.** A course longer than a turn's sailing goes as far as it can this turn and carries on at the
+end of it; restored at the end, the carried move waited a whole turn with full moves sitting unused.
+Now it continues on the new turn's movement: a twelve tile course sent on turn one is done as turn
+two begins, not as turn three does. This moved the fifty turn pin, re-recorded in
+`tests/pins.test.ts` with its old values.
+
+### 118. The move is a picture over a state that has already moved, and the sheet waits for it
+
+**What.** `moveTo` and the end of a turn take the units' picture before the action
+(`scene.prepareMove`), apply it, and draw the move after (`scene.animateMoves`): each unit travels
+the tiles it went through at `MOVE.tileMs` 150 a tile, the fog lifts tile by tile as it comes into
+sight, the camera follows the lander with a look ahead and keeps it in the map above the sheet. The
+camera's pull is per sixtieth of a second, so a phone dropping frames keeps up. While a move is drawn
+the moving unit's sheet and the queue bar keep what they said before it and cannot be pressed; they
+catch up when it ends, and the camera then keeps the unit above the sheet as it now stands.
+`src/render/scene.ts`, `src/ui/app.ts`, `MOVE` in `src/render/look.ts`.
+
+**Why.** The prompt wanted the move visible, not instant. Art direction brief section 7 allows no
+rigs and no animation data, so the moving picture is the unit's own still drawing carried along the
+way, turning when its heading does, and nothing more. The sheet waits because it was rendered from
+the moved state and named the shore beside the lander before the picture had reached it.
+
+### 119. A move that shows new ground cannot be undone
+
+**What.** An action after which more tiles are explored than before clears the undo stack and
+offers no undo. `dispatch` in `src/ui/app.ts`.
+
+**Why.** Ground once seen stays seen. A move, a look and an undo would be a free scout, and undoing
+an earlier action would take the new ground with it.
+
+### 120. The compass: eight headings in the lander's sheet
+
+**What.** The lander's sheet carries eight headings round an empty hub. A heading shows a turn's
+sailing that way, as far as the map and known land allow, with water nobody has seen taken as open;
+the planned way, its length and Go sit beside the compass. A tap on a heading only shows; Go sails.
+The compass is hidden while a shore is in focus for founding. The sheet keeps to what sailing needs:
+the cargo is a quiet line, and the open sea line says "Land in sight" once it is.
+`compass` in `src/ui/sheets.ts`, `headingTarget` and `previewHeading` in `src/ui/app.ts`.
+
+**Why.** At forty four pixels a tile, the smallest a tile may be and still be tapped, a phone held
+upright shows about four tiles either side of the lander, so a hold on the map cannot reach a six
+tile move without a pan first. CLAUDE.md wants every hold to have a control in the bottom third. The
+opening rig's first move, by a real hold, reached three tiles; the compass reaches six.
+
+### 121. The map stays live under a unit's sheet
+
+**What.** No scrim is drawn while the sheet holds one of the player's own units. Every other sheet
+keeps the scrim and is dismissed by a tap away from it, as decision 107 has it. `renderSheet` in
+`src/ui/app.ts`.
+
+**Why.** Found by the rig's first real hold: with the lander's sheet open, the hold landed on the
+scrim and only closed the sheet, so a move took two gestures. With a unit selected, the map is its
+target: a tap there plans a way and a hold goes.
+
+### 122. The camera may pass the map's edge while the lander is at sea
+
+**What.** `Camera.overhang`, set to `C.feel.openingOverhang` 4 tiles until the first settlement and
+nought after, lets the camera's centre go past where the map would cover the screen. Past the edge
+the haze deepens at the rate it does inside, from wherever the edge has it, rather than going to its
+deepest within a tile and a half. `src/render/camera.ts`, `knownHere` in `src/render/shading.ts`.
+
+**Why.** The edge preference of decision 106 cannot hold on small maps: the player comes down
+within four tiles of the edge on 164 of 180 small worlds and 104 of 120 small archipelagos, where the
+open sea a band this near needs is only found near the edge. The opening shot had the lander against
+the screen's edge. With the overhang it sits in the middle; with the haze continued, the map's edge
+does not show as a rectangle in the fog.
+
+### 123. Land is never drawn under the sea
+
+**What.** A soft floor, `SURFACE.landFloor`, keeps land at least a twentieth of a tile above the
+water, eased in from the shore inland so the beach still slopes. `src/render/terrain.ts`.
+
+**Why.** Found by looking. The rolling landform can take low grassland half a tile down, under the
+water plane at nought, and on the opening rig's seed a whole stretch of the coast the player was
+meant to find was drawn as open sea while the sheet offered plains to found on. It predates this
+session and would have shown on any map where the landform dips near a coast.
+
+### 124. Rivals keep clear of the player's lander and found on arrival
+
+**What.** A rival makes for a site at least `C.rivals.landingClearance` 6 from any other charter's
+settlement and `C.rivals.playerLanderClearance` 10 from the player's lander while it is at sea; where
+that leaves nothing in reach, 6 from the lander; then anywhere legal. A rival that arrives beside its
+site founds the same turn. "The Sable Company" lands at Sable Landing: the name drops a leading
+"The", which made it The Landing, the player's own default. `src/sim/rivals.ts`,
+`bestLanding` in `src/sim/autopilot.ts`.
+
+**Why.** As fast as the player, a rival took the very coast the player's splashdown had been measured
+against on the first turn of the rig's seed, six tiles from the player's lander. Ten is the band's
+far edge and two. Measured on thirty seeds: on small maps the nearest rival settlement is six or
+more tiles from the player's on 29 of 30, every rival is ashore by turn seven, most by turn three;
+on standard maps six or more on all 30. The name was wrong since decision 97.
+
+### 125. Only what the player knows is named
+
+**What.** The planned way's words say "Into the fog" for a destination nobody has seen and "Across
+open water" for known water, name a settlement only if it has been seen and a unit only if it is in
+sight, and say a course through unseen water stops at any coast. A hold attacks only an enemy in
+sight. The control that clears an order says what it stops ("Stop going there") rather than the
+order's code name. A save from an earlier version is refused on import in the same plain words as on
+load. `src/ui/sheets.ts`, `src/ui/app.ts`, `SaveVersionError` in `src/io/save.ts`.
+
+**Why.** The preview said "To Water" and could name ground and units in the fog; the hold could
+attack a hidden unit. The import said "Save was generated by worldgen 2, this build is 3".
+
+### 126. What did not work the way the prompt assumed
+
+- **"Sailing in any sensible direction"** cannot mean any of the eight: land lies on one side. It
+  means within forty five degrees of the way to the coast. See 115.
+- **"Tap and hold a destination"** cannot reach six tiles on a phone at a zoom where tiles can be
+  tapped. The compass does. See 120.
+- **The hold on the map** with the lander's sheet open landed on the scrim. See 121.
+- **Clear of the map's edge** is out of reach on most small maps once the band is this near. The
+  camera goes past the edge instead. See 122.
+- **Rivals at the player's speed** came ashore on the player's coast on turn one. See 124.
+- **The rig's seed showed two older bugs:** land drawn under the sea (123) and a rival's settlement
+  named The Landing (124).
+- **A headless browser draws a few frames a second.** The move's midpoint is caught with a
+  verification hold (`scene.holdMoveAt`), the rig holds a tap well past its length, and the camera's
+  per frame pull lagged until it was made per sixtieth of a second (118).
+- **Equal length courses zigzagged** into unseen water. See 116.
+- **Every splashdown out of sight of land and every charter's sensible headings** do not both hold on
+  small maps for all four charters; the player's always do, the rivals' on 143 of 180 small worlds.
 
 ## Left out of version one
 

@@ -45,7 +45,7 @@ const STAGE = {
   seasonTurns: [1, 4, 7, 10],
   /** Where the player's lander lies at sea, and from which column the water is unexplored, so the
    *  lander sits in fog with its own sight known around it, as the opening finds it. */
-  lander: [22, 4] as [number, number],
+  lander: [24, 4] as [number, number],
   fogFrom: 19,
 }
 

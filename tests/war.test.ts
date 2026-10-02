@@ -35,6 +35,8 @@ describe('the recall fleet in fog', () => {
     expect(landingCoast(s)).toContain(wave.target)
     expect(s.settlements.some(st => st.owner === 0 && dist(w, st.tile, wave.target) <= C.military.landingRadius)).toBe(true)
     expect(s.world.tiles[wave.at].terrain).toBe('water')
+    // the recall fleet keeps its own pace, not the player's lander's: it comes down a few tiles out
+    expect(dist(w, wave.at, wave.target)).toBeLessThanOrEqual(C.military.approachTurns * C.military.approachMoves + 1)
     // the approach: at sea, closer each turn, the coast narrowing and the target always still in it
     let coastBefore = waveCoast(s, wave).length
     let distBefore = dist(w, wave.at, wave.target)
@@ -44,7 +46,7 @@ describe('the recall fleet in fog', () => {
       turns++
       if (wave.landed) break
       expect(s.world.tiles[wave.at].terrain).toBe('water')
-      expect(dist(w, wave.at, wave.target)).toBeLessThanOrEqual(distBefore)
+      expect(dist(w, wave.at, wave.target)).toBeLessThan(distBefore)
       distBefore = dist(w, wave.at, wave.target)
       const coast = waveCoast(s, wave)
       expect(coast).toContain(wave.target)
@@ -128,24 +130,26 @@ describe('the other charters in fog', () => {
     expect(unitVisible(s, rivalLander, sightMask(s))).toBe(true)
     // a rival settlement founded out of sight is unknown until seen, then remembered as seen
     const s2 = arrived('fog-rivals-2', { size: 'small' }, 1)
-    const rival = s2.settlements.find(x => x.owner > 0)
+    // the player is ashore within a turn or two now, and the rivals a few turns after
+    for (let i = 0; i < 12 && !s2.settlements.some(x => x.owner > 0); i++) applyAction(s2, { t: 'endTurn' })
+    const rival = s2.settlements.find(x => x.owner > 0 && sightMask(s2)[x.tile] !== 1)
+    expect(rival).toBeDefined()
     if (rival) {
-      const seenNow = sightMask(s2)[rival.tile] === 1
-      if (!seenNow) {
-        expect(settlementKnown(rival)).toBe(false)
-        rival.seen = null
-        // a scout beside it sees it
-        const scout = makeUnit(s2, 0, 'colonist', rival.tile, null)
-        s2.units.push(scout)
-        reveal(s2)
-        expect(settlementKnown(rival)).toBe(true)
-        expect(rival.seen!.pop).toBe(rival.abstractPop)
-        // it grows out of sight; the memory does not
-        s2.units = s2.units.filter(u => u !== scout)
-        rival.abstractPop += 5
-        reveal(s2)
-        expect(rival.seen!.pop).toBe(rival.abstractPop - 5)
-      }
+      // as though it had never been seen, whatever the voyage happened to pass
+      rival.seen = null
+      expect(settlementKnown(rival)).toBe(false)
+      // a scout beside it sees it
+      const scout = makeUnit(s2, 0, 'colonist', rival.tile, null)
+      s2.units.push(scout)
+      reveal(s2)
+      expect(settlementKnown(rival)).toBe(true)
+      expect(rival.seen!.pop).toBe(rival.abstractPop)
+      // it grows out of sight; the memory does not
+      s2.units = s2.units.filter(u => u !== scout)
+      const remembered = rival.seen!.pop
+      rival.abstractPop += 5
+      reveal(s2)
+      expect(rival.seen!.pop).toBe(remembered)
     }
     // the player's own things and the Company's are always visible
     expect(unitVisible(s, mine, mask)).toBe(true)

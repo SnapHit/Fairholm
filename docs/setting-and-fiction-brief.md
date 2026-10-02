@@ -1,5 +1,10 @@
 # Setting and fiction brief
 
+**Changed 2 October 2026.** In section 7 the lander now sails six tiles a turn and sees three, and comes
+down out of sight of land but near enough to sight it within the first move or two, so the opening
+turns are spent choosing ground rather than reaching it. Rival landers sail as fast. The boat the lander
+leaves behind keeps a lighter's pace, and that drop is meant.
+
 **Changed 1 October 2026.** Section 7 now opens the game at sea: you splash down in fog with no
 knowledge of the world, sail the lander until you find land, and choose your own ground, because that
 opening is the one the source game is loved for. Anchorages are gone, settlements may be founded almost
@@ -199,11 +204,14 @@ flourish; it is the cheapest way to put mass on a planet that has an ocean. No l
 infrastructure, no prepared ground, and the water absorbs the energy. On a crossing this marginal,
 cheapness decides everything.
 
-**The lander is the first ship.** It comes down in open sea, in fog, four to six turns' sailing from
-the nearest coast with food, timber and fresh water, carrying the starting colonists and knowing
-nothing of the world. It moves wherever boats can go, open water and the major rivers. You sail until
-you find land, and you choose your own ground. There is no landing-site chooser: nobody tells you where
-to land.
+**The lander is the first ship.** It comes down in open sea, in fog, out of sight of land but near
+enough to a coast with food, timber and fresh water that sailing in any sensible direction sights land
+within the first move or two, carrying the starting colonists and knowing nothing of the world. It
+moves wherever boats can go, open water and the major rivers, six tiles a turn, and sees three tiles
+around it; one gesture sends it the whole way through the fog, and a course that meets land stops at
+the coast. The opening turns are for choosing ground, not for reaching it: you sight land quickly, run
+along the coast comparing sites, and choose your own ground. Rival charters' landers sail at the same
+speed. There is no landing-site chooser: nobody tells you where to land.
 
 **The lander founds the first settlement and is consumed doing it.** It beaches on any legal land tile
 beside it and everyone aboard becomes the settlement's people; it must have at least one colonist
@@ -211,7 +219,8 @@ aboard to do so. Colonists may go ashore to scout on foot, but nobody founds any
 has, so the first settlement is always on the water and trade works from day one. Legal ground is
 nearly everywhere: any tile that is not mountain or water, with at least two clear tiles between it and
 the centre of any existing settlement, anyone's. The lander also carries a boat, which survives once
-the lander is gone as your first working ship, a lighter, on the water alongside.
+the lander is gone as your first working ship, a lighter, on the water alongside. The lighter sails at
+a lighter's pace, and the drop from a fast machine to a slow sail is intended.
 
 **The first lander is never recovered.** Beached, it is the settlement. The Company writes it off
 against the passage debt, which is part of why that debt is so large. **So the first metal in the

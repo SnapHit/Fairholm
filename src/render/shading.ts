@@ -163,7 +163,8 @@ vec3 finish(vec3 c, vec3 world) {
  *  y in sight now, z how deep into the unknown it lies, nought at the frontier and one far from it.
  *  Four taps a third of a tile apart soften the per tile mask across tile edges about as far as the
  *  terrain blends its own colours, and a slow noise wanders the frontier so that land fades into the
- *  haze rather than stopping at a grid line. Beyond the map's edge nothing is known. */
+ *  haze rather than stopping at a grid line. Beyond the map's edge nothing is known, and the haze
+ *  there goes on deepening as it would have inside. */
 vec3 knownHere(vec3 world) {
   vec2 uv = world.xz / uMapSize;
   vec2 o = vec2(${FOG.tapOffset.toFixed(3)}) / uMapSize;
@@ -172,9 +173,12 @@ vec3 knownHere(vec3 world) {
   float wander = (fnoise(world.xz * ${FOG.edgeScale.toFixed(3)} + uCloudTime * vec2(2.0, 1.3)) - 0.5) * ${FOG.edgeWander.toFixed(3)};
   float known = smoothstep(0.5 - ${FOG.edgeSoft.toFixed(3)}, 0.5 + ${FOG.edgeSoft.toFixed(3)}, v.r + wander);
   vec2 past = max(-world.xz, world.xz - uMapSize);
-  float outside = smoothstep(0.0, ${FOG.edgeFade.toFixed(3)}, max(past.x, past.y));
+  float beyond = max(max(past.x, past.y), 0.0);
+  float outside = smoothstep(0.0, ${FOG.edgeFade.toFixed(3)}, beyond);
   known *= 1.0 - outside;
-  return vec3(known, v.g, max(v.b, outside));
+  // past the edge the haze deepens at the rate it does inside, from wherever the edge has it, so
+  // the map's edge does not show as a line in the fog
+  return vec3(known, v.g, max(v.b, min(1.0, v.b + beyond / ${FOG.depthTiles.toFixed(3)})));
 }
 
 /** The fog, art brief section 10a: unexplored ground is the sea's own haze, brighter toward the edge

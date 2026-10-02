@@ -47,11 +47,61 @@ await page.waitForTimeout(1200)
 // loaded machine can hold up, so the check reads the state and not the timer
 const tapped = await page.evaluate(() => ({ showing: window.fairholm.opening ? window.fairholm.opening.showing : false, fading: !!document.querySelector('#opening.gone'), gone: !document.querySelector('#opening'), music: window.fairholm.music.position > 0 || window.fairholm.music.playing }))
 check('2 the first tap dismisses the lines', !tapped.showing && (tapped.gone || tapped.fading), JSON.stringify(tapped))
-// the voyage: the machine sails the lander to the coast and founds, through the game's own actions
+// one move, by the player's own gestures: a tap on the lander, then a tap and hold on the water
+// toward the coast, as far along the way as is on the screen above the sheet. The heading is the
+// one toward the nearest coast, which is what a player who guessed right would sail. The hold is
+// held well past its length, because a software renderer draws few frames and the hold completes
+// on a frame
+const landerAt = () => page.evaluate(() => {
+  const a = window.fairholm, s = a.state, w = s.world.width
+  const l = s.units.find(u => u.owner === 0 && u.kind === 'lander')
+  return l ? a.scene.cam.worldToScreen((l.tile % w) + 0.5, Math.floor(l.tile / w) + 0.5) : null
+})
+// a sheet left open by the first tap is dismissed by the next tap away from it, so a player taps
+// the lander again; up to three taps
+let lp = null
+for (let k = 0; k < 3; k++) {
+  if (await page.evaluate(() => window.fairholm.sheet.kind === 'unit')) break
+  lp = await landerAt()
+  await page.touchscreen.tap(lp[0], lp[1])
+  await page.waitForFunction(() => window.fairholm.sheet.kind === 'unit', null, { timeout: 2000 }).catch(() => {})
+}
+await page.waitForFunction(() => !window.fairholm.scene.cam.glideTarget && !window.fairholm.scene.moving, null, { timeout: 10000 }).catch(() => {})
+await page.waitForTimeout(400)
+const aim = await page.evaluate(async () => {
+  const a = window.fairholm, s = a.state, w = s.world.width
+  const auto = await import('/src/sim/autopilot.ts')
+  const act = auto.openingAction(s)
+  if (!act || act.t !== 'moveUnit') return { skipped: act ? act.t : 'none' }
+  const top = a.hud.getBoundingClientRect().height + 24
+  const bottom = a.root.clientHeight - a.sheetEl.offsetHeight - 24
+  let best = null
+  for (const t of act.path) {
+    const [sx, sy] = a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5)
+    if (sx < 24 || sx > a.root.clientWidth - 24 || sy < top || sy > bottom) break
+    best = { sx, sy, k: act.path.indexOf(t) + 1 }
+  }
+  return { best, sheet: a.sheet.kind, active: a.scene.cam.view.activeUnit, lp: null, land: s.world.tiles.filter(t => t.explored && t.terrain !== 'water').length }
+})
+let sailed = { skipped: aim.skipped }
+if (!aim.skipped && aim.best) {
+  await page.evaluate(() => { window.__sawMoving = false; const sc = window.fairholm.scene; const tick = () => { if (sc.moving) window.__sawMoving = true; else requestAnimationFrame(tick) }; requestAnimationFrame(tick) })
+  await page.mouse.move(aim.best.sx, aim.best.sy)
+  await page.mouse.down()
+  await page.waitForTimeout(1500)
+  await page.mouse.up()
+  await page.waitForFunction(() => window.__sawMoving, null, { timeout: 10000 }).catch(() => {})
+  await page.waitForFunction(() => !window.fairholm.scene.moving, null, { timeout: 20000 }).catch(() => {})
+  sailed = await page.evaluate((k) => ({ travelling: window.__sawMoving, tilesOut: k, landBefore: 0, landAfter: window.fairholm.state.world.tiles.filter(t => t.explored && t.terrain !== 'water').length, sheetAfter: window.fairholm.sheet.kind, toast: document.querySelector('#toast')?.textContent }), aim.best.k)
+  sailed.aim = { ...aim, lp }
+  sailed.landBefore = aim.land
+} else if (!aim.skipped) sailed = { error: 'no tile of the way on the screen', sheet: aim.sheet }
+check('2 a tap on the lander and one hold on the water sail it, drawn travelling, and sight land', !!sailed.skipped || (sailed.travelling && sailed.landBefore === 0 && sailed.landAfter > 0), JSON.stringify(sailed))
+// the rest of the voyage: the machine sails the lander to the coast and founds, through the game's own actions
 const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
 await page.waitForTimeout(400)
 const landed = await page.evaluate(() => ({ turn: window.fairholm.state.turn, settlements: window.fairholm.state.settlements.filter(s => s.owner === 0).length, name: window.fairholm.state.settlements.find(s => s.owner === 0)?.name, boat: window.fairholm.state.units.some(u => u.owner === 0 && u.kind === 'lighter'), lander: window.fairholm.state.units.some(u => u.owner === 0 && u.kind === 'lander'), queue: window.fairholm.queue.shown.map(g => g.title) }))
-check('2 the voyage founds within a few turns, the lander consumed and the boat left', foundedOn >= 3 && foundedOn <= 9 && landed.settlements === 1 && landed.boat && !landed.lander && landed.name === 'The Landing', `founded on turn ${foundedOn}; ${JSON.stringify(landed.queue)}`)
+check('2 the voyage founds within a few turns, the lander consumed and the boat left', foundedOn >= 1 && foundedOn <= 6 && landed.settlements === 1 && landed.boat && !landed.lander && landed.name === 'The Landing', `founded on turn ${foundedOn}; ${JSON.stringify(landed.queue)}`)
 await page.screenshot({ path: `${OUT}/shot-landed.png` })
 await page.evaluate(() => window.fairholm.closeSheet())
 // 3: tiles tappable at working zoom, not at overview

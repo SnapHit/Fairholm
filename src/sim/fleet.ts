@@ -81,7 +81,7 @@ function splashdownFor(s: GameState, target: number): number {
   const tiles = s.world.tiles
   const shore = waterBeside(s, target)
   if (shore < 0) return target
-  const want = C.military.approachTurns * C.lander.moves
+  const want = C.military.approachTurns * C.military.approachMoves
   // distance over water from the shore tile outward
   const d = new Int32Array(w * h).fill(-1)
   const queue = [shore]

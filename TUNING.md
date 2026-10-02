@@ -20,6 +20,19 @@ section says which ones are load-bearing.
 | Payments feel disconnected from the sale | Crossing lag | `C.market.crossingTurns[crossing]` | Lower | Word arrives with the gold, so immigration lags by the same amount |
 | A busy turn takes more than a minute | Too many cards | `C.queue.paces.normal` | Lower | Only what is shown; the fold keeps the rest |
 
+## The voyage is too long, too short, or lands on someone else
+
+| Symptom | Likely cause | Constant | Direction | Also affects |
+|---|---|---|---|---|
+| Land is in sight from the splashdown, or on the first tile of the first move | Splashdown too near | `C.lander.splashdown.near` | Raise | Keep it at the sight and two or more; the generator's nothing in sight rule reads the sight |
+| Two moves toward land and still nothing | Splashdown too far for the speed and sight | `C.lander.splashdown.far` | Lower | Keep it at the moves and the sight less one or less; validation refuses worlds that fail it |
+| The coast is reached before any ground has been compared | Lander too fast | `C.lander.moves` | Lower | The band (both edges follow from it), the autopilot's reach, the rivals' speed, every pin |
+| Each move shows too little ground | Sight too short | `C.lander.sight` | Raise | The band's near edge, the nothing in sight rule, what the opening shot shows |
+| A move is over before the eye has followed it, or drags | Move drawn too fast or too slow | `MOVE.tileMs` in `src/render/look.ts` | Raise or lower | Every unit's drawn move, not only the lander's |
+| A rival comes ashore on the coast the player was heading for | Rival berth too narrow | `C.rivals.playerLanderClearance` | Raise | Small maps run out of sites sooner and fall back to `landingClearance` |
+| Small maps often fail to place four charters | Placement too strict | `C.worldgen.rivalSplashdownGive`, `maxAttempts` | Raise | Generation time on a failed seed |
+| The recall fleet arrives too suddenly or too slowly | Approach length | `C.military.approachTurns`, `approachMoves` | Raise or lower | Not the lander: the fleet's landers have their own constant |
+
 ## Immigration stalls
 
 | Symptom | Likely cause | Constant | Direction | Also affects |

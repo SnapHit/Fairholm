@@ -287,6 +287,22 @@ p { margin: var(--space-3) 0; }
 .chip.off { opacity: 0.4; }
 .chip.small { font-size: var(--text-tiny); padding: var(--space-2) var(--space-5); min-height: var(--control-h-tiny); }
 
+/* while a move is drawn the sheet keeps what it said before it, and nothing on it can be pressed */
+#sheet.held > * { pointer-events: none; }
+/* the lander's headings: a small compass of buttons, each the size a thumb needs */
+.sail-row { display: flex; gap: var(--space-6); align-items: center; }
+.sail-row > .muted { flex: 1; }
+.sail-row > .preview { flex: 1; margin: 0; min-width: 0; }
+.compass { display: grid; grid-template-columns: repeat(3, var(--tap-min)); grid-template-rows: repeat(3, var(--tap-min)); gap: var(--space-2); flex: none; }
+.compass .heading {
+  font: inherit; font-size: var(--text-lead); color: var(--ink); background: var(--surface-raised);
+  border: var(--line-hair) solid var(--line); border-radius: var(--radius-md); padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.compass .heading span { display: block; line-height: 1; }
+.compass .heading.on { background: var(--ink); color: var(--surface-base); border-color: var(--ink); }
+.compass .heading:disabled { opacity: 0.3; }
+.compass .hub { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); font-size: var(--text-small); }
 .preview { background: var(--surface-raised); border-radius: var(--radius-md); padding: var(--space-5) var(--space-6); margin: var(--space-4) 0; }
 .preview .big { font-size: var(--text-head); font-weight: var(--weight-strong); }
 input[type=range] { width: 100%; margin: var(--space-5) 0; accent-color: var(--accent); }

@@ -13,7 +13,7 @@ import type { GameState, Unit, TileGood } from './state'
 import type { Action } from './actions'
 import { foundingProblem } from './settlement'
 import { tileOffers, tileYield } from './labour'
-import { neighbours8, isLand, isCoastal, sailingDistance, landingViable } from './worldgen'
+import { neighbours8, isLand, isCoastal, sailingDistance, landingViable, dist } from './worldgen'
 import { findPath } from './units'
 
 /** How good a settlement would be here: the best yield of each ring tile, food counting for more,
@@ -39,12 +39,12 @@ export function siteScore(s: GameState, tile: number): number {
 }
 
 /** The best coastal site a lander at `from` could make for: legal to found, land beside water the
- *  lander can reach, within `reach` tiles of sailing, scored by the ring, with a good deal for a
- *  coast that can feed a settlement (food, timber and fresh water within reach, which is what the
- *  generator measured the voyage against) and less for every turn of sailing. The sailing penalty
- *  is steep enough that a rich coast ten turns off loses to a fair one beside the lander: the
- *  voyage is meant to be a few turns, not a tour. Null when there is no coast within reach. */
-export function bestLanding(s: GameState, from: number, reach = 10): { tile: number; water: number; score: number } | null {
+ *  lander can reach, within `reach` tiles of sailing (three turns of it unless told otherwise),
+ *  scored by the ring, with a good deal for a coast that can feed a settlement (food, timber and
+ *  fresh water within reach, which is what the generator measured the splashdown against) and less
+ *  for every turn of sailing. Nothing closer to a tile in `avoid` than its clearance. Null when
+ *  there is no coast within reach. */
+export function bestLanding(s: GameState, from: number, reach = C.lander.moves * C.lander.autopilot.reachTurns, avoid: { tile: number; clear: number }[] = []): { tile: number; water: number; score: number } | null {
   const w = s.world.width, h = s.world.height
   const tiles = s.world.tiles
   // sailing distance from the lander itself, over water
@@ -60,12 +60,13 @@ export function bestLanding(s: GameState, from: number, reach = 10): { tile: num
   for (let i = 0; i < tiles.length; i++) {
     if (!isLand(tiles[i]) || !isCoastal(w, h, tiles, i)) continue
     if (foundingProblem(s, i) !== null) continue
+    if (avoid.some(a => dist(w, a.tile, i) < a.clear)) continue
     // the water tile beside it that the lander can reach soonest
     let water = -1, wd = 1e9
     for (const n of neighbours8(w, h, i)) if (tiles[n].terrain === 'water' && d[n] >= 0 && d[n] < wd) { wd = d[n]; water = n }
     if (water < 0) continue
-    const viable = landingViable(w, h, tiles, i) ? 15 : 0
-    const score = siteScore(s, i) + viable - (wd / C.lander.moves) * 3
+    const viable = landingViable(w, h, tiles, i) ? C.lander.autopilot.viableBonus : 0
+    const score = siteScore(s, i) + viable - (wd / C.lander.moves) * C.lander.autopilot.sailPenaltyPerTurn
     if (!best || score > best.score) best = { tile: i, water, score }
   }
   return best
@@ -103,5 +104,6 @@ export function turnsToCoast(s: GameState): number {
   if (!lander) return 0
   const w = s.world.width, h = s.world.height
   const d = sailingDistance(w, h, s.world.tiles, i => isLand(s.world.tiles[i]) && isCoastal(w, h, s.world.tiles, i) && foundingProblem(s, i) === null)
-  return d[lander.tile] < 0 ? Infinity : Math.ceil(d[lander.tile] / C.lander.moves)
+  // a sailing distance of one is the water beside the coast, where the lander can already found
+  return d[lander.tile] < 0 ? Infinity : Math.ceil((d[lander.tile] - 1) / C.lander.moves)
 }

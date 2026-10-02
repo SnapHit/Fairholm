@@ -4,17 +4,23 @@
 // is never stored; what is stored is `tile.explored`, which only ever turns true.
 //
 // Nothing here writes to the state except `reveal`, which actions.ts calls after every action and
-// turn.ts after every turn, so the ground a unit walks onto is known the moment it is there.
+// turn.ts after every turn, and `revealFrom`, which units.ts calls at every step a unit of the
+// player's takes, so the fog lifts along the way a unit goes and not only where it stops.
+//
+// This module imports nothing from units.ts, so that units.ts can call it while moving.
 
 import { C } from './constants'
 import type { GameState, Unit, UnitKind, Settlement } from './state'
-import { isHull } from './units'
+
+/** The kinds that sail and see as a ship: the four hulls and the Company's landing craft. The lander
+ *  has its own sight. Kept here rather than read from units.ts, which imports this module. */
+const SHIPS: UnitKind[] = ['lighter', 'trader', 'raider', 'cutter', 'companyShip']
 
 /** How far a unit of this kind sees, in tiles. */
 export function sightOf(kind: UnitKind): number {
   if (kind === 'lander') return C.lander.sight
   if (kind === 'outrider' || kind === 'horse') return C.fog.sight.outrider
-  if (isHull(kind) || kind === 'companyShip') return C.fog.sight.hull
+  if (SHIPS.includes(kind)) return C.fog.sight.hull
   if (kind === 'colonist') return C.fog.sight.colonist
   return C.fog.sight.default
 }
@@ -58,8 +64,32 @@ export function settlementKnown(st: Settlement): boolean {
   return st.owner === 0 || st.seen !== null
 }
 
+/** What one of the player's units sees from where it stands now: the ground in its sight explored,
+ *  any settlement there remembered as it is, any predecessor people there found. Called at each step
+ *  of a move, so a lander sailing six tiles lifts the fog along all six. Does nothing for a unit
+ *  that is not the player's. */
+export function revealFrom(s: GameState, u: Unit) {
+  if (u.owner !== 0) return
+  const w = s.world.width, h = s.world.height
+  const r = sightOf(u.kind)
+  const x0 = u.tile % w, z0 = Math.floor(u.tile / w)
+  const tiles = s.world.tiles
+  const near = (tile: number) => Math.max(Math.abs((tile % w) - x0), Math.abs(Math.floor(tile / w) - z0)) <= r
+  for (let dz = -r; dz <= r; dz++) {
+    const z = z0 + dz
+    if (z < 0 || z >= h) continue
+    for (let dx = -r; dx <= r; dx++) {
+      const x = x0 + dx
+      if (x < 0 || x >= w) continue
+      tiles[z * w + x].explored = true
+    }
+  }
+  for (const st of s.settlements) if (st.owner !== 0 && near(st.tile)) st.seen = { turn: s.turn, pop: st.abstractPop, buildings: { ...st.buildings } }
+  for (const p of s.predecessors) if (near(p.tile)) p.scouted = true
+}
+
 /** Mark everything in sight as explored, remember the settlements in sight as they are, and scout
- *  the predecessors in sight. The one write this module makes. */
+ *  the predecessors in sight. */
 export function reveal(s: GameState) {
   const mask = sightMask(s)
   const tiles = s.world.tiles

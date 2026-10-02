@@ -349,6 +349,24 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
   return mesh
 }
 
+/** Stand one picture's foot somewhere else, without rebuilding the layer: its quad moves by the
+ *  difference, and its foot, where it reads its light and the fog, moves with it. For a picture
+ *  travelling a path. */
+export function placeBillboard(mesh: THREE.InstancedMesh, i: number, x: number, y: number, z: number) {
+  const foot = mesh.geometry.getAttribute('aFoot') as THREE.InstancedBufferAttribute | undefined
+  if (!foot) return
+  const f = foot.array as Float32Array
+  const dx = x - f[i * 3], dy = y - f[i * 3 + 1], dz = z - f[i * 3 + 2]
+  if (!dx && !dy && !dz) return
+  const m = new THREE.Matrix4()
+  mesh.getMatrixAt(i, m)
+  m.elements[12] += dx; m.elements[13] += dy; m.elements[14] += dz
+  mesh.setMatrixAt(i, m)
+  f[i * 3] = x; f[i * 3 + 1] = y; f[i * 3 + 2] = z
+  mesh.instanceMatrix.needsUpdate = true
+  foot.needsUpdate = true
+}
+
 /** Set how much of some pictures is there, without rebuilding the layer: for every instance whose
  *  tag the picker answers for, its fade becomes the answer. Nought to one. */
 export function setBillboardFade(mesh: THREE.InstancedMesh, pick: (tag: BillboardTag | null) => number | null) {

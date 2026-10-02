@@ -9,7 +9,10 @@ import type { GoodId, TerrainId, ForestId, PrimeId, TileGood, BuildingLine, Diff
 // changed the world (splashdowns in place of anchorages and landing sites), the units (the lander
 // and its passengers) and the fleet's waves. Saves from one are turned away with a plain message.
 export const SCHEMA_VERSION = 2
-export const WORLDGEN_VERSION = 2
+// Worldgen three: the lander sails six tiles a turn and sees three, so the splashdowns moved nearer
+// the coast and to where land lies in the most directions. The same seed now puts every charter
+// somewhere else, so a save from worldgen two would regenerate the wrong world under its deltas.
+export const WORLDGEN_VERSION = 3
 
 export interface GoodParams {
   open: number
@@ -159,6 +162,10 @@ export const C = {
     riverDefence: 1.15,
     breachThreshold: 5,        // section 11, turns of adjacency before a tier falls
     approachTurns: 3,          // section 10
+    /** How far the recall fleet's landers motor in a turn, in tiles. Not the player's lander's
+     *  speed: at six a turn a three turn approach would splash down eighteen tiles out, which on
+     *  a small map is off the edge or over land. One, so they come down three tiles offshore. */
+    approachMoves: 1,
     /** A wave comes ashore within this many tiles of one of the player's settlements. */
     landingRadius: 2,
     declarationWindow: 6,
@@ -283,6 +290,10 @@ export const C = {
     moveCost: { grassland: 1, plains: 1, downs: 1, marsh: 2, highland: 2, mountain: 3, dry: 1, water: 99 } as Record<TerrainId, number>,
     forestMoveCost: 1,         // added
     roadMoveCost: 0.5,
+    /** Planning only: a step on the diagonal is reckoned this much dearer than one straight, so of
+     *  two ways equally long the straighter is planned. A lander sent due south sails due south
+     *  rather than zigzagging into water nobody has seen and finding the coast there. */
+    diagonalTieBreak: 1e-6,
     improveTurns: { road: 2, clear: 4, plough: 3 },
   },
 
@@ -290,7 +301,11 @@ export const C = {
   // World generation, session brief section 8 and military brief section 9
   // -------------------------------------------------------------------------------------------
   worldgen: {
-    maxAttempts: 12,
+    /** Tries before a world is accepted with its problem recorded. Twenty four, up from twelve: with
+     *  the lander seeing three tiles a splashdown needs nine tiles of clear water square, and a
+     *  small archipelago can take eighteen tries to fit four charters. A try costs a few
+     *  milliseconds on a small map. */
+    maxAttempts: 24,
     noiseOctaves: 4,
     noiseScale: 0.11,
     edgeFalloff: 0.18,         // fraction of each edge pushed toward water
@@ -310,6 +325,16 @@ export const C = {
     minPredecessorsReachable: 2,
     /** The smallest landmass a charter's lander is sent toward, in tiles. */
     homeLandmassMin: 40,
+    /** How many moves a heading from a splashdown has to sight land in to count, session brief
+     *  section 8: "within the first one or two moves". */
+    sightedWithinMoves: 2,
+    /** How many of the player's splashdowns a placement tries before settling for less, because one
+     *  drawn in the wrong place can crowd the rivals out when another would not. */
+    splashdownDraws: 12,
+    /** A rival's splashdown may come this many tiles nearer its coast, and see land a tile nearer,
+     *  than the player's, where a tight map has no other room for all four charters. Only ever used
+     *  when the strict rule places fewer than four. */
+    rivalSplashdownGive: 1,
   },
 
   // -------------------------------------------------------------------------------------------
@@ -318,17 +343,19 @@ export const C = {
   // choosing.
   // -------------------------------------------------------------------------------------------
   lander: {
-    /** How far the lander sails in a turn, in tiles. One: it is a capsule with a boat's motor, not
-     *  a ship, and the voyage is meant to take a few turns, not a few taps. */
-    moves: 1,
-    /** The one named distance: how many turns' sailing the splashdown is from the nearest coast
-     *  with food, timber and fresh water, give or take the slack. At one tile a turn this is tiles
-     *  of open water, and the generator finds a splashdown within the band or tries again. */
-    voyageTurns: 5,
-    voyageSlack: 1,
-    /** How far the lander sees, in tiles. More than it moves in a turn, so a coast is in view at
-     *  least a turn before the lander can reach it. */
-    sight: 2,
+    /** How far the lander sails in a turn, in tiles. Six: the opening turns are for choosing
+     *  ground, not for reaching it, so one move crosses the open water and each move after it
+     *  runs a good stretch of coast. Rivals' landers sail at the same speed. The boat it leaves
+     *  behind is a lighter and sails at a lighter's speed; the drop is meant. */
+    moves: 6,
+    /** How far the splashdown lies from the nearest coast with food, timber and fresh water, in
+     *  tiles of open water. The near end is out of sight of all land with a tile to spare
+     *  (sight plus two); the far end is near enough that one move straight at the coast brings it
+     *  a tile inside sight (moves plus sight, less one). Session brief section 8. */
+    splashdown: { near: 5, far: 8 },
+    /** How far the lander sees, in tiles. Three, so a move of six reveals a swathe seven tiles
+     *  wide and each one is worth making. */
+    sight: 3,
     /** What it can carry besides its people. The starting stores fit with room over. */
     capacity: 400,
     /** The boat it carries, which survives founding as the player's first ship. */
@@ -337,6 +364,10 @@ export const C = {
     steamTurns: 2,
     /** The first settlement's default name. */
     firstName: 'The Landing',
+    /** How the machine sails a lander, for the rival charters and the tests: it looks this many
+     *  turns of sailing out for a site, gives a coast that can feed a settlement this much more
+     *  than its ring is worth, and takes this much off for every turn of sailing to it. */
+    autopilot: { reachTurns: 3, viableBonus: 15, sailPenaltyPerTurn: 3 },
   },
 
   // -------------------------------------------------------------------------------------------
@@ -396,6 +427,14 @@ export const C = {
     marketFootprintPerPop: 0.8,   // units of a good sold per population point per turn
     crowdingRadius: 4,
     crowdingRelationPerTurn: 0.02,
+    /** A rival's lander makes for a site at least this far from any other charter's settlement and
+     *  from the player's lander, so a rival as fast as the player does not come ashore on top of
+     *  them. Wider than the crowding radius, so a first landing never starts out crowded. */
+    landingClearance: 6,
+    /** And this far from the player's lander while it is at sea: the voyage band's far edge and two,
+     *  so the coast the player's splashdown was measured against, and can sight in the first moves,
+     *  is not taken on the first turn. Relaxed to landingClearance where it leaves nothing in reach. */
+    playerLanderClearance: 10,
     suspicionPerRaid: 0.2,
     tenseAt: 0.4,
     warAt: 1.0,
@@ -441,6 +480,7 @@ export const C = {
     momentumDecay: 0.92,       // per frame
     momentumStop: 0.02,
     rubberBand: 0.35,
+    openingOverhang: 4,        // tiles the camera may pass the map's edge while the lander is at sea
     settleRefineDelayMs: 120,
     dprMoving: 1,
     dprSettled: 2.5,

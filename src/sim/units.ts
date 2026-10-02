@@ -4,6 +4,7 @@
 import { C } from './constants'
 import type { GameState, Unit, UnitKind, Colonist, HullKind, LandKind } from './state'
 import { neighbours8 } from './worldgen'
+import { revealFrom } from './fog'
 
 export const HULLS: HullKind[] = ['lighter', 'trader', 'raider', 'cutter']
 export function isHull(kind: UnitKind): boolean { return (HULLS as string[]).includes(kind) }
@@ -68,11 +69,19 @@ export function enterCost(s: GameState, u: Unit, tile: number): number {
   return c
 }
 
-/** Dijkstra over the grid. Returns the path excluding the start tile, or null. */
+/** Dijkstra over the grid. Returns the path excluding the start tile, or null.
+ *
+ *  With the fog on, a path of the player's is planned on what the player knows: ground nobody has
+ *  seen is taken to be open, at the cheapest cost, so a lander can be sent across water nobody has
+ *  sailed and a colonist into country nobody has walked. The move finds out the truth as it goes:
+ *  `advance` stops where the next tile turns out to be land the lander cannot enter, which is the
+ *  coast. Everyone else's paths are planned on the ground as it is. */
 export function findPath(s: GameState, u: Unit, from: number, to: number, maxLen = 400): number[] | null {
   if (from === to) return []
   const w = s.world.width, h = s.world.height
   const N = w * h
+  const blind = C.flags.fogOfWar && u.owner === 0
+  const tiles = s.world.tiles
   const distv = new Float64Array(N).fill(Infinity)
   const prev = new Int32Array(N).fill(-1)
   distv[from] = 0
@@ -87,11 +96,12 @@ export function findPath(s: GameState, u: Unit, from: number, to: number, maxLen
     if (i === to) break
     if (++expanded > maxLen * 40) break
     for (const n of neighbours8(w, h, i)) {
-      const c = enterCost(s, u, n)
+      const unknown = blind && !tiles[n].explored
+      const c = unknown ? 1 : enterCost(s, u, n)
       if (!isFinite(c)) continue
-      // blocked by a hostile unit or foreign settlement
-      if (n !== to && s.settlements.some(st => st.tile === n && st.owner !== u.owner)) continue
-      const nd = d + c
+      // blocked by a hostile unit or foreign settlement, where it is known to be there
+      if (!unknown && n !== to && s.settlements.some(st => st.tile === n && st.owner !== u.owner)) continue
+      const nd = d + c + ((n % w) !== (i % w) && Math.floor(n / w) !== Math.floor(i / w) ? C.terrain.diagonalTieBreak : 0)
       if (nd < distv[n]) { distv[n] = nd; prev[n] = i; push(nd, n) }
     }
   }
@@ -102,16 +112,23 @@ export function findPath(s: GameState, u: Unit, from: number, to: number, maxLen
   return path
 }
 
-/** Walk a unit along its stored path as far as its moves allow. Returns true if it arrived. */
+/** Walk a unit along its stored path as far as its moves allow. Returns true if it arrived. A unit
+ *  of the player's sees from every tile it passes, so the fog lifts along the whole way; a path
+ *  planned through ground nobody had seen stops where that ground turns out to be impassable, which
+ *  for a lander is the coast. */
 export function advance(s: GameState, u: Unit): boolean {
+  revealFrom(s, u)
   while (u.path.length && u.moves > 0) {
     const nextTile = u.path[0]
     const c = enterCost(s, u, nextTile)
     if (!isFinite(c)) { u.path = []; return false }
     if (s.units.some(o => o.tile === nextTile && o.owner !== u.owner && isArmed(o.kind))) { u.path = []; return false }
+    // a foreign settlement found in the way, where the plan thought there was open ground
+    if (s.settlements.some(st => st.tile === nextTile && st.owner !== u.owner) && u.path.length > 1) { u.path = []; return false }
     u.moves -= c
     u.tile = nextTile
     u.path.shift()
+    revealFrom(s, u)
   }
   if (u.moves < 0) u.moves = 0
   return u.path.length === 0

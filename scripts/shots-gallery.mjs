@@ -44,7 +44,7 @@ const VIEWS = {
   hullsClose: { x: 6, z: 3, zoom: 72 },
   settlements: { x: 11, z: 10, zoom: 44 },
   settlementClose: { x: 11, z: 10, zoom: 72 },
-  arrival: { x: 20, z: 7, zoom: 44 },
+  arrival: { x: 21, z: 6, zoom: 44 },
   wood: { x: 24, z: 13, zoom: 44 },
   overview: { x: 15, z: 10, zoom: 16 },
 }

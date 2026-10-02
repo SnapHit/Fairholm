@@ -1,5 +1,10 @@
 # Onboarding and the first session
 
+**Changed 2 October 2026.** The voyage is quicker. The lander sails six tiles a turn and sees three,
+land is in sight within the first move or two, and the turns before founding are spent comparing
+ground along the coast. One hold sails a whole move, drawn travelling with the fog lifting and the
+view following. Sections 2, 5, 6 and 12 say so.
+
 **Changed 1 October 2026.** The three landing sites are gone, and so are anchorages. The game now opens
 at sea, in fog, with nothing known: you sail until you sight land and choose your own ground, which is
 the opening the original is loved for, and a settlement may be founded almost anywhere.
@@ -52,10 +57,15 @@ known yet. You are already here, and you do not know where here is.
 - **Five lines fade in over that shot**, one at a time, about two seconds apart, in the theme's display
   type, legible over the haze. They never block input and they are never a separate screen
 - **The first tap anywhere dismisses them and starts the music**
-- **Then you sail until you sight land.** The lander moves wherever boats can go, open water and major
-  rivers. The nearest viable coast is four to six turns out and comes into view at least a turn before
-  you reach it. Where you go ashore is up to you: beach the lander beside any land tile that is not
-  mountain and not too close to someone else's settlement, and everyone aboard becomes the settlement
+- **Then you sail until you sight land, and look for your ground.** The lander moves wherever boats can
+  go, open water and major rivers, six tiles a turn, and sees three tiles around it. It comes down out
+  of sight of land but near enough that sailing in any sensible direction sights land within the first
+  move or two. One hold on a destination sails it there, or as far as it gets this turn, drawn
+  travelling with the fog lifting along the way and the view following; a heading picked in the
+  lander's sheet and Go does the same for a turn's sailing whose end is off the screen. A course
+  through water nobody has seen stops at any coast it meets. Where you go ashore is up to you: beach the lander beside any
+  land tile that is not mountain and not too close to someone else's settlement, and everyone aboard
+  becomes the settlement
 
 There is no landing-site chooser and nothing is offered. You find your ground by sailing to it.
 
@@ -174,7 +184,8 @@ lesson they will not retain past the next screen.
 ## 5. The curriculum
 
 Roughly, on a small map. Triggers, not turns; the turns are indicative, and they count from founding,
-not from turn one. The four to six turns of sailing before the first settlement sit outside the table.
+not from turn one. The few turns of sailing and choosing before the first settlement sit outside the
+table.
 
 | Phase | Goods visible | What is introduced |
 |---|---|---|
@@ -196,13 +207,13 @@ interested.
 
 Before any of that, the opening must contain one complete satisfying loop, achievable in five minutes.
 
-**Sail, sight land, found, assign, build.** Sail through fog until the coast comes into view, beach the
-lander where you choose, assign two colonists, watch food and timber accumulate, build the first thing,
-see the settlement change.
+**Sail, sight land, choose, found, assign, build.** Sail through fog until the coast comes into view,
+run along it comparing ground, beach the lander where you choose, assign two colonists, watch food and
+timber accumulate, build the first thing, see the settlement change.
 
-The five minutes count from founding, as the curriculum does. The voyage before it has to cost almost
-nothing: a sailing turn is a heading and a tap, and the coast appearing out of the haze is its own
-reward.
+The five minutes count from founding, as the curriculum does. The voyage before it is quick, and it is
+the first pleasure rather than a cost: land is in sight within a move or two, a move is one hold on a
+destination, and the fog lifting along the lander's way is its own reward.
 
 That requires early turns to be genuinely fast, five to ten seconds each, which the one-decision queue
 already delivers. It also requires the settlement to visibly change when something is built, which the
@@ -309,8 +320,9 @@ brief.
 - **Whether twenty to thirty minutes to the dumping lesson is too long.** This is the biggest open risk
   in the document. It may need to arrive by turn fifteen
 - The trigger thresholds for every unlock
-- Whether the voyage is the right length. Four to six turns of sailing before land is sighted is the
-  starting point, and it may need to be shorter
+- Whether the voyage is the right length. A lander that sails six tiles a turn and sees three, from a
+  splashdown out of sight of land but within a move or two of it, is the starting point; whether that
+  leaves the right few turns for comparing sites is what to watch
 - Whether the one-sentence explanations are read at all, which the drop-off curve will imply
 - Whether the tappable glossary in section 7.1 is used, which is worth counting because it is cheap to
   instrument and it says a great deal about whether the teaching is landing

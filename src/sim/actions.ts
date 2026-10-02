@@ -150,7 +150,7 @@ export function createGame(seed: string, partial: Partial<Settings>, now: number
     lander.moves = maxMoves(lander)
     s.units.push(lander)
   }
-  pushDispatch(s, { turn: 1, kind: 'event', text: 'The lander is down and steaming in open sea. Land lies some turns off. Sail until you find it, and go ashore where you choose.', why: 'The Company sent you on what cores it had left. No one is waiting.' })
+  pushDispatch(s, { turn: 1, kind: 'event', text: 'The lander is down and steaming in open sea. Land is near, just out of sight. Sail and look, and go ashore where you choose.', why: 'The Company sent you on what cores it had left. No one is waiting.' })
   reveal(s)
   return s
 }

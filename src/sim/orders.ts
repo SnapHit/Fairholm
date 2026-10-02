@@ -7,7 +7,7 @@ import type { GameState, TurnContext, QueueItem, Unit, Settlement, GoodId } from
 import { GOODS } from './state'
 import type { System } from './turn'
 import { C } from './constants'
-import { findPath, advance, maxMoves, cargoCapacity, isArmed, isHull } from './units'
+import { findPath, advance, maxMoves, cargoCapacity, isArmed, isHull, enterCost } from './units'
 import { neighbours8, isLand, dist } from './worldgen'
 import { isHostileTo } from './military'
 import { pick } from './rng'
@@ -148,8 +148,16 @@ export const ordersSystem: System = {
           if (!u.path.length) u.path = findPath(s, u, u.tile, u.order.tile) ?? []
           if (!u.path.length) { u.order = null; u.since['contact'] = s.turn; break }
           if (hostileNear(s, u.path[0], 1) && !isArmed(u.kind)) { u.since['contact'] = u.since['contact'] ?? s.turn; break }
+          const plan = [...u.path]
           advance(s, u)
-          if (u.tile === u.order.tile) u.order = null
+          if (u.tile === u.order.tile) { u.order = null; break }
+          // a way planned through ground nobody had seen that turned out to be impassable: the unit
+          // stops where it met it, for a lander the coast, and waits to be told where next rather
+          // than finding its own way round (the same as a move made by hand)
+          if (!u.path.length) {
+            const next = plan[plan.indexOf(u.tile) + 1] ?? plan[0]
+            if (next !== undefined && !isFinite(enterCost(s, u, next))) { u.order = null; u.since['contact'] = s.turn }
+          }
           break
         }
         case 'haul': runHaul(s, u, ctx); break

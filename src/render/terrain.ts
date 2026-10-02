@@ -264,6 +264,14 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
     // the coast is a beach, not a cliff: the drop to the sea bed comes through the blended water
     // weight, so it ramps across the boundary with everything else rather than stepping at it
     let y = hsum + landform(x, z, seedNum) * dry + (n1 * rough + n2 * rough * 0.5) * dry - SURFACE.waterDeepen * waterW * waterW
+    // land stays above the sea: the landform may roll low country down toward the waterline but
+    // never under it, or a coast that can be founded on is drawn as open water. A soft floor, eased
+    // in from the shore inland, so the beach still slopes into the sea
+    const inland = smooth(Math.max(0, Math.min(1, (dry - SURFACE.landFloor.from) / (1 - SURFACE.landFloor.from))))
+    if (inland > 0) {
+      const f = SURFACE.landFloor.height, k = SURFACE.landFloor.soft
+      y += ((y + f + Math.sqrt((y - f) * (y - f) + k * k)) / 2 - y) * inland
+    }
     // ploughed ground and roads settle what they cross
     if (here && (here.improved || here.road)) y = hsum + (y - hsum) * SURFACE.improvedFlatten
     heights[vi] = y

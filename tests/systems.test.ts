@@ -20,7 +20,7 @@ function landed(seed = 'market-seed', size: 'small' | 'standard' = 'small'): Gam
 describe('market', () => {
   it('price falls with volume and recovers when quiet', () => {
     const s = landed()
-    const st = s.settlements[0]
+    const st = s.settlements.find(x => x.owner === 0)!
     const g = 'linen'
     const open = sellPrice(s, g)
     st.stock[g] = 150
@@ -34,14 +34,14 @@ describe('market', () => {
 
   it('a large consignment walks the price down lot by lot', () => {
     const s = landed()
-    const st = s.settlements[0]
+    const st = s.settlements.find(x => x.owner === 0)!
     st.stock.linen = 400
     const r = consign(s, st, 'linen', 400, makeContext(s))
     expect(r.units).toBe(400)
     expect(r.last).toBeLessThan(r.first)
     // the same goods in two halves with recovery between earn more than one dump
     const s2 = landed()
-    const st2 = s2.settlements[0]
+    const st2 = s2.settlements.find(x => x.owner === 0)!
     st2.stock.linen = 200
     const a = consign(s2, st2, 'linen', 200, makeContext(s2))
     for (let i = 0; i < 40; i++) applyAction(s2, { t: 'endTurn' })

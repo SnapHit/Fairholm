@@ -45,7 +45,7 @@ function unitItems(s: GameState): QueueItem[] {
       const since = u.since['idle'] ?? s.turn
       const lander = u.kind === 'lander'
       out.push({ key: `unitIdle:${u.id}`, group: 'unitIdle', type: lander ? 2 : 4, title: lander ? 'The lander is at sea' : `${unitLabel(u.kind)} is awaiting orders`, body: lander ? `${u.aboard.length} aboard. Sail toward land, then beach it on the shore of your choosing to found the first settlement.` : u.kind === 'colonist' ? 'Move it, found a settlement with it, or send it home.' : 'Give it a standing order or move it.', unit: u.id, tile: u.tile, magnitude: 1, since, choices: [], opens: 'unit',
-        explain: lander ? 'Tap the lander, then tap and hold a water tile to sail there. When land is beside it, the founding control below says where it can go ashore.' : u.kind === 'colonist' ? 'Tap the unit, then tap and hold a tile to walk there. A colonist in open country can found a settlement.' : undefined })
+        explain: lander ? `Tap the lander, then tap and hold where to go, or pick a heading in its sheet: it sails up to ${C.lander.moves} tiles a turn and stops at any coast it meets. When land is beside it, the founding control below says where it can go ashore.` : u.kind === 'colonist' ? 'Tap the unit, then tap and hold a tile to walk there. A colonist in open country can found a settlement.' : undefined })
     }
   }
   return out

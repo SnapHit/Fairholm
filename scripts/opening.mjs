@@ -1,21 +1,26 @@
-// Look at the opening. Setting brief section 7, onboarding brief section 2, art brief section 10a.
+// Look at the opening. Setting brief section 7, onboarding brief sections 2 and 6, session brief
+// section 8, art brief section 10a.
 //
-// A fresh game on a fixed seed, shot at the moments the prompt asks to see: turn one with the five
-// lines over the haze; the same shot after the first tap; the voyage under way; the turn land is
-// sighted; the founding control with its preview; the turn after founding; a colonist founding
-// inland later; and a wave of the recall fleet approaching through the fog. The pictures are for a
-// person to look at; the numbers printed beside them are what can be measured.
+// A fresh game on a fixed seed, sailed the way a player would and with the player's own gestures: a
+// tap on the lander, then the first move by tap and hold on a tile of water on a heading that is
+// sensible but not straight at the coast, then on toward land and two moves along the coast by the
+// compass in the sheet and Go, ending each turn with the button, then a tap on the shore for the
+// founding preview. Each move is drawn travelling with the fog lifting, and a frame is taken part
+// way through the first to see that. Then a recall fleet wave approaching through the fog over three turns,
+// and a save from an earlier build turned away. The pictures are for a person to look at; the
+// numbers printed beside them are what can be measured.
 //
 // Run with:  node scripts/opening.mjs
 //            OUT=shots/opening SEED=fairholm-opening CHROMIUM=/opt/pw-browsers/chromium node scripts/opening.mjs
 
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 
 const OUT = process.env.OUT || 'shots/opening'
 const SEED = process.env.SEED || 'fairholm-opening'
 mkdirSync(OUT, { recursive: true })
+for (const f of readdirSync(OUT)) if (/\.(png|jpg)$/.test(f)) unlinkSync(`${OUT}/${f}`)
 
 const server = await createServer({ server: { port: 5193, strictPort: true }, logLevel: 'silent' })
 await server.listen()
@@ -33,7 +38,6 @@ const note = (k, v) => { notes.push(`${k}: ${typeof v === 'string' ? v : JSON.st
 
 await page.goto('http://localhost:5193/')
 await page.waitForFunction(() => !!window.fairholm && window.fairholm.state, null, { timeout: 30000 })
-// the fixed seed, through the same path a new game takes
 await page.evaluate(async (seed) => {
   const a = window.fairholm
   const actions = await import('/src/sim/actions.ts')
@@ -46,207 +50,362 @@ await page.evaluate(async (seed) => {
 }, SEED)
 
 const settle = async (ms = 500) => {
-  await page.waitForFunction(() => !window.fairholm.scene.loopRunning, null, { timeout: 15000 }).catch(() => {})
+  await page.waitForFunction(() => !window.fairholm.scene.moving && !window.fairholm.scene.cam.glideTarget, null, { timeout: 20000 }).catch(() => {})
   await page.waitForTimeout(ms)
 }
-// jpeg, as the gallery's pictures are: these are for looking at, and thirteen of them at a phone's
-// two times resolution are ten megabytes as png
+// jpeg: these are for looking at, and a dozen at a phone's two times resolution are ten megabytes as png
 const shot = (name) => page.screenshot({ path: `${OUT}/${name}.jpg`, type: 'jpeg', quality: 90 })
 
-// ---- 1: turn one, the lines ---------------------------------------------------------------------
-// the lines arrive one every two seconds; the fifth is in a little after eight and a half
-await page.waitForTimeout(9600)
-const t1 = await page.evaluate(() => {
-  const s = window.fairholm.state
-  const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
-  const w = s.world.width
-  return {
-    turn: s.turn, lines: document.querySelectorAll('#opening .line.in').length,
-    explored: s.world.tiles.filter(t => t.explored).length, of: s.world.tiles.length,
-    lander: lander ? [lander.tile % w, Math.floor(lander.tile / w)] : null,
-    otherUnitsDrawn: [...window.fairholm.scene.unitPositions.keys()].filter(id => s.units.find(u => u.id === id)?.owner !== 0).length,
-    settlementsDrawn: window.fairholm.scene.settlements ? window.fairholm.scene.settlements.children.reduce((a, g) => a + g.children.length, 0) : 0,
-    steaming: window.fairholm.scene.loopRunning,
-  }
-})
-note('turn one', t1)
-await shot('01-turn-one-the-lines')
-
-// ---- 2: the first tap -------------------------------------------------------------------------
-const t0 = Date.now()
-await page.touchscreen.tap(195, 560)
-let heard = null
-for (let i = 0; i < 25 && heard === null; i++) {
-  await page.waitForTimeout(200)
-  const m = await page.evaluate(() => ({ pos: window.fairholm.music.position, name: window.fairholm.music.trackName }))
-  if (m.pos > 0.2) heard = { ms: Date.now() - t0, ...m }
-}
-await page.waitForTimeout(1100)
-const t2 = await page.evaluate(() => ({ linesLeft: !!document.querySelector('#opening'), showing: window.fairholm.opening?.showing, sheet: window.fairholm.sheet.kind }))
-note('after the first tap', { ...t2, music: heard })
-await shot('02-after-the-first-tap')
-
-// ---- 3 and 4: the voyage, a turn at a time, until land is sighted ----------------------------
-const sail = async () => page.evaluate(async () => {
-  const a = window.fairholm
-  const auto = await import('/src/sim/autopilot.ts')
-  let guard = 0
-  for (;;) {
-    const act = auto.openingAction(a.state)
-    if (!act || act.t === 'found' || guard++ > 4) return act ? act.t : 'none'
-    a.dispatch(act)
-  }
-})
-const landInSight = () => page.evaluate(async () => {
-  const a = window.fairholm
+/** What the player can see now: land tiles in sight, and land tiles ever explored. */
+const seen = () => page.evaluate(async () => {
+  const a = window.fairholm, s = a.state
   const fog = await import('/src/sim/fog.ts')
-  const mask = fog.sightMask(a.state)
-  let land = 0
-  for (let i = 0; i < mask.length; i++) if (mask[i] && a.state.world.tiles[i].terrain !== 'water') land++
-  const lander = a.state.units.find(u => u.owner === 0 && u.kind === 'lander')
-  return { land, turn: a.state.turn, lander: lander ? lander.tile : null }
+  const mask = fog.sightMask(s)
+  let inSight = 0, known = 0
+  for (let i = 0; i < mask.length; i++) {
+    if (s.world.tiles[i].terrain === 'water') continue
+    if (mask[i]) inSight++
+    if (s.world.tiles[i].explored) known++
+  }
+  const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
+  return { turn: s.turn, landInSight: inSight, landKnown: known, lander: lander ? [lander.tile % s.world.width, Math.floor(lander.tile / s.world.width)] : null, explored: s.world.tiles.filter(t => t.explored).length }
 })
-let sighted = null
-let midShot = false
-for (let turn = 0; turn < 12 && !sighted; turn++) {
-  const before = await landInSight()
-  if (before.land > 0 && before.turn > 1) { sighted = before; break }
-  const did = await sail()
-  await page.evaluate(() => { const a = window.fairholm; const l = a.state.units.find(u => u.owner === 0 && u.kind === 'lander'); if (l) { a.scene.cam.view.activeUnit = l.id; a.scene.cam.view.selectedTile = l.tile; a.open({ kind: 'unit', id: l.id }); a.scene.glideTo(l.tile, 44) } })
+
+// well past the hold in src/ui/theme.ts: a software renderer draws few frames a second, and the
+// hold completes on a frame
+const HOLD_MS = 450 + 1050
+
+/** Where the lander is on the screen, and the free strip of map above the sheet. */
+const where = () => page.evaluate(() => {
+  const a = window.fairholm, s = a.state, w = s.world.width
+  const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
+  if (!lander) return null
+  const [sx, sy] = a.scene.cam.worldToScreen((lander.tile % w) + 0.5, Math.floor(lander.tile / w) + 0.5)
+  const sheetTop = a.sheetEl.classList.contains('open') ? a.root.clientHeight - a.sheetEl.offsetHeight : a.root.clientHeight - a.queuebar.offsetHeight
+  return { id: lander.id, tile: lander.tile, x: lander.tile % w, z: Math.floor(lander.tile / w), sx, sy, sheetTop, top: a.hud.getBoundingClientRect().height, W: a.root.clientWidth, explored: s.world.tiles.filter(t => t.explored).length, moves: lander.moves }
+})
+
+/** A tap, as a finger makes one: down and up in the same place, quickly. */
+const tapAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(60); await page.mouse.up(); await page.waitForTimeout(400) }
+
+/** Select the lander by tapping it, so its sheet is open with the compass in it. */
+const selectLander = async () => {
+  const selected = () => page.evaluate(() => {
+    const a = window.fairholm, l = a.state.units.find(u => u.owner === 0 && u.kind === 'lander')
+    return !!l && a.scene.cam.view.activeUnit === l.id && a.sheet.kind === 'unit' && a.sheet.id === l.id && a.sheetEl.classList.contains('open') && !a.sheetEl.classList.contains('held')
+  })
+  for (let k = 0; k < 3 && !(await selected()); k++) {
+    const p = await where()
+    await tapAt(p.sx, p.sy)
+    // a tap waits out the double tap before it counts, and the sheet slides in after it
+    await page.waitForFunction(() => { const a = window.fairholm; return a.sheet.kind === 'unit' }, null, { timeout: 3000 }).catch(() => {})
+  }
   await settle(400)
-  const after = await landInSight()
-  // the voyage under way: the first turn's sailing, whatever it brought into view
-  if (!midShot && did === 'moveUnit') { midShot = true; note('mid voyage', after); await shot('03-mid-voyage') }
-  if (after.land > 0) { sighted = after; break }
-  await page.evaluate(() => window.fairholm.endTurn())
-  await settle(300)
+  return page.evaluate(() => document.querySelector('#sheet .panel')?.textContent?.slice(0, 40) ?? '')
 }
-note('land sighted', sighted)
-if (!midShot) await shot('03-mid-voyage')
-await shot('04-land-sighted')
+
+/** The first move, by the map's own gesture: tap and hold a tile of water out along a heading, the
+ *  furthest one a move reaches that is on the screen above the sheet. */
+const holdToward = async (heading) => {
+  const p = await where()
+  const tile = await page.evaluate(({ heading, p }) => {
+    const a = window.fairholm, s = a.state, w = s.world.width, h = s.world.height
+    let best = null
+    for (let k = 1; k <= 6; k++) {
+      const x = p.x + heading[0] * k, z = p.z + heading[1] * k
+      if (x < 0 || z < 0 || x >= w || z >= h) break
+      const [sx, sy] = a.scene.cam.worldToScreen(x + 0.5, z + 0.5)
+      if (sx < 24 || sx > p.W - 24 || sy < p.top + 24 || sy > p.sheetTop - 24) break
+      best = { k, x, z, sx, sy }
+    }
+    return best
+  }, { heading, p })
+  if (!tile) return { error: 'no tile on the screen along that heading' }
+  await page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
+  await page.mouse.move(tile.sx, tile.sy)
+  await page.mouse.down()
+  await page.waitForTimeout(HOLD_MS)
+  await page.mouse.up()
+  return { from: [p.x, p.z], held: [tile.x, tile.z], tilesOut: tile.k, onScreen: [Math.round(tile.sx), Math.round(tile.sy)], exploredBefore: p.explored, id: p.id }
+}
+
+/** A move by the compass in the sheet: tap the heading, then Go. A turn's sailing, whether or not
+ *  its end is on the screen. */
+const compassToward = async (heading) => {
+  const name = `${heading[1] < 0 ? 'north' : heading[1] > 0 ? 'south' : ''}${heading[0] && heading[1] ? '-' : ''}${heading[0] < 0 ? 'west' : heading[0] > 0 ? 'east' : ''}`
+  const p = await where()
+  const button = page.locator(`#sheet button[aria-label="Sail ${name}"]`)
+  if (!(await button.count())) return { error: `no ${name} heading in the sheet` }
+  if (await button.isDisabled()) return { error: `the ${name} heading goes nowhere` }
+  await button.click()
+  await page.waitForTimeout(300)
+  const preview = await page.evaluate(() => document.querySelector('#sheet .preview')?.textContent?.slice(0, 160) ?? '')
+  await page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
+  await page.locator('#sheet .preview .btn.primary').click()
+  return { heading: name, from: [p.x, p.z], preview, exploredBefore: p.explored, id: p.id }
+}
+
+/** Drag the map, as a finger would, until a tile is in the strip above the sheet; where it is then. */
+const bringOnScreen = async (tile) => {
+  const at = () => page.evaluate((t) => {
+    const a = window.fairholm, w = a.state.world.width
+    const [sx, sy] = a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5)
+    const sheetTop = a.sheetEl.classList.contains('open') ? a.root.clientHeight - a.sheetEl.offsetHeight : a.root.clientHeight - a.queuebar.offsetHeight
+    const top = a.hud.getBoundingClientRect().height
+    return { sx, sy, W: a.root.clientWidth, top, sheetTop }
+  }, tile)
+  for (let k = 0; k < 4; k++) {
+    const p = await at()
+    const cx = p.W / 2, cy = (p.top + p.sheetTop) / 2
+    if (p.sx > 30 && p.sx < p.W - 30 && p.sy > p.top + 30 && p.sy < p.sheetTop - 30) return [p.sx, p.sy]
+    // a slow drag, so it pans without a fling
+    const dx = Math.max(-150, Math.min(150, cx - p.sx)), dy = Math.max(-150, Math.min(150, cy - p.sy))
+    await page.mouse.move(cx, cy); await page.mouse.down()
+    for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + dx * i / 12, cy + dy * i / 12); await page.waitForTimeout(30) }
+    await page.waitForTimeout(200)
+    await page.mouse.up()
+    await settle(300)
+  }
+  const p = await at()
+  return [p.sx, p.sy]
+}
+
+const endTurn = async () => { await page.locator('#queuebar .btn.primary').click(); await settle(500) }
+
+/** Part way through a move: is the picture travelling, how much of the fog has lifted, and is the
+ *  camera keeping the lander on the screen, above the sheet. */
+const midMove = (id) => page.evaluate((id) => {
+  const a = window.fairholm
+  const g = a.scene.ghostAt(id)
+  if (!g) return { moving: a.scene.moving }
+  const [sx, sy] = a.scene.cam.worldToScreen(g[0], g[1])
+  const sheetTop = a.root.clientHeight - a.sheetEl.offsetHeight
+  const data = a.scene.light.uVis.value.image.data
+  let lifting = 0, known = 0
+  for (let i = 0; i < data.length; i += 4) { if (data[i] > 0 && data[i] < 255) lifting++; if (data[i] === 255) known++ }
+  return { moving: a.scene.moving, ghost: g.map(v => +v.toFixed(2)), screen: [Math.round(sx), Math.round(sy)], aboveSheet: sy > 0 && sy < sheetTop && sx > 0 && sx < a.scene.cam.width, tilesKnown: known, tilesPartLifted: lifting, sheetHeld: a.sheetEl.classList.contains('held') }
+}, id)
+
+const waitMove = async () => { await page.waitForFunction(() => window.__moveDone !== false && !window.fairholm.scene.moving, null, { timeout: 20000 }); await settle(400) }
+
+// ---- 1: splashdown -------------------------------------------------------------------------------
+// the five lines, all in, over the picture the player first sees
+await page.waitForTimeout(11000)
+await shot('01-splashdown')
+const t1 = await seen()
+const coast = await page.evaluate(async () => {
+  // the heading toward the nearest coast a lander could found on, by the water: what a player who
+  // guessed right would sail, and the rig's reference for "sensible". Then the sites a lander could
+  // reach: viable coast within one, two and three turns' sailing of the splashdown
+  const a = window.fairholm, s = a.state, w = s.world.width, h = s.world.height
+  const wg = await import('/src/sim/worldgen.ts')
+  const st = await import('/src/sim/settlement.ts')
+  const C = (await import('/src/sim/constants.ts')).C
+  const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
+  const prev = new Int32Array(w * h).fill(-2); prev[lander.tile] = -1
+  const q = [lander.tile]; let found = -1
+  for (let k = 0; k < q.length && found < 0; k++) for (const n of wg.neighbours8(w, h, q[k])) {
+    const t = s.world.tiles[n]
+    if (t.terrain !== 'water') { if (wg.isCoastal(w, h, s.world.tiles, n) && wg.landingViable(w, h, s.world.tiles, n) && !st.foundingProblem(s, n)) { found = n; break } continue }
+    if (prev[n] === -2) { prev[n] = q[k]; q.push(n) }
+  }
+  const dx = (found % w) - (lander.tile % w), dz = Math.floor(found / w) - Math.floor(lander.tile / w)
+  const heads = wg.landHeadings(w, h, s.world.tiles, lander.tile)
+  // sailing distance from the lander over water
+  const d = new Int32Array(w * h).fill(-1); d[lander.tile] = 0
+  const qq = [lander.tile]
+  for (let k = 0; k < qq.length; k++) for (const n of wg.neighbours8(w, h, qq[k])) if (s.world.tiles[n].terrain === 'water' && d[n] < 0) { d[n] = d[qq[k]] + 1; qq.push(n) }
+  const within = [0, 0, 0]
+  for (let i = 0; i < s.world.tiles.length; i++) {
+    if (s.world.tiles[i].terrain === 'water' || !wg.isCoastal(w, h, s.world.tiles, i) || st.foundingProblem(s, i) || !wg.landingViable(w, h, s.world.tiles, i)) continue
+    let best = 1e9
+    for (const n of wg.neighbours8(w, h, i)) if (d[n] >= 0) best = Math.min(best, d[n])
+    for (let t = 0; t < 3; t++) if (best <= C.lander.moves * (t + 1)) within[t]++
+  }
+  const wd = wg.sailingDistance(w, h, s.world.tiles, i => wg.isLand(s.world.tiles[i]) && wg.isCoastal(w, h, s.world.tiles, i) && wg.landingViable(w, h, s.world.tiles, i))
+  return { coast: [found % w, Math.floor(found / w)], dx, dz, heads, band: wg.voyageBand(), splashdownDistance: wd[lander.tile], viableSitesWithinTurns: within, offEdge: wg.offEdge(w, h, lander.tile) }
+})
+note('splashdown', { ...t1, ...coast })
+
+// the first tap anywhere takes the lines away; this one is on the lander, so it also selects it
+const firstSheet = await selectLander()
+note('first tap', { linesGone: await page.evaluate(() => !window.fairholm.opening?.showing), sheet: firstSheet })
+await shot('01b-the-lander-selected')
+
+// the first heading: sensible but not straight at the coast, forty five degrees off it
+const sign = (v) => v > 0 ? 1 : v < 0 ? -1 : 0
+const toward = [sign(coast.dx), sign(coast.dz)]
+const off = toward[0] !== 0 && toward[1] !== 0 ? [toward[0], 0] : toward[0] === 0 ? [1, toward[1]] : [toward[0], 1]
+
+// ---- 2: the first move, by tap and hold, with a frame part way through it -----------------------
+// held half way through, because a headless browser draws too few frames to catch the middle
+await page.evaluate(() => { window.fairholm.scene.holdMoveAt = 0.5 })
+const m1 = await holdToward(off)
+const started = await page.waitForFunction(() => { const sc = window.fairholm.scene; return sc.moving && sc.ghostAt(sc.cam.view.activeUnit ?? -1) !== null }, null, { timeout: 10000 }).then(() => true, () => false)
+if (!started) {
+  console.log('the hold did not start a move', JSON.stringify(m1), JSON.stringify(await page.evaluate(() => { const a = window.fairholm; return { active: a.scene.cam.view.activeUnit, sheet: a.sheet, view: a.scene.cam.view, moving: a.scene.moving, toast: document.querySelector('#toast')?.textContent, lander: a.state.units.find(u => u.kind === 'lander' && u.owner === 0)?.tile } })))
+  await shot('debug-hold')
+  process.exit(1)
+}
+await page.waitForTimeout(1500)
+const mid1 = await midMove(m1.id)
+await shot('02a-first-move-under-way')
+note('first move, half way', mid1)
+await page.evaluate(() => { window.fairholm.scene.holdMoveAt = null })
+await waitMove()
+const t2 = await seen()
+note('first move, by a hold', { heading: off, ...m1, ...t2 })
+await shot('02-after-the-first-move')
+
+// ---- 3: the move on which land is sighted -----------------------------------------------------
+let sightedOn = t2.landKnown > 0 ? 1 : 0
+let moveNo = 1
+for (let k = 0; k < 3 && !sightedOn; k++) {
+  await endTurn()
+  await selectLander()
+  const m = await compassToward(toward)
+  await page.waitForTimeout(300)
+  const mid = await midMove(m.id)
+  await waitMove()
+  moveNo++
+  const t = await seen()
+  note(`move ${moveNo}, by the compass`, { ...m, mid, ...t })
+  if (t.landKnown > 0) sightedOn = moveNo
+}
+note('land sighted on move', sightedOn)
+await shot('03-land-sighted')
+
+// ---- 4: two moves along the coast ---------------------------------------------------------------
+// along the coast: the heading a player scouting for a site would take, the one whose turn's
+// sailing keeps land in sight and shows the most ground nobody has seen
+const alongHeading = () => page.evaluate(() => {
+  const a = window.fairholm, s = a.state, w = s.world.width, h = s.world.height
+  const u = s.units.find(x => x.owner === 0 && x.kind === 'lander')
+  const r = 3
+  let best = null
+  for (const d of [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]) {
+    const end = a.headingTarget(u, d[0], d[1])
+    if (end === null) continue
+    // the tiles a straight run to the end would see, and how many of them are new, and whether
+    // known land stays in sight at the end
+    const fresh = new Set()
+    let x = u.tile % w, z = Math.floor(u.tile / w), landAtEnd = false
+    for (;;) {
+      x += d[0]; z += d[1]
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        const xx = x + dx, zz = z + dz
+        if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue
+        if (!s.world.tiles[zz * w + xx].explored) fresh.add(zz * w + xx)
+      }
+      if (z * w + x === end) {
+        for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+          const xx = x + dx, zz = z + dz
+          if (xx >= 0 && zz >= 0 && xx < w && zz < h && s.world.tiles[zz * w + xx].explored && s.world.tiles[zz * w + xx].terrain !== 'water') landAtEnd = true
+        }
+        break
+      }
+    }
+    const score = fresh.size + (landAtEnd ? 1000 : 0)
+    if (!best || score > best.score) best = { d, score, fresh: fresh.size, landAtEnd }
+  }
+  return best
+})
+const sites = []
+for (let k = 0; k < 2; k++) {
+  await endTurn()
+  await selectLander()
+  const pick = await alongHeading()
+  const along = pick.d
+  await page.evaluate(() => { window.fairholm.scene.holdMoveAt = 0.5 })
+  const m = await compassToward(along)
+  await page.waitForFunction(() => { const sc = window.fairholm.scene; return sc.moving && sc.ghostAt(sc.cam.view.activeUnit ?? -1) !== null }, null, { timeout: 10000 }).catch(() => {})
+  await page.waitForTimeout(1500)
+  const mid = await midMove(m.id)
+  await page.evaluate(() => { window.fairholm.scene.holdMoveAt = null })
+  await waitMove()
+  const t = await seen()
+  const legal = await page.evaluate(async () => {
+    // legal coastal ground a lander could beach beside, among what has been seen
+    const a = window.fairholm, s = a.state, w = s.world.width, h = s.world.height
+    const wg = await import('/src/sim/worldgen.ts')
+    const st = await import('/src/sim/settlement.ts')
+    let n = 0, viable = 0
+    for (let i = 0; i < s.world.tiles.length; i++) {
+      const t = s.world.tiles[i]
+      if (!t.explored || t.terrain === 'water' || !wg.isCoastal(w, h, s.world.tiles, i) || st.foundingProblem(s, i)) continue
+      n++
+      if (wg.landingViable(w, h, s.world.tiles, i)) viable++
+    }
+    return { legalCoastSeen: n, viableSeen: viable }
+  })
+  sites.push(legal)
+  note(`along the coast ${k + 1}`, { ...m, newInSightExpected: pick.fresh, landStaysInSight: pick.landAtEnd, mid, ...t, ...legal })
+  await shot(`04${'ab'[k]}-along-the-coast-${k + 1}`)
+}
 
 // ---- 5: the founding preview ---------------------------------------------------------------------
-// sail on until the shore is beside the lander, then look at founding there
+// the best legal shore beside the lander, tapped on the map as a player would; if the lander is not
+// beside one, it sails to the best site in reach first
+const besideShore = () => page.evaluate(async () => {
+  const a = window.fairholm, s = a.state, w = s.world.width, h = s.world.height
+  const wg = await import('/src/sim/worldgen.ts')
+  const st = await import('/src/sim/settlement.ts')
+  const auto = await import('/src/sim/autopilot.ts')
+  const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
+  const shore = wg.neighbours8(w, h, lander.tile).filter(n => s.world.tiles[n].terrain !== 'water' && s.world.tiles[n].explored && !st.foundingProblem(s, n)).sort((x, y) => auto.siteScore(s, y) - auto.siteScore(s, x))[0]
+  if (shore !== undefined) return { shore }
+  // the best site seen, and the water beside it to hold
+  const site = auto.bestLanding(s, lander.tile, 6)
+  return site ? { site: site.tile, water: site.water } : null
+})
+let shoreAt = null
+const near = await besideShore()
+if (near?.shore !== undefined) shoreAt = near.shore
+else if (near?.site !== undefined) {
+  // a turn's sailing to the water beside the best site in sight, by a hold on it
+  await endTurn()
+  await selectLander()
+  const p = await bringOnScreen(near.water)
+  await page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
+  await page.mouse.move(p[0], p[1]); await page.mouse.down(); await page.waitForTimeout(HOLD_MS); await page.mouse.up()
+  await waitMove()
+  note('sailed to the best site seen, by a hold', { water: near.water, onScreen: p.map(Math.round) })
+  shoreAt = (await besideShore())?.shore ?? null
+}
 let preview = null
-for (let turn = 0; turn < 10 && !preview; turn++) {
-  const act = await page.evaluate(async () => { const auto = await import('/src/sim/autopilot.ts'); return auto.openingAction(window.fairholm.state) })
-  if (act && act.t === 'found') {
-    preview = await page.evaluate((act) => {
-      const a = window.fairholm
-      a.scene.cam.view.activeUnit = act.unit
-      a.open({ kind: 'unit', id: act.unit })
-      // the app frames the shore above the sheet by itself
-      a.setFoundTarget(act.tile)
-      return { tile: act.tile, turn: a.state.turn, control: !!document.querySelector('#sheet .found .btn.primary'), words: document.querySelector('#sheet .found .about')?.textContent?.slice(0, 160) }
-    }, act)
-    break
-  }
-  await sail()
-  await page.evaluate(() => window.fairholm.endTurn())
-  await settle(200)
+if (shoreAt !== null) {
+  await settle(300)
+  await selectLander()
+  const p = await page.evaluate((t) => { const a = window.fairholm, w = a.state.world.width; return a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5) }, shoreAt)
+  await tapAt(p[0], p[1])
+  await settle(500)
+  preview = await page.evaluate((t) => {
+    const a = window.fairholm, w = a.state.world.width
+    return { shore: [t % w, Math.floor(t / w)], focused: a.foundTarget === t, turn: a.state.turn, control: !!document.querySelector('#sheet .found .btn.primary'), words: document.querySelector('#sheet .found .about')?.textContent?.slice(0, 160) }
+  }, shoreAt)
 }
 note('founding preview', preview)
-await settle(400)
 await shot('05-founding-preview')
-// and a refusal, for the record: the preview on a water tile and a mountain if one is in sight
-const refusals = await page.evaluate(async () => {
-  const a = window.fairholm
-  const st = await import('/src/sim/settlement.ts')
-  const s = a.state
-  const water = s.world.tiles.findIndex(t => t.terrain === 'water' && t.explored)
-  const mountain = s.world.tiles.findIndex(t => t.terrain === 'mountain' && t.explored)
-  return { water: water >= 0 ? st.foundingProblem(s, water) : 'none in sight', mountain: mountain >= 0 ? st.foundingProblem(s, mountain) : 'none in sight' }
-})
-note('refusals', refusals)
 
-// ---- 6: the turn after founding -------------------------------------------------------------------
+// ---- 6: a wave of the recall fleet, through the fog ---------------------------------------------
 const founded = await page.evaluate(async () => {
   const a = window.fairholm
-  const auto = await import('/src/sim/autopilot.ts')
-  const act = auto.openingAction(a.state)
-  if (!act || act.t !== 'found') return null
-  const ok = await a.found(act.unit, act.tile)
-  return { ok, turn: a.state.turn, name: a.state.settlements.find(x => x.owner === 0)?.name, boat: a.state.units.filter(u => u.owner === 0).map(u => u.kind) }
+  const lander = a.state.units.find(u => u.owner === 0 && u.kind === 'lander')
+  if (!lander || a.foundTarget === null) return null
+  return a.found(lander.id, a.foundTarget)
 })
 note('founded', founded)
-await settle(300)
-await shot('06a-founded-the-settlement-screen')
-await page.evaluate(() => { window.fairholm.closeSheet(); window.fairholm.endTurn() })
-await settle(500)
-const t6 = await page.evaluate(() => {
-  const a = window.fairholm
-  const home = a.state.settlements.find(x => x.owner === 0)
-  const w = a.state.world.width
-  const water = [home.tile - 1, home.tile + 1, home.tile - w, home.tile + w, home.tile - w - 1, home.tile - w + 1, home.tile + w - 1, home.tile + w + 1].filter(t => a.state.world.tiles[t] && a.state.world.tiles[t].terrain === 'water')
-  return { turn: a.state.turn, pop: home.colonists.length, waterInRing: water.length, wharf: home.buildings.wharf, lander: a.state.units.some(u => u.owner === 0 && u.kind === 'lander'), lighter: a.state.units.some(u => u.owner === 0 && u.kind === 'lighter') }
-})
-note('the turn after founding', t6)
-await shot('06-the-turn-after-founding')
-
-// ---- 7: a colonist founding inland --------------------------------------------------------------
-const inland = await page.evaluate(async () => {
-  const a = window.fairholm
-  const st = await import('/src/sim/settlement.ts')
-  const wg = await import('/src/sim/worldgen.ts')
-  const s = a.state, w = s.world.width, h = s.world.height
-  const home = s.settlements.find(x => x.owner === 0)
-  // a colonist off the roster, walked to legal inland ground three tiles off
-  a.dispatch({ t: 'equip', settlement: home.id, colonist: 0, as: 'colonist' })
-  const u = s.units.find(x => x.owner === 0 && x.kind === 'colonist')
-  let target = -1
-  for (let r = 3; r <= 5 && target < 0; r++) {
-    for (let dz = -r; dz <= r && target < 0; dz++) for (let dx = -r; dx <= r && target < 0; dx++) {
-      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue
-      const x = (home.tile % w) + dx, z = Math.floor(home.tile / w) + dz
-      if (x < 0 || z < 0 || x >= w || z >= h) continue
-      const t = z * w + x
-      if (!wg.isLand(s.world.tiles[t]) || wg.isCoastal(w, h, s.world.tiles, t)) continue
-      if (st.foundingProblem(s, t) !== null) continue
-      target = t
-    }
-  }
-  if (target < 0) return { target }
-  // walk there, as many turns as it takes
-  for (let i = 0; i < 12 && u.tile !== target; i++) {
-    const units = await import('/src/sim/units.ts')
-    const path = units.findPath(s, u, u.tile, target)
-    if (!path) return { target, noPath: true }
-    a.dispatch({ t: 'moveUnit', unit: u.id, path })
-    if (u.tile !== target) a.endTurn()
-  }
-  a.scene.cam.view.activeUnit = u.id
-  a.scene.cam.view.selectedTile = u.tile
-  a.open({ kind: 'unit', id: u.id })
-  a.setFoundTarget(u.tile)
-  return { target, at: u.tile, turn: s.turn, problem: st.foundingProblem(s, u.tile), control: !!document.querySelector('#sheet .found .btn.primary') }
-})
-note('inland colonist', inland)
 await settle(400)
-await shot('07a-inland-founding-preview')
-const foundedInland = await page.evaluate(async () => {
-  const a = window.fairholm
-  const u = a.state.units.find(x => x.owner === 0 && x.kind === 'colonist')
-  if (!u) return null
-  const ok = await a.found(u.id)
-  return { ok, settlements: a.state.settlements.filter(x => x.owner === 0).map(x => x.name) }
-})
-note('founded inland', foundedInland)
-await settle(400)
-await shot('07-a-later-colonist-founding-inland')
-
-// ---- 8: a wave of the recall fleet, through the fog ---------------------------------------------
 const wave = await page.evaluate(async () => {
   const a = window.fairholm
   const s = a.state
   a.closeSheet()
-  // declare, and run until a wave is at sea
   s.charters[0].signatories = [0, 1, 2, 3, 4, 5]
   for (const st of s.settlements) if (st.owner === 0) st.resolve = 1
   try { a.dispatch({ t: 'declare' }) } catch (e) { return { error: String(e) } }
   for (let i = 0; i < 40; i++) {
     const d = s.declaration
-    const at = d && d.waves.find(w => !w.landed)
-    if (at && at.turnsToLand < 3) break
+    if (d && d.waves.some(w => !w.landed && w.turnsToLand === 3)) break
     a.endTurn()
   }
   const d = s.declaration
@@ -255,22 +414,23 @@ const wave = await page.evaluate(async () => {
   const w = s.world.width
   const home = s.settlements.find(x => x.owner === 0)
   a.scene.glideTo(Math.floor((wv.at + home.tile) / 2), 32)
-  return { turn: s.turn, turnsToLand: wv.turnsToLand, at: [wv.at % w, Math.floor(wv.at / w)], target: [wv.target % w, Math.floor(wv.target / w)], explored: s.world.tiles[wv.at].explored }
+  return { turn: s.turn, turnsToLand: wv.turnsToLand, at: [wv.at % w, Math.floor(wv.at / w)], target: [wv.target % w, Math.floor(wv.target / w)] }
 })
 note('wave', wave)
 await settle(500)
-await shot('08-a-wave-approaching-through-fog')
+note('wave camera', await page.evaluate(() => { const a = window.fairholm; return { view: a.scene.cam.view, overhang: a.scene.cam.overhang, moving: a.scene.moving, held: a.sheetEl.classList.contains('held'), sheet: a.sheet } }))
+await shot('06a-a-wave-splashes-down')
 if (wave && wave.turnsToLand !== undefined) {
-  for (let k = 1; k <= 2; k++) {
+  for (let k = 1; k <= 3; k++) {
     await page.evaluate(() => window.fairholm.endTurn())
     await settle(300)
-    const w2 = await page.evaluate(() => { const d = window.fairholm.state.declaration; const wv = d.waves.find(x => !x.landed) || d.waves[d.waves.length - 1]; return { turn: window.fairholm.state.turn, turnsToLand: wv.turnsToLand, landed: wv.landed } })
-    note(`wave, ${k} turn later`, w2)
-    await shot(`08${'bc'[k - 1]}-the-wave-${k}-turn-on`)
+    const w2 = await page.evaluate(() => { const s = window.fairholm.state, d = s.declaration, w = s.world.width; const wv = d.waves[0]; return { turn: s.turn, turnsToLand: wv.turnsToLand, landed: wv.landed, at: [wv.at % w, Math.floor(wv.at / w)] } })
+    note(`wave, ${k} turn${k > 1 ? 's' : ''} on`, w2)
+    await shot(`06${'bcd'[k - 1]}-the-wave-${k}-turn${k > 1 ? 's' : ''}-on`)
   }
 }
 
-// ---- 9: a save from an earlier build is turned away in plain words --------------------------------
+// ---- 7: a save from an earlier build is turned away in plain words ----------------------------------
 await page.evaluate(() => {
   // the app saves when the page goes out of sight, which a reload is; hold that off so the old
   // save is what the boot finds
@@ -286,7 +446,6 @@ const oldSave = await page.evaluate(() => ({
   toast: document.querySelector('#toast')?.textContent || '', oldKeyLeft: localStorage.getItem('fairholm.save.v1') !== null,
 }))
 note('old save', oldSave)
-await shot('09-an-old-save-turned-away')
 
 const perf = await page.evaluate(() => ({ calls: window.fairholm.scene.renderer.info.render.calls, tris: window.fairholm.scene.renderer.info.render.triangles }))
 note('draw', perf)

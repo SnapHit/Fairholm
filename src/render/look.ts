@@ -194,6 +194,10 @@ export const SURFACE = {
   /** Rolling landform under everything, so flat country is not a plane. Amplitude in tiles, scale in
    *  cycles per tile, so a smaller scale is broader country. */
   landform: { amplitude: 0.78, scale: 0.014, detail: 0.2, detailScale: 0.05 },
+  /** The lowest the landform may take land, in tiles above the sea, how soft that floor is, and how
+   *  much of a vertex must be land, nought to one, before the floor begins to apply. Without it a
+   *  low stretch of grassland where the landform dips was drawn under the water. */
+  landFloor: { height: 0.05, soft: 0.05, from: 0.6 },
   /** Ploughed ground and roads flatten what they cross. */
   improvedFlatten: 0.4,
   /** How much deeper open water sits than the shallows. Applied through the blended water weight
@@ -539,6 +543,18 @@ export const FOG = {
   rememberedDim: 0.8,
   /** Beyond the map's edge nothing is known; the known fades out over this many tiles. */
   edgeFade: 1.5,
+}
+
+/** A move drawn on the map: a unit's picture travels the tiles it went through while the fog lifts
+ *  ahead of it, and the camera follows. How long a tile takes, in milliseconds, at the move's even
+ *  pace (it eases in over the first tile and out over the last); how hard the camera pulls toward
+ *  the unit each sixtieth of a second, nought to one; and how far ahead of the unit it looks, in tiles, so the
+ *  ground being revealed is on the screen rather than behind the unit. */
+export const MOVE = {
+  tileMs: 150,
+  easeTiles: 0.8,
+  follow: 0.16,
+  lookAhead: 1.6,
 }
 
 /** The coast a wave at sea might still come ashore on, painted while it is at sea, military brief

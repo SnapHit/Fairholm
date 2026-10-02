@@ -79,13 +79,15 @@ These are finished and might be wrong. Unfinished things are in the README and a
     timber, poor ore, a river" is computed from reach-two tiles; nobody has checked that it matches
     what the player sees on the ground.
 
-12. **The voyage and the fog have not been played.** Added 2 October 2026. The lander sails one tile
-    a turn and the splashdown is four to six tiles from a viable coast (decision 94); the autopilot
-    founds on turns three to seven across twenty-seven worlds, and a player who sails the wrong way
-    first has nothing but the haze to tell them so. The haze's colours, the frontier's softness, the
-    remembered ground's dimming and the opening type size were judged from headless screenshots on
-    one seed. Whether four turns of fog before the first decision hooks or bores is the thing this
-    session could not measure. `C.lander.*`, `FOG` in `src/render/look.ts`.
+12. **The voyage and the fog have not been played.** Added 2 October 2026, and changed the same day
+    for the fast lander. The lander sails six tiles a turn and sees three, and the splashdown is five
+    to eight tiles from a viable coast (decisions 114 and 115): land is in sight within a move or two
+    on any heading toward it, and on the rig's seed six viable sites lie within a turn's sailing. A
+    player who sails straight away from land first still has only the haze to tell them so. Whether
+    the turns before founding now feel like choosing, or are over before anything was compared, was
+    judged from headless screenshots on one seed and from measurement, not from play. The haze's
+    colours, the frontier's softness and the move's pace (`MOVE.tileMs`) were judged the same way.
+    `C.lander.*`, `C.worldgen.sightedWithinMoves`, `FOG` and `MOVE` in `src/render/look.ts`.
 
 13. **Battery fire is the first implementation of a rule the brief calls "automatic".** Decision 110.
     Half a hit a battery a turn, four hits to drive the Company's escort off, no slot cap. A
@@ -111,8 +113,8 @@ These are finished and might be wrong. Unfinished things are in the README and a
 - **Onboarding beyond the queue.** The intent ladder (fed, first consignment, second settlement,
   refine) and the one-sentence explanations are in; there is no guidance on the first hold, no
   highlighting of the first tappable tile, and the five lines over the splashdown are the only
-  scripted moment. The lander's queue card says to tap it and hold a water tile; nothing shows
-  which way land lies, by design.
+  scripted moment. The lander's queue card says to tap it and hold a water tile or pick a heading in
+  its sheet; nothing shows which way land lies, by design.
 - **The return screen's "what moved"** takes the last three dispatch entries of the current turn,
   which after a reload is usually empty because the save is written after the turn's dispatch is
   already in the log for the previous turn. It works; it is often thin.
@@ -193,7 +195,9 @@ Places where a change in one file breaks something in a distant file without the
   `naval.ts` removes blockade ships, so the win condition is spread across three files.
 - **Rivals' landers sail and found inside the rivals system** (`rivalVoyages`), by the autopilot in
   `src/sim/autopilot.ts`, which is also what the tests use to get a game ashore. A change to the
-  autopilot's site score moves every pin at once and changes where every rival settles.
+  autopilot's site score moves every pin at once and changes where every rival settles. They are as
+  fast as the player and keep clear of the player's lander by `C.rivals.playerLanderClearance`
+  (decision 124); on small maps one in thirty still comes ashore four tiles from the player.
 - **`withTerms` in `app.ts` wraps any word that is a glossary key.** The glossary keys include
   every good, `turn`, `free`, `master`, `works`, `quality`. Adding a key such as `the` or `turn`
   variants would make every card a mess of dotted underlines; adding `free` already underlines the

@@ -65,6 +65,12 @@ export const SEASON_NAMES = ['new green', 'deep summer', 'the turn of the leaf',
 export function runTurn(s: GameState, systems: System[]): void {
   s.turn++
   s.actionsThisTurn = 0
+  // the new turn's movement, once, before anything moves: a unit with somewhere to go (a goto, a
+  // haul, a patrol) goes there on this turn's movement in the orders step, and a unit sent further
+  // than it could go last turn carries straight on rather than waiting a turn with its moves unused.
+  // Whatever an order spends is spent; the player has the rest. Build specification section 6
+  // leaves the moment open; see DECISIONS.md 118
+  for (const u of s.units) u.moves = maxMoves(u)
   const ctx = makeContext(s)
   for (const sys of systems) {
     if (!sys.enabled(C)) continue
@@ -75,9 +81,7 @@ export function runTurn(s: GameState, systems: System[]): void {
       pushDispatch(s, { turn: s.turn, kind: 'note', text: `The ${sys.id} system failed this turn and was skipped: ${(err as Error).message}` })
     }
   }
-  // restore movement for every unit
-  for (const u of s.units) u.moves = maxMoves(u)
-  // and what everything that moved can now see is known
+  // what everything that moved can now see is known
   reveal(s)
 }
 

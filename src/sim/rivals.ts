@@ -30,21 +30,35 @@ export function rivalVoyages(s: GameState, ctx: TurnContext) {
     if (ch.player || ch.fell) continue
     const lander = s.units.find(u => u.owner === ch.id && u.kind === 'lander')
     if (!lander) continue
-    const site = bestLanding(s, lander.tile)
+    // somewhere clear of the others, so a rival as fast as the player does not come ashore on top
+    // of them: every other charter's settlements, and the player's lander by as far as the coast
+    // it can sight in its first moves, which is the coast its splashdown was measured against.
+    // Where that leaves nothing in reach, the lander by the same berth as a settlement; then
+    // anywhere legal
+    const settled = s.settlements.filter(x => x.owner !== ch.id).map(x => ({ tile: x.tile, clear: C.rivals.landingClearance }))
+    const player = s.units.filter(u => u.owner === 0 && u.kind === 'lander').map(u => u.tile)
+    const site = bestLanding(s, lander.tile, undefined, [...settled, ...player.map(tile => ({ tile, clear: C.rivals.playerLanderClearance }))])
+      ?? bestLanding(s, lander.tile, undefined, [...settled, ...player.map(tile => ({ tile, clear: C.rivals.landingClearance }))])
+      ?? bestLanding(s, lander.tile)
     if (!site) continue
-    if (neighbours8(w, h, lander.tile).includes(site.tile)) {
-      const st = foundSettlement(s, site.tile, ch.id, [], `${ch.name.split(' ')[0]} Landing`)
+    const found = () => {
+      // named for the charter's own word: "The Sable Company" lands at Sable Landing, never at The
+      // Landing, which is the player's
+      const st = foundSettlement(s, site.tile, ch.id, [], `${ch.name.replace(/^The /, '').split(' ')[0]} Landing`)
       st.abstractPop = 3
       st.nameChosen = true
       ch.strength = 2
       ch.landing = st.tile
       s.units = s.units.filter(u => u !== lander)
       if (canSee(s, site.tile)) ctx.log({ kind: 'rival', text: `${ch.name} came ashore and founded ${st.name}.`, tile: site.tile })
-      continue
     }
+    if (neighbours8(w, h, lander.tile).includes(site.tile)) { found(); continue }
     lander.moves = maxMoves(lander)
     const path = findPath(s, lander, lander.tile, site.water)
     if (path && path.length) { lander.path = path; advance(s, lander) }
+    // founding costs no movement, for a rival as for the player: arriving beside the site, it
+    // beaches the same turn rather than a turn behind a player who did the same
+    if (neighbours8(w, h, lander.tile).includes(site.tile) && foundingProblem(s, site.tile) === null) found()
   }
 }
 

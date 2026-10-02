@@ -48,16 +48,22 @@ describe('market pins', () => {
   // changed rounding rule moves the exact number.
   it('150 linen lands the price on the exact number the formula gives', () => {
     const s = landed('pin-market')
-    const st = s.settlements[0]
+    const st = s.settlements.find(x => x.owner === 0)!
     expect(sellPrice(s, 'linen')).toBe(C.market.goods.linen.open)
     st.stock.linen = 150
     const r = consign(s, st, 'linen', 150, makeContext(s))
     const expected = Math.max(C.market.goods.linen.floor, Math.min(C.market.goods.linen.ceiling, Math.round(C.market.goods.linen.open - 150 / C.market.goods.linen.volumeToShift)))
     expect(sellPrice(s, 'linen')).toBe(expected)
     expect(r.units).toBe(150)
-    // recovery: quiet turns take pressure off at the recovery rate; 60 turns clears 150 at 3 a turn
+    // recovery: quiet turns take pressure off at the recovery rate; 60 turns clears 150 at 3 a turn.
+    // What is left is the rivals' own linen coupled into the player's table. Re-recorded on 2 October
+    // 2026 for the fast lander: old 0, new 0.1621 to four places. The rival landers now sail six
+    // tiles a turn, keep clear of the other charters and found the turn they reach their coast, so
+    // they are trading inside the sixty turns' window and the last of their coupled sales has not
+    // quite recovered. With the rivals switched off the pressure is still exactly 0, which is what
+    // this protects
     for (let i = 0; i < 60; i++) applyAction(s, { t: 'endTurn' })
-    expect(s.market.tables[0].linen.pressure).toBe(0)
+    expect(s.market.tables[0].linen.pressure).toBeCloseTo(0.1621, 4)
     expect(sellPrice(s, 'linen')).toBeGreaterThanOrEqual(C.market.goods.linen.open - 1)
   })
 
@@ -65,7 +71,7 @@ describe('market pins', () => {
   // prices rather than the opening price times the volume, and the charge and freight rate.
   it('a 400 unit consignment is paid lot by lot at falling prices', () => {
     const s = landed('pin-lots')
-    const st = s.settlements[0]
+    const st = s.settlements.find(x => x.owner === 0)!
     st.stock.linen = 400
     const rate = 1 - s.company.charge   // the landing has no freight loss
     // independent re-derivation of what the lots should pay
@@ -132,17 +138,29 @@ describe('turn loop pin', () => {
   // Old: foodStore 108, stock { timber: 10, tooling: 8, flax: 40 }, prices { timber: 1, tooling: 6,
   // arms: 6, instruments: 15, linen: 11 }, units 2, dispatch 49, nextId 11. The founding turn and
   // the rival count did not move.
+  //
+  // Re-recorded a third time on 2 October 2026 for the fast lander (DECISIONS.md 114 to 121): it
+  // sails six tiles a turn and sees three; the splashdown is five to eight tiles of open water from
+  // a coast, placed where land lies in the most directions; WORLDGEN_VERSION went to three, which
+  // reseeds every world, so pin-seed is a different map; and movement now comes back at the start of
+  // the turn loop. The autopilot founds on turn 1 rather than turn 3, so the fifty turns end on turn
+  // 51; the rivals keep clear of the other charters and found the turn they reach their coast.
+  // Old: founded on turn 3, turn 53, foodStore 4, stock { timber: 40, tooling: 8 }, prices
+  // { timber: 2, tooling: 4, arms: 6, instruments: 13, linen: 11 }, units 1, dispatch 53, nextId 10.
+  // New: founded on turn 1, turn 51, prices { instruments: 14 }, dispatch 41, both from the turns
+  // the voyage no longer takes and the rivals' earlier trade; foodStore, stock, the timber price,
+  // units, nextId, the rival count and everything else did not move.
   it('fifty turns from a fixed seed reproduce the recorded aggregates', () => {
     const s = landed('pin-seed')
-    expect(s.turn).toBe(3)
+    expect(s.turn).toBe(1)
     for (let i = 0; i < 50; i++) applyAction(s, { t: 'endTurn' })
     expect(aggregates(s)).toEqual({
-      turn: 53, pop: 4, settlements: 1, rivalSettlements: 3,
+      turn: 51, pop: 4, settlements: 1, rivalSettlements: 3,
       gold: 40, word: 0, passages: 0,
       foodStore: 4, frame: 0,
       stock: { timber: 40, tooling: 8 },
-      prices: { timber: 2, tooling: 4, arms: 6, instruments: 13, linen: 11 },
-      charge: 0.08, units: 1, dispatch: 53, grievance: 0, fleet: 4,
+      prices: { timber: 2, tooling: 4, arms: 6, instruments: 14, linen: 11 },
+      charge: 0.08, units: 1, dispatch: 41, grievance: 0, fleet: 4,
       nextId: 10, demand: null, embargoed: 0,
     })
   })
@@ -169,12 +187,12 @@ describe('grievance gate pin', () => {
     const g = createGame('gate-seed', { size: 'small', difficulty: 'generous' }, 5)
     const founded = playOpening(g)
     g.rng.play = [11, 22, 33, 44]
-    const st = g.settlements[0]
+    const st = g.settlements.find(x => x.owner === 0)!
     expect(st.colonists.length).toBe(5)
     st.buildings.meeting = 1
-    applyAction(g, { t: 'assignWorker', settlement: 0, colonist: 0, job: { kind: 'building', line: 'meeting' } })
-    applyAction(g, { t: 'assignWorker', settlement: 0, colonist: 1, job: { kind: 'building', line: 'meeting' } })
-    applyAction(g, { t: 'autoAssign', settlement: 0 })
+    applyAction(g, { t: 'assignWorker', settlement: st.id, colonist: 0, job: { kind: 'building', line: 'meeting' } })
+    applyAction(g, { t: 'assignWorker', settlement: st.id, colonist: 1, job: { kind: 'building', line: 'meeting' } })
+    applyAction(g, { t: 'autoAssign', settlement: st.id })
     let gate = -1
     for (let i = 0; i < 300; i++) {
       st.foodStore = 50   // fed, but below the granary threshold so the roster stays five
@@ -432,7 +450,7 @@ describe('queue ceiling, adversarial', () => {
     const shore = neighbours8(w, s.world.height, nearLanding[0]).find(n => isLand(s.world.tiles[n])) ?? ch.landing
     // thirty idle colonists and five stuck haulers
     for (let k = 0; k < 30; k++) s.units.push(makeUnit(s, 0, 'colonist', mine[k % mine.length].tile, makeColonist(s, 'free')))
-    for (let k = 0; k < 5; k++) { const u = makeUnit(s, 0, 'hauler', mine[k].tile, null); u.order = { kind: 'haul', stops: [{ settlement: 0, load: {}, unload: {} }], next: 0, risk: 'avoid' }; u.since['contact'] = s.turn - 3; s.units.push(u) }
+    for (let k = 0; k < 5; k++) { const u = makeUnit(s, 0, 'hauler', mine[k].tile, null); u.order = { kind: 'haul', stops: [{ settlement: mine[0].id, load: {}, unload: {} }], next: 0, risk: 'avoid' }; u.since['contact'] = s.turn - 3; s.units.push(u) }
     // a demand, a declaration with a wave at sea, alarmed predecessors, tense rivals
     s.company.demand = { turnOffered: s.turn, rise: 0.03, good: 'timber' }
     s.declaration = { declared: true, turnDeclared: s.turn - 2, waves: [{ id: 1, units: [{ kind: 'regulars', quality: 'raw' }], target: shore, at: nearLanding[0], turnsToLand: 4, landed: false, excluded: [] }], interventionProgress: 0, nextWaveId: 2, won: false, lost: false, intervened: null }
@@ -488,8 +506,11 @@ describe('queue ceiling, adversarial', () => {
     playOpening(s)
     s.charters[0].unlocked.military = true
     const w = s.world.width
-    const home = s.settlements[0].tile
+    const home = s.settlements.find(x => x.owner === 0)!.tile
     const spots = [home + 1, home - 1, home + w, home - w].filter(n => n >= 0 && n < s.world.tiles.length && isLand(s.world.tiles[n]))
+    // two hostiles beside the settlement are the bug's condition; without them this would pass for
+    // the wrong reason and read as the bug fixed
+    if (spots.length < 2) throw new Error('the setup needs two land tiles beside the settlement')
     for (const n of spots.slice(0, 2)) s.units.push(makeUnit(s, -1, 'regulars', n, null))
     const items = [...deriveQueue(s, SYSTEMS).shown, ...deriveQueue(s, SYSTEMS).folded].flatMap(g => g.items)
     expect(new Set(items.map(it => it.key)).size).toBe(items.length)

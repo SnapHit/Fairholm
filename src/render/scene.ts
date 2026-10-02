@@ -26,7 +26,7 @@ import { buildTerrain, setOverlayTile, clearOverlay, type TerrainBuild } from '.
 import { buildRibbons } from './ribbons'
 import { buildProps } from './props'
 import { buildSettlements } from './settlements'
-import { buildUnits, buildArrival, buildGhostLander, makeRing } from './units'
+import { buildUnits, buildArrival, buildGhostLander, buildGhost, buildPlume, stacksAt, makeRing } from './units'
 import { season } from '../sim/turn'
 import { hex, tileColour, clearColour, type RGB } from './palette'
 import { workableTiles, tileYield, tileOffers } from '../sim/labour'
@@ -36,10 +36,11 @@ import { seedNumber } from './seed'
 import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
 import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
-import { spriteSheet, buildBillboards, setBillboardFade, manifestFrom, type AtlasManifest, type BillboardTag } from './billboards'
+import { spriteSheet, buildBillboards, setBillboardFade, placeBillboard, manifestFrom, type AtlasManifest, type BillboardTag } from './billboards'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
-import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL, WAVE_COAST } from './look'
+import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL, WAVE_COAST, MOVE } from './look'
+import { sightOf } from '../sim/fog'
 import { waveCandidates } from './selectors'
 
 /** Where each sheet stands in the list handed to billboards.ts. */
@@ -49,6 +50,48 @@ const SHEET_UNITS = 1
 // the whole of what the renderer knows about it: a new figure on the sheet under its kind's name
 // needs nothing here
 const UNITS_ATLAS = manifestFrom(UNITS_ATLAS_JSON, 'units.json')
+
+/** One unit's part in a move being drawn: the tiles it went through, from where it stood, and the
+ *  picture travelling them. */
+interface MoveTrail {
+  id: number
+  trail: number[]
+  ghost: THREE.InstancedMesh | null
+  plume: THREE.InstancedMesh | null
+  /** Where the picture was built, so the plume can be moved by an offset from it, and the height a
+   *  picture on the water stands at. */
+  x0: number
+  z0: number
+  ghostY: number
+  right: boolean
+}
+
+/** A move being drawn. The state has already moved on: the units are where they stopped and the
+ *  ground they saw is explored. This is the moment between, drawn from what was known before. */
+interface MoveAnim {
+  ids: Set<number>
+  /** What was explored before the move, one byte a tile. */
+  before: Uint8Array
+  trails: MoveTrail[]
+  /** For each tile the move reveals, the step of the move at which it comes into sight, as a
+   *  fraction of the way along; minus one for a tile the move does not reveal. */
+  when: Float32Array
+  /** What everything else of the player's can see, without the units that are moving. */
+  others: Uint8Array
+  started: boolean
+  start: number
+  /** When the last frame of the move was drawn, so the camera's pull is the same at any frame rate. */
+  lastTick: number
+  duration: number
+  steps: number
+  /** How far through the move the pictures are, in tiles. */
+  p: number
+  follow: number | null
+  /** Where on the screen, in pixels, the followed unit is kept: the middle of the map left beside
+   *  or above an open sheet, or the screen's middle when null. */
+  hold: [number, number] | null
+  done: (() => void) | null
+}
 
 export class Scene {
   renderer: THREE.WebGLRenderer
@@ -79,6 +122,11 @@ export class Scene {
   private fading: { k: number; settlements: Set<number>; units: Set<number> } | null = null
   private ghost: THREE.InstancedMesh | null = null
   beaching = false
+  /** A move being drawn, between being prepared before the action and finishing after it. */
+  private move: MoveAnim | null = null
+  /** Which way each unit of the player's last went, true for right, so a unit that stops keeps
+   *  facing the way it was going. View state only; nothing here is saved. */
+  private lastRight = new Map<number, boolean>()
   selRing: THREE.Mesh
   unitRing: THREE.Mesh
   /** One set of light uniforms, shared by every material on the map. */
@@ -115,6 +163,9 @@ export class Scene {
   /** Verification only: hold the level of detail where it is, so a frame can be shot with a tier
    *  switched off. Never set in play. */
   lockLod = false
+  /** Verification only: hold a move being drawn at this share of the way through it, so a frame
+   *  part way through can be shot on a machine too slow to catch one. Never set in play. */
+  holdMoveAt: number | null = null
   private lastState: GameState | null = null
   private lastWorldKey = ''
   private contextLost = false
@@ -137,7 +188,7 @@ export class Scene {
     this.selRing = makeRing(0xf4efe2, 0.52)
     this.unitRing = makeRing(0xffffff, 0.3)
     this.scene.add(this.selRing, this.unitRing)
-    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true }, false)
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; this.finishMove() }, false)
     canvas.addEventListener('webglcontextrestored', () => { this.contextLost = false; if (this.lastState) { this.lastWorldKey = ''; this.rebuild(this.lastState, 'full') } }, false)
   }
 
@@ -223,14 +274,23 @@ export class Scene {
    *  once per state change. */
   private updateVisibility(s: GameState) {
     if (!this.vis) return
-    const w = s.world.width, h = s.world.height, n = w * h
-    const tiles = s.world.tiles
     const mask = sightMask(s)
     this.visMask = mask
+    if (this.move) { this.writeMoveVisibility(s); return }
+    const n = s.world.width * s.world.height
+    const known = new Float32Array(n)
+    for (let i = 0; i < n; i++) known[i] = s.world.tiles[i].explored ? 1 : 0
+    this.writeVisibility(s, known, mask)
+  }
+
+  /** Write the fog's texture from how known each tile is, nought to one, and what is in sight. */
+  private writeVisibility(s: GameState, knownness: Float32Array, mask: Uint8Array) {
+    if (!this.vis) return
+    const w = s.world.width, h = s.world.height, n = w * h
     const data = this.vis.image.data as Uint8Array
     const far = new Int16Array(n).fill(-1)
     const queue: number[] = []
-    for (let i = 0; i < n; i++) if (tiles[i].explored) { far[i] = 0; queue.push(i) }
+    for (let i = 0; i < n; i++) if (knownness[i] >= 0.5) { far[i] = 0; queue.push(i) }
     for (let q = 0; q < queue.length; q++) {
       const i = queue[q]
       if (far[i] >= FOG.depthTiles) continue
@@ -243,22 +303,53 @@ export class Scene {
       }
     }
     for (let i = 0; i < n; i++) {
-      const known = tiles[i].explored
-      data[i * 4] = known ? 255 : 0
+      const k = knownness[i]
+      data[i * 4] = Math.round(255 * k)
       data[i * 4 + 1] = mask[i] ? 255 : 0
-      data[i * 4 + 2] = known ? 0 : Math.round(255 * Math.min(1, (far[i] < 0 ? FOG.depthTiles : far[i]) / FOG.depthTiles))
+      data[i * 4 + 2] = k >= 0.5 ? 0 : Math.round(255 * Math.min(1, (far[i] < 0 ? FOG.depthTiles : far[i]) / FOG.depthTiles))
       data[i * 4 + 3] = 255
     }
     this.vis.needsUpdate = true
   }
 
+  /** The fog part way through a move: what was known before, and each tile the move reveals coming
+   *  up as the picture nears the step it is first seen from; in sight, what the rest of the player's
+   *  things see and what the moving units see from where their pictures are now. */
+  private writeMoveVisibility(s: GameState) {
+    const m = this.move
+    if (!m) return
+    const w = s.world.width, n = w * s.world.height
+    const known = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+      if (m.before[i]) { known[i] = 1; continue }
+      const at = m.when[i]
+      // a tile explored by the move but never in sight of its path comes up as the move ends
+      known[i] = at < 0 ? (s.world.tiles[i].explored && m.started && m.p >= m.steps ? 1 : 0) : Math.max(0, Math.min(1, m.p - (at - 1)))
+    }
+    const mask = m.others.slice()
+    for (const t of m.trails) {
+      const here = t.trail[Math.min(t.trail.length - 1, Math.round(Math.min(m.p, t.trail.length - 1)))]
+      const u = s.units.find(x => x.id === t.id)
+      const r = u ? sightOf(u.kind) : 1
+      const x0 = here % w, z0 = Math.floor(here / w)
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        const x = x0 + dx, z = z0 + dz
+        if (x < 0 || z < 0 || x >= w || z >= s.world.height) continue
+        mask[z * w + x] = 1
+      }
+    }
+    this.writeVisibility(s, known, mask)
+  }
+
   /** The fog as a filter on what is built: the player's own things always, the Company's landers
    *  always, anyone else's only in sight; a settlement once seen; a predecessor people once found. */
   private visibility(s: GameState) {
-    if (!C.flags.fogOfWar) return null
+    const moving = this.move?.ids
+    if (!C.flags.fogOfWar) return moving ? { unit: (u: GameState['units'][number]) => !moving.has(u.id), settlements: null } : null
     const mask = this.visMask ?? sightMask(s)
     return {
-      unit: (u: GameState['units'][number]) => unitVisible(s, u, mask),
+      // a unit being drawn travelling is drawn by its picture, not where it stopped
+      unit: (u: GameState['units'][number]) => !(moving && moving.has(u.id)) && unitVisible(s, u, mask),
       settlements: {
         known: settlementKnown,
         inSight: (tile: number) => mask[tile] === 1,
@@ -284,17 +375,22 @@ export class Scene {
     this.ribbons = buildRibbons(s, h, this.light, sn)
     this.scene.add(this.ribbons)
     if (this.settlements) { this.scene.remove(this.settlements); disposeGroup(this.settlements) }
-    const sb = buildSettlements(s, h, this.light, SHEET_SETTLEMENTS, sn, vis?.settlements ?? null)
+    const sb = buildSettlements(s, h, this.light, SHEET_SETTLEMENTS, sn, vis ? vis.settlements : null)
     this.settlements = sb.group
     this.settlementClose = sb.close
     this.settlementFar = sb.far
     this.scene.add(this.settlements)
     if (this.units) { this.scene.remove(this.units); disposeGroup(this.units) }
-    const ub = buildUnits(s, h, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, vis?.unit)
+    const ub = buildUnits(s, h, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, vis?.unit, (id) => this.lastRight.get(id))
     this.units = ub.group
     this.unitClose = ub.close
     this.unitFar = ub.far
     this.unitPositions = ub.positions
+    // a unit being drawn travelling can still be tapped where it stopped
+    if (this.move) for (const id of this.move.ids) {
+      const u = s.units.find(x => x.id === id)
+      if (u) this.unitPositions.set(id, [(u.tile % s.world.width) + 0.5, Math.floor(u.tile / s.world.width) + 0.5])
+    }
     this.scene.add(this.units)
     // every picture on the map in one layer, so a person in front of a barn is drawn in front of it
     if (this.billboards) { this.scene.remove(this.billboards); this.billboards.geometry.dispose(); (this.billboards.material as THREE.Material).dispose() }
@@ -414,6 +510,218 @@ export class Scene {
     })
   }
 
+  // ---- a move, drawn --------------------------------------------------------------------------
+  /** Before an action that moves units of the player's: take what is explored now, so the first
+   *  rebuild after the action draws the fog as it was and leaves the moving units out, rather than
+   *  showing them already arrived. Ends any move still being drawn. */
+  prepareMove(s: GameState, ids: number[]) {
+    this.finishMove()
+    const n = s.world.width * s.world.height
+    const before = new Uint8Array(n)
+    for (let i = 0; i < n; i++) before[i] = s.world.tiles[i].explored ? 1 : 0
+    // what everything else sees does not change with the move; the moving units' own sight is
+    // added from wherever their pictures are
+    const others = sightMask({ ...s, units: s.units.filter(u => !ids.includes(u.id)) } as GameState)
+    this.move = {
+      ids: new Set(ids), before, trails: [], when: new Float32Array(n).fill(-1), others,
+      started: false, start: 0, lastTick: 0, duration: 0, steps: 0, p: 0, follow: null, hold: null, done: null,
+    }
+  }
+
+  /** Draw the prepared move: each unit's picture travels the tiles it went through, from where it
+   *  stood to where it stopped, while the fog lifts as it comes into sight of new ground, and the
+   *  camera keeps `follow` on the screen at the point `hold`, in pixels. A unit in the prepared set
+   *  with no trail here did not move and is drawn where it is at once. Nothing in the state moves. */
+  animateMoves(s: GameState, trails: { id: number; trail: number[] }[], follow: number | null, hold: [number, number] | null, done: () => void) {
+    const m = this.move
+    const real = trails.filter(t => t.trail.length > 1 && s.units.some(u => u.id === t.id))
+    if (!m || !real.length || !this.terrain) { this.cancelMove(); done(); return }
+    const w = s.world.width, h = s.world.height
+    m.ids = new Set(real.map(t => t.id))
+    m.steps = Math.max(...real.map(t => t.trail.length - 1))
+    // which tiles each step brings into sight, first come first served
+    m.when.fill(-1)
+    for (const t of real) {
+      const u = s.units.find(x => x.id === t.id)!
+      const r = sightOf(u.kind)
+      t.trail.forEach((tile, k) => {
+        const x0 = tile % w, z0 = Math.floor(tile / w)
+        for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+          const x = x0 + dx, z = z0 + dz
+          if (x < 0 || z < 0 || x >= w || z >= h) continue
+          const i = z * w + x
+          if (m.before[i]) continue
+          if (m.when[i] < 0 || k < m.when[i]) m.when[i] = k
+        }
+      })
+    }
+    m.others = sightMask({ ...s, units: s.units.filter(u => !m.ids.has(u.id)) } as GameState)
+    const sheet = this.sheetManifests[SHEET_UNITS], sizes = this.sheetManifests.map(x => x.size)
+    const heightAt = this.terrain.heightAt
+    m.trails = real.map(t => {
+      const u = s.units.find(x => x.id === t.id)!
+      const x0 = (t.trail[0] % w) + 0.5, z0 = Math.floor(t.trail[0] / w) + 0.5
+      const right = (t.trail[1] % w) > (t.trail[0] % w) ? true : (t.trail[1] % w) < (t.trail[0] % w) ? false : (this.lastRight.get(t.id) ?? false)
+      const ghost = buildGhost(u, x0, z0, right, heightAt, this.light, sheet, SHEET_UNITS, this.sheets, sizes)
+      if (ghost) this.scene.add(ghost)
+      const ghostY = ghost ? (ghost.geometry.getAttribute('aFoot').array as Float32Array)[1] : 0
+      // a lander just down steams as it goes
+      const plume = u.kind === 'lander' && s.turn <= C.lander.steamTurns ? buildPlume([stacksAt(x0, z0, sheet)], this.light) : null
+      if (plume) this.scene.add(plume)
+      return { id: t.id, trail: t.trail, ghost, plume, x0, z0, right, ghostY }
+    })
+    m.follow = follow !== null && m.ids.has(follow) ? follow : null
+    m.hold = hold
+    m.done = done
+    m.duration = MOVE.tileMs * (m.steps + MOVE.easeTiles)
+    m.start = performance.now()
+    m.lastTick = m.start
+    m.started = true
+    m.p = 0
+    // the units leave their arrival tiles and their pictures start from where they stood
+    if (this.lastState) this.rebuild(this.lastState, 'dynamic')
+    this.startLoop()
+  }
+
+  /** How far the camera's centre sits from a point it keeps at screen position `hold`, in tiles. */
+  holdOffset(hold: [number, number] | null): [number, number] {
+    if (!hold) return [0, 0]
+    const z = this.cam.view.zoom
+    return [(this.cam.width / 2 - hold[0]) / z, (this.cam.height / 2 - hold[1]) / z]
+  }
+
+  /** Where a unit's picture is while a move is drawn, or null when it is not moving. */
+  ghostAt(id: number): [number, number] | null {
+    const m = this.move
+    if (!m || !m.started || !this.lastState) return null
+    const t = m.trails.find(x => x.id === id)
+    if (!t) return null
+    return this.trailPoint(t, m.p, this.lastState.world.width)
+  }
+
+  private trailPoint(t: MoveTrail, p: number, w: number): [number, number] {
+    const last = t.trail.length - 1
+    const q = Math.max(0, Math.min(last, p))
+    const k = Math.min(last - 1, Math.floor(q)), f = q - k
+    const a = t.trail[k], b = t.trail[Math.min(last, k + 1)]
+    const ax = (a % w) + 0.5, az = Math.floor(a / w) + 0.5, bx = (b % w) + 0.5, bz = Math.floor(b / w) + 0.5
+    return [ax + (bx - ax) * f, az + (bz - az) * f]
+  }
+
+  /** One frame of a move: the pictures along their trails, the fog behind them, the camera after
+   *  the one being followed. Returns whether the move is still being drawn. */
+  private tickMove(now: number): boolean {
+    const m = this.move
+    const s = this.lastState
+    if (!m || !m.started || !s) return false
+    const w = s.world.width
+    let t = Math.min(1, (now - m.start) / Math.max(1, m.duration))
+    if (this.holdMoveAt !== null && t > this.holdMoveAt) { t = this.holdMoveAt; m.start = now - t * m.duration }
+    // even pace with a short ease at either end, in tiles
+    const e = MOVE.easeTiles / (m.steps + MOVE.easeTiles)
+    const eased = t < e ? (t * t) / (2 * e) / (1 - e) : t > 1 - e ? 1 - ((1 - t) * (1 - t)) / (2 * e) / (1 - e) : (t - e / 2) / (1 - e)
+    m.p = Math.max(0, Math.min(1, eased)) * m.steps
+    const sheet = this.sheetManifests[SHEET_UNITS], sizes = this.sheetManifests.map(x => x.size)
+    for (const tr of m.trails) {
+      const [x, z] = this.trailPoint(tr, m.p, w)
+      // a profile turns when its heading does
+      const k = Math.min(tr.trail.length - 2, Math.floor(Math.min(m.p, tr.trail.length - 1)))
+      if (k >= 0) {
+        const ax = tr.trail[k] % w, bx = tr.trail[k + 1] % w
+        const right = bx > ax ? true : bx < ax ? false : tr.right
+        if (right !== tr.right && this.terrain) {
+          tr.right = right
+          const u = s.units.find(q => q.id === tr.id)
+          if (tr.ghost) { this.scene.remove(tr.ghost); tr.ghost.geometry.dispose(); (tr.ghost.material as THREE.Material).dispose() }
+          tr.ghost = u ? buildGhost(u, tr.x0, tr.z0, right, this.terrain.heightAt, this.light, sheet, SHEET_UNITS, this.sheets, sizes) : null
+          if (tr.ghost) this.scene.add(tr.ghost)
+        }
+      }
+      // the picture's foot goes with it, so it reads the light and the fog where it is now
+      if (tr.ghost) placeBillboard(tr.ghost, 0, x, isHullKind(s, tr.id) ? tr.ghostY : this.terrain ? this.terrain.heightAt(x, z) : tr.ghostY, z)
+      if (tr.plume) tr.plume.position.set(x - tr.x0, 0, z - tr.z0)
+      // and a tap on it, and the ring round it, find it where it is drawn
+      this.unitPositions.set(tr.id, [x, z])
+    }
+    this.writeMoveVisibility(s)
+    // the camera keeps the followed unit, and the ground just ahead of it, on the screen
+    if (m.follow !== null && !this.gestureActive) {
+      const tr = m.trails.find(q => q.id === m.follow)
+      if (tr) {
+        const [x, z] = this.trailPoint(tr, m.p, w)
+        const [ax, az] = this.trailPoint(tr, m.p + 1, w)
+        const dx = ax - x, dz = az - z, len = Math.hypot(dx, dz) || 1
+        const v = this.cam.view
+        const [ox, oz] = this.holdOffset(m.hold)
+        const ahead = t < 1 ? MOVE.lookAhead : 0
+        const tx = x + (dx / len) * ahead + ox, tz = z + (dz / len) * ahead + oz
+        // the pull is per sixtieth of a second, so a phone dropping frames still keeps up
+        const pull = 1 - Math.pow(1 - MOVE.follow, Math.max(0, now - m.lastTick) / (1000 / 60))
+        v.cx += (tx - v.cx) * pull
+        v.cz += (tz - v.cz) * pull
+        this.cam.glideTarget = null
+        this.cam.apply()
+      }
+    }
+    m.lastTick = now
+    // the frame that ends the move still counts as moving, so the loop draws once more and picks up
+    // the glide that settles the camera
+    if (t >= 1) this.endMove()
+    return true
+  }
+
+  /** The move is over: the units stand where they stopped, facing the way they were going, and the
+   *  fog is the state's own again. */
+  private endMove() {
+    const m = this.move
+    if (!m) return
+    const s = this.lastState
+    for (const tr of m.trails) {
+      this.lastRight.set(tr.id, tr.right)
+      if (tr.ghost) { this.scene.remove(tr.ghost); tr.ghost.geometry.dispose(); (tr.ghost.material as THREE.Material).dispose() }
+      if (tr.plume) { this.scene.remove(tr.plume); tr.plume.geometry.dispose(); (tr.plume.material as THREE.Material).dispose() }
+    }
+    // settle the camera on the followed unit where it stopped
+    if (m.follow !== null && s && !this.gestureActive) {
+      const u = s.units.find(x => x.id === m.follow)
+      if (u) {
+        const w = s.world.width
+        const [ox, oz] = this.holdOffset(m.hold)
+        this.cam.glideToPoint((u.tile % w) + 0.5 + ox, Math.floor(u.tile / w) + 0.5 + oz, this.cam.view.zoom)
+      }
+    }
+    const done = m.done
+    this.move = null
+    if (s) this.rebuild(s, 'dynamic')
+    if (done) done()
+  }
+
+  /** End a move being drawn, if one is, and leave a prepared one alone: before any other action. */
+  endRunningMove() {
+    if (this.move?.started) this.endMove()
+  }
+
+  /** Draw a move still in progress to its end at once: before another action, an undo, a new game. */
+  finishMove() {
+    if (this.move?.started) this.endMove()
+    else if (this.move) this.cancelMove()
+  }
+
+  /** Forget a prepared move that did not happen, and draw the state as it is. */
+  cancelMove() {
+    if (!this.move) return
+    const m = this.move
+    for (const tr of m.trails) {
+      if (tr.ghost) { this.scene.remove(tr.ghost); tr.ghost.geometry.dispose(); (tr.ghost.material as THREE.Material).dispose() }
+      if (tr.plume) { this.scene.remove(tr.plume); tr.plume.geometry.dispose(); (tr.plume.material as THREE.Material).dispose() }
+    }
+    this.move = null
+    if (this.lastState) this.rebuild(this.lastState, 'dynamic')
+  }
+
+  /** Whether a move is being drawn now. */
+  get moving(): boolean { return !!this.move?.started }
+
   /** Selection ring and unit ring follow ViewState. */
   updateRings(s: GameState) {
     const v = this.cam.view
@@ -424,7 +732,7 @@ export class Scene {
       this.selRing.visible = true
     } else this.selRing.visible = false
     if (v.activeUnit !== null) {
-      const p = this.unitPositions.get(v.activeUnit)
+      const p = this.ghostAt(v.activeUnit) ?? this.unitPositions.get(v.activeUnit)
       if (p && this.terrain) {
         this.unitRing.position.set(p[0], this.terrain.heightAt(p[0], p[1]) + 0.06, p[1])
         this.unitRing.visible = true
@@ -584,7 +892,8 @@ export class Scene {
       // both, every frame: a short-circuit here starves the glide whenever the camera is springing
       const settling = this.cam.tick()
       const gliding = this.cam.glideTick()
-      const moving = this.gestureActive || settling || gliding || this.beaching
+      const travelling = this.tickMove(performance.now())
+      const moving = this.gestureActive || settling || gliding || this.beaching || travelling
       // the opening image is a lander down and steaming, and steam that does not move is not
       // steaming: while a plume rises the loop runs, and it ends when the steam does. Nothing else
       // idle draws anything; the haze drifts only when a frame is drawn for some other reason
@@ -669,4 +978,10 @@ function disposeGroup(g: THREE.Object3D) {
     if (Array.isArray(mat)) mat.forEach(x => x.dispose())
     else if (mat) mat.dispose()
   })
+}
+
+/** Whether a unit stands on the water, and so its picture at the waterline rather than on the ground. */
+function isHullKind(s: GameState, id: number): boolean {
+  const u = s.units.find(x => x.id === id)
+  return !!u && (u.kind === 'lander' || u.kind === 'lighter' || u.kind === 'trader' || u.kind === 'raider' || u.kind === 'cutter' || u.kind === 'companyShip')
 }

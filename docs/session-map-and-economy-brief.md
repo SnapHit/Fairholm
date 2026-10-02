@@ -1,5 +1,7 @@
 # Session, map and economy brief
 
+**Changed 2 October 2026.** The splashdown invariants in section 8 now put every charter out of sight of land but near enough to sight it within the first move or two, in place of four to six turns' sailing, and every charter's lander sails at the same speed.
+
 **Changed 1 October 2026.** The opening is replaced by the one the original game is loved for: you begin at sea in fog with no knowledge of the world, sail until you find land, and choose your own ground. Anchorages are removed entirely and settlements may be founded almost anywhere, so the generator invariants in section 8 now describe the splashdown, and a new subsection there records the founding and spacing rules.
 
 Version 2, written 21 August 2026. **Supersedes version 1 of the same date.** Self-contained.
@@ -253,11 +255,14 @@ every game. Naval *combat* can still be cut per the mechanics brief. Naval *haul
 **The generator must validate and retry.** Nine settings produce more combinations than can be tested,
 so: generate, check invariants, regenerate on failure. Minimum invariants:
 
-- **Every charter's splashdown is in open sea**, four to six turns' sailing from the nearest coast
-  that has food, timber and fresh water within reach. The distance is one named constant
-- Every charter's splashdown is comparably fair
+- **Every charter's splashdown is in open sea**, out of sight of land but near enough to a coast that
+  has food, timber and fresh water within reach that sailing in any sensible direction sights land
+  within the first one or two moves. The distance is one named constant, a near and a far edge in
+  tiles of open water
+- Every charter's splashdown is comparably fair, and every charter's lander sails at the same speed and
+  sees as far
 - No rival and no predecessor is visible from a splashdown
-- The coast comes into view at least one turn before the lander reaches it
+- Land comes into view within the first move or two from the splashdown
 - At least two refining chains are viable somewhere reachable
 - A minimum number of predecessor settlements are reachable
 - No unique resource sits on an unreachable landmass

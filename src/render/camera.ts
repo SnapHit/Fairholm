@@ -26,6 +26,14 @@ export class MapCamera {
   vz = 0
   vzoom = 0
   fitZoom = 8
+  /** How much of the screen, in pixels, something solid covers along its right and bottom edges:
+   *  the sheet, the queue bar. The camera may then carry the map's edge up to that cover rather
+   *  than to the screen's own edge, so the thing being looked at is never stuck behind it. */
+  inset = { right: 0, bottom: 0 }
+  /** How far, in tiles, the camera's centre may go past where the map would cover the screen. At
+   *  sea before the first landing the lander is often near the map's edge, and this lets it sit in
+   *  the middle of the picture with the haze beyond the edge, which is unknown like the rest. */
+  overhang = 0
   private anchorPx: [number, number] | null = null
 
   constructor(mapW: number, mapH: number) {
@@ -101,12 +109,22 @@ export class MapCamera {
     this.zoomAt(px, py, zoom / this.view.zoom)
   }
 
+  /** Where the camera's centre may be at a zoom: the map covering the screen, less what the inset
+   *  covers on the right and at the bottom, and the overhang past it. */
+  bounds(zoom: number): { minX: number; maxX: number; minZ: number; maxZ: number } {
+    const hw = this.width / zoom / 2, hh = this.height / zoom / 2
+    const ir = this.inset.right / zoom, ib = this.inset.bottom / zoom
+    const o = this.overhang
+    return {
+      minX: Math.min(hw, this.mapW / 2) - o, maxX: Math.max(this.mapW - hw + ir, this.mapW / 2) + o,
+      minZ: Math.min(hh, this.mapH / 2) - o, maxZ: Math.max(this.mapH - hh + ib, this.mapH / 2) + o,
+    }
+  }
+
   /** Keep the map on screen with a soft edge. */
   private softClamp(band: number) {
     const v = this.view
-    const hw = this.width / v.zoom / 2, hh = this.height / v.zoom / 2
-    const minX = Math.min(hw, this.mapW / 2), maxX = Math.max(this.mapW - hw, this.mapW / 2)
-    const minZ = Math.min(hh, this.mapH / 2), maxZ = Math.max(this.mapH - hh, this.mapH / 2)
+    const { minX, maxX, minZ, maxZ } = this.bounds(v.zoom)
     const slack = 1.5
     if (v.cx < minX - slack) v.cx = minX - slack + (v.cx - (minX - slack)) * band
     if (v.cx > maxX + slack) v.cx = maxX + slack + (v.cx - (maxX + slack)) * band
@@ -139,9 +157,7 @@ export class MapCamera {
     const lo = this.minZoom(), hi = this.maxZoom()
     if (v.zoom < lo) { v.zoom += (lo - v.zoom) * 0.25; moving = true; if (Math.abs(lo - v.zoom) < 0.01) v.zoom = lo }
     if (v.zoom > hi) { v.zoom += (hi - v.zoom) * 0.25; moving = true; if (Math.abs(hi - v.zoom) < 0.01) v.zoom = hi }
-    const hw = this.width / v.zoom / 2, hh = this.height / v.zoom / 2
-    const minX = Math.min(hw, this.mapW / 2), maxX = Math.max(this.mapW - hw, this.mapW / 2)
-    const minZ = Math.min(hh, this.mapH / 2), maxZ = Math.max(this.mapH - hh, this.mapH / 2)
+    const { minX, maxX, minZ, maxZ } = this.bounds(v.zoom)
     // the spring has to arrive, not merely approach: without the snap it is always a hair outside
     // the limit, tick never returns false, the draw loop never ends and the frame is never refined
     // to full resolution
@@ -183,9 +199,7 @@ export class MapCamera {
     // clamp the target into what the soft clamp will allow at the target zoom, so the glide lands
     // somewhere the camera is content to stay
     const zz = Math.max(this.minZoom(), Math.min(this.maxZoom(), zoom))
-    const hw = this.width / zz / 2, hh = this.height / zz / 2
-    const minX = Math.min(hw, this.mapW / 2), maxX = Math.max(this.mapW - hw, this.mapW / 2)
-    const minZ = Math.min(hh, this.mapH / 2), maxZ = Math.max(this.mapH - hh, this.mapH / 2)
+    const { minX, maxX, minZ, maxZ } = this.bounds(zz)
     const cx = Math.max(minX, Math.min(maxX, x))
     const cz = Math.max(minZ, Math.min(maxZ, z))
     this.glideTarget = { cx, cz, zoom: zz }

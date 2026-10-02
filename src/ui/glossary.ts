@@ -81,7 +81,7 @@ export const TERMS: Record<string, Term> = {
   dispatch: { title: 'The dispatch', text: 'What happened last turn, and why. Tap an entry for the cause.' },
   intent: { title: 'Objective', text: 'One line at the top saying what you are working toward. You can change it.' },
   season: { title: 'Season', text: 'Four a year, recolouring the map. Nothing else changes with the season.', state: s => SEASON_NAMES[season(s.turn)] + '.' },
-  lander: { title: 'The lander', text: 'The capsule that brought you down, and your first ship. It sails where boats go. Beach it on the shore beside it to found the first settlement; it is consumed doing it, and the boat it carried stays on the water.' },
+  lander: { title: 'The lander', text: `The capsule that brought you down, and your first ship. It sails where boats go, ${C.lander.moves} tiles a turn. Beach it on the shore beside it to found the first settlement; it is consumed doing it, and the slower boat it carried stays on the water.` },
   fog: { title: 'Fog', text: 'Ground is hidden until one of your units or settlements has seen it, and then stays known. Other charters are seen only within your sight. The recall fleet is always seen.' },
   garrison: { title: 'Garrison', text: 'Units inside a settlement. The works multiply their defence; the works also cap how many fit.' },
   blockade: { title: 'Blockade', text: 'A hostile armed ship on the water beside a settlement stops its passages and consignments until it is driven off or leaves.' },

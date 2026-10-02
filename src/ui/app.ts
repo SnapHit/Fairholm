@@ -12,10 +12,11 @@ import { SYSTEMS } from '../sim/systems'
 import { SEASON_NAMES, season, year } from '../sim/turn'
 import { randomSeed, playRng } from '../sim/rng'
 import { C } from '../sim/constants'
-import { findPath } from '../sim/units'
+import { findPath, isAfloat, maxMoves } from '../sim/units'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
 import { openingAction } from '../sim/autopilot'
+import { unitVisible } from '../sim/fog'
 import { Scene } from '../render/scene'
 import { pick, tileUnderPoint } from '../render/picking'
 import { Input } from './input'
@@ -137,6 +138,7 @@ export class App {
     this.canvas.style.width = w + 'px'
     this.canvas.style.height = hh + 'px'
     this.scene.resize(w, hh)
+    if (this.queuebar) this.updateInset()
   }
 
   // ---- arrival ----------------------------------------------------------------------------------
@@ -168,6 +170,7 @@ export class App {
         const a = openingAction(this.state)
         if (!a || guard++ > 4) break
         if (a.t === 'found') { await this.found(a.unit, a.tile); break }
+        if (a.t === 'moveUnit') { if (!(await this.moveTo(a.unit, a.path[a.path.length - 1]))) break; continue }
         if (!this.dispatch(a)) break
       }
       if (this.state.settlements.some(x => x.owner === 0)) return this.state.turn
@@ -191,23 +194,23 @@ export class App {
   /** Bring a tile into the strip of map left above the sheet, so what the sheet is talking about can
    *  be seen while it is open. In landscape the sheet is beside the map and nothing need move. */
   showAboveSheet(tile: number) {
-    if (this.root.classList.contains('landscape') || !this.sheetShowing()) return
+    const hold = this.holdPoint()
+    if (hold === null) return
     const w = this.state.world.width
     const cam = this.scene.cam
-    const top = this.sheetEl.getBoundingClientRect().top - this.canvas.getBoundingClientRect().top
-    const hud = this.hud.getBoundingClientRect().height
-    if (!(top > hud + 40)) return
-    const wantY = hud + (top - hud) / 2
     const zoom = Math.max(cam.view.zoom, C.feel.zoom.working)
     const tx = (tile % w) + 0.5, tz = Math.floor(tile / w) + 0.5
-    // the camera's centre sits as far below the tile as the strip's middle sits above the screen's
-    this.scene.glideToPoint(tx, tz + (this.canvas.clientHeight / 2 - wantY) / zoom, zoom)
+    // the camera's centre sits as far from the tile as the free map's middle sits from the screen's
+    this.scene.glideToPoint(tx + (this.canvas.clientWidth / 2 - hold[0]) / zoom, tz + (this.canvas.clientHeight / 2 - hold[1]) / zoom, zoom)
   }
 
   /** Found a settlement with a unit: a colonist where it stands, the lander on the shore beside it.
    *  The lander's founding is the beaching, drawn over a second and a half while the state has
    *  already moved on; the settlement screen opens when it is done. Resolves to whether it happened. */
   found(unitId: number, tile?: number): Promise<boolean> {
+    // a move still being drawn ends first, so the beaching starts where the lander really is
+    this.scene.finishMove()
+    this.releaseUi()
     const s = this.state
     const u = s.units.find(x => x.id === unitId)
     if (!u) return Promise.resolve(false)
@@ -248,19 +251,29 @@ export class App {
   // ---- state changes -----------------------------------------------------------------------------
   /** Apply an action. Throws are swallowed into a toast; nothing happened. Returns success. */
   dispatch(a: Action, undoLabel?: string): boolean {
+    // a move still being drawn is drawn to its end before anything else happens
+    this.scene.endRunningMove()
     const undoable = undoLabel !== undefined && a.t !== 'endTurn'
     let snapshot: GameState | null = null
     if (undoable) snapshot = structuredClone(this.state)
+    const known = undoable ? this.state.world.tiles.reduce((n, t) => n + (t.explored ? 1 : 0), 0) : 0
     try {
       applyAction(this.state, a)
     } catch (e) {
       this.toast((e as Error).message)
       return false
     }
-    if (snapshot) {
+    // ground once seen stays seen: an action that showed new ground cannot be undone, or a move,
+    // a look and an undo would be a free scout
+    const revealed = undoable && this.state.world.tiles.reduce((n, t) => n + (t.explored ? 1 : 0), 0) > known
+    if (snapshot && !revealed) {
       this.undoStack.push({ snapshot, label: undoLabel! })
       if (this.undoStack.length > 8) this.undoStack.shift()
       this.toast(undoLabel!, () => this.undo())
+    } else if (revealed) {
+      // and nothing before it can be undone either, or undoing that would take the new ground with it
+      this.undoStack = []
+      this.toast(undoLabel!)
     }
     if (a.t === 'consign') { if (this.state.telemetry.firstConsignment === this.state.turn) Telemetry.firstConsignment(this.state.turn) }
     if (a.t === 'found') {
@@ -276,6 +289,8 @@ export class App {
   undo() {
     const u = this.undoStack.pop()
     if (!u) return
+    this.scene.finishMove()
+    this.releaseUi()
     // keep the play RNG moving so an undo never replays the same dice
     const play = this.state.rng.play
     this.state = u.snapshot
@@ -295,8 +310,23 @@ export class App {
     const q = this.queue
     const seconds = (performance.now() - this.turnStartedAt) / 1000
     const before = this.state.turn
+    // the player's units with somewhere to go keep going in the turn, and are drawn going: where
+    // each stood and the path it meant to take, so the tiles it went through can be drawn after
+    this.scene.endRunningMove()
+    const going = this.state.units.filter(u => u.owner === 0 && (u.path.length > 0 || (u.order !== null && u.order.kind !== 'garrison' && u.order.kind !== 'reserve' && u.order.kind !== 'screen')))
+      .map(u => ({ id: u.id, tile: u.tile, path: [...u.path], lander: u.kind === 'lander' }))
+    if (going.length) { this.scene.prepareMove(this.state, going.map(g => g.id)); this.holdUi(this.scene.cam.view.activeUnit) }
     this.dispatch({ t: 'endTurn' })
-    if (this.state.turn === before) return
+    if (this.state.turn === before) { this.scene.cancelMove(); this.releaseUi(); return }
+    if (going.length) {
+      const trails = going.map(g => {
+        const u = this.state.units.find(x => x.id === g.id)
+        return { id: g.id, trail: u && u.tile !== g.tile ? trailOf(this.state, g.tile, g.path, u.tile, u) : [] }
+      }).filter(t => t.trail.length > 1)
+      const lander = going.find(g => g.lander && trails.some(t => t.id === g.id))
+      const follow = lander?.id ?? (trails.some(t => t.id === this.scene.cam.view.activeUnit) ? this.scene.cam.view.activeUnit : null)
+      this.scene.animateMoves(this.state, trails, follow, this.holdPoint(), () => { this.releaseUi(); this.afterSelect() })
+    }
     this.undoStack = []
     Telemetry.turnEnded(this.state.turn, q.shown.length + q.folded.length, seconds)
     this.turnStartedAt = performance.now()
@@ -319,6 +349,8 @@ export class App {
   }
 
   newGame(partial: Partial<Settings>) {
+    this.scene.finishMove()
+    this.releaseUi()
     const seed = randomSeed(playRng(Date.now()))
     const settings: Partial<Settings> = { ...partial, audio: this.state.settings.audio, firstGame: false }
     const s = createGame(seed, settings, Date.now())
@@ -337,6 +369,8 @@ export class App {
     try {
       const save = await Save.importFromFile(file)
       const s = Save.fromSave(save, Date.now())
+      this.scene.finishMove()
+      this.releaseUi()
       this.state = s
       this.undoStack = []
       this.pick = null
@@ -349,7 +383,11 @@ export class App {
       this.save()
       this.refresh()
       this.toast('Game imported')
-    } catch (e) { this.toast('Could not import: ' + (e as Error).message) }
+    } catch (e) {
+      // in plain words: an old version's save, or a file that is not a save at all
+      console.warn('Could not import', e)
+      this.toast(e instanceof Save.SaveVersionError ? e.plain : 'That file could not be opened. It may not be a Fairholm save.')
+    }
   }
 
   // ---- input routing ---------------------------------------------------------------------------
@@ -365,10 +403,13 @@ export class App {
         const stack = s.units.filter(x => x.tile === u.tile && x.owner === 0)
         if (stack.length > 1 && v.activeUnit === null) this.open({ kind: 'stack', tile: u.tile })
         else { v.activeUnit = u.id; this.open({ kind: 'unit', id: u.id }) }
-      } else {
-        v.selectedTile = u.tile
-        this.open({ kind: 'tile', tile: u.tile })
+        this.afterSelect()
+        // the sheet that opens must not cover what was tapped
+        this.showAboveSheet(u.tile)
+        return
       }
+      v.selectedTile = u.tile
+      this.open({ kind: 'tile', tile: u.tile })
       this.afterSelect()
       return
     }
@@ -428,9 +469,9 @@ export class App {
     const v = this.scene.cam.view
     const u = this.state.units.find(x => x.id === v.activeUnit)
     if (!u || u.owner !== 0 || tile === u.tile) { this.pathPreview = null; return false }
-    const path = findPath(this.state, u, u.tile, tile)
-    this.pathPreview = path
-    return !!path
+    const path = this.pathTo(u, tile)
+    this.pathPreview = path && path.length ? path : null
+    return !!this.pathPreview
   }
 
   paintPath() {
@@ -455,7 +496,8 @@ export class App {
     if (v.activeUnit !== null) {
       const u = s.units.find(x => x.id === v.activeUnit)
       if (u && u.owner === 0) {
-        const enemy = s.units.find(x => x.tile === t && x.owner !== 0 && (x.owner === -1 || s.charters[x.owner]?.relation === 'war'))
+        // only an enemy the player can see: a hold on the fog never attacks what is hidden in it
+        const enemy = s.units.find(x => x.tile === t && x.owner !== 0 && (x.owner === -1 || s.charters[x.owner]?.relation === 'war') && unitVisible(s, x))
         if (enemy) { this.commitAttack(u.id, t); return }
         // a hold on the shore beside the lander, or on the ground a colonist stands on, founds there;
         // the control in the bottom third does the same, and undo takes it back
@@ -470,14 +512,121 @@ export class App {
   commitMove(unitId: number) {
     const u = this.state.units.find(x => x.id === unitId)
     if (!u) return
-    const path = this.pathPreview ?? (this.scene.cam.view.selectedTile !== null ? findPath(this.state, u, u.tile, this.scene.cam.view.selectedTile) : null)
-    if (!path) { this.toast('No way through'); return }
-    const ok = this.dispatch({ t: 'moveUnit', unit: unitId, path }, `${unitLabel(u.kind)} moved`)
-    if (ok) {
-      const nu = this.state.units.find(x => x.id === unitId)
-      if (nu) { this.scene.cam.view.selectedTile = nu.tile; this.open({ kind: 'unit', id: unitId }) }
-      this.afterSelect()
+    const path = this.pathPreview ?? (this.scene.cam.view.selectedTile !== null ? this.pathTo(u, this.scene.cam.view.selectedTile) : null)
+    if (!path || !path.length) { this.toast('No way through'); return }
+    void this.moveTo(unitId, path[path.length - 1])
+  }
+
+  /** Where a unit sailing straight along a heading would be after a turn's sailing: as far as the
+   *  map and the land the player knows of allow, with water nobody has seen taken as open. Null
+   *  when the heading goes nowhere. */
+  headingTarget(u: import('../sim/state').Unit, dx: number, dz: number): number | null {
+    const w = this.state.world.width, hgt = this.state.world.height
+    let x = u.tile % w, z = Math.floor(u.tile / w), last: number | null = null
+    for (let k = 0; k < maxMoves(u); k++) {
+      x += dx; z += dz
+      if (x < 0 || z < 0 || x >= w || z >= hgt) break
+      const t = this.state.world.tiles[z * w + x]
+      if ((t.explored || !C.flags.fogOfWar) && t.terrain !== 'water') break
+      last = z * w + x
     }
+    return last
+  }
+
+  /** Show the way a heading would sail, the same as tapping its end: Go in the sheet, or a hold on
+   *  the tile, sets off. The control in the bottom third for a move whose end may be off the screen. */
+  previewHeading(dx: number, dz: number) {
+    const v = this.scene.cam.view
+    const u = this.state.units.find(x => x.id === v.activeUnit)
+    if (!u || u.owner !== 0) return
+    const t = this.headingTarget(u, dx, dz)
+    if (t === null || !this.previewPath(t)) { this.toast('No way through'); return }
+    v.selectedTile = t
+    if (this.foundTarget !== null) this.setFoundTarget(null)
+    this.afterSelect()
+    this.renderSheet()
+  }
+
+  /** The way a unit of the player's would go to a tile, planned on what is known: through ground
+   *  nobody has seen as though it were open. A ship or the lander asked to go to land it cannot
+   *  enter goes to the water beside it instead, the nearest by the way it would sail. */
+  pathTo(u: import('../sim/state').Unit, tile: number): number[] | null {
+    const direct = findPath(this.state, u, u.tile, tile)
+    if (direct || !isAfloat(u.kind)) return direct
+    const w = this.state.world.width, h = this.state.world.height
+    let best: number[] | null = null
+    for (const n of neighbours8(w, h, tile)) {
+      if (n === u.tile) return []
+      const t = this.state.world.tiles[n]
+      if (t.explored && t.terrain !== 'water') continue
+      const p = findPath(this.state, u, u.tile, n)
+      if (p && (!best || p.length < best.length)) best = p
+    }
+    return best
+  }
+
+  /** Move a unit of the player's toward a tile with one action: as far as it can this turn, along a
+   *  path planned on what is known, stopping where unseen land turns out to be in the way. The move
+   *  is drawn travelling, the fog lifting along the way, the camera following; it resolves when
+   *  the drawing is done, with whether the unit moved at all. */
+  moveTo(unitId: number, tile: number): Promise<boolean> {
+    const u = this.state.units.find(x => x.id === unitId)
+    if (!u) return Promise.resolve(false)
+    const planned = this.pathTo(u, tile)
+    if (!planned || !planned.length) { this.toast('No way through'); return Promise.resolve(false) }
+    const start = u.tile
+    this.scene.prepareMove(this.state, [unitId])
+    this.holdUi(unitId)
+    const ok = this.dispatch({ t: 'moveUnit', unit: unitId, path: planned }, `${unitLabel(u.kind)} moved`)
+    const nu = this.state.units.find(x => x.id === unitId)
+    if (!ok || !nu || nu.tile === start) { this.scene.cancelMove(); this.releaseUi(); if (ok && nu) { this.open({ kind: 'unit', id: unitId }); this.afterSelect() } return Promise.resolve(ok) }
+    this.scene.cam.view.selectedTile = nu.tile
+    this.scene.cam.view.activeUnit = unitId
+    this.open({ kind: 'unit', id: unitId })
+    this.afterSelect()
+    const trail = trailOf(this.state, start, planned, nu.tile, nu)
+    return new Promise(resolve => {
+      this.scene.animateMoves(this.state, [{ id: unitId, trail }], unitId, this.holdPoint(), () => {
+        this.releaseUi()
+        this.afterSelect()
+        // the sheet may have grown with what the move found, a shore to beach on: keep the unit in
+        // the map left above it
+        const at = this.state.units.find(x => x.id === unitId)
+        if (at && this.sheet.kind === 'unit' && this.sheet.id === unitId) this.showAboveSheet(at.tile)
+        resolve(true)
+      })
+    })
+  }
+
+  /** Where on the screen, in pixels from the map's top left, the thing being looked at should sit:
+   *  the middle of the map left above the sheet, or beside it on a phone held sideways, or null for
+   *  the screen's middle when the sheet is put away. Measured where the sheet will be once it has
+   *  slid in, not where it is part way through sliding. */
+  holdPoint(): [number, number] | null {
+    if (!this.sheetShowing() || isFullScreenSheet(this.sheet)) return null
+    const W = this.root.clientWidth, H = this.root.clientHeight
+    const hud = this.hud.getBoundingClientRect().height
+    if (this.root.classList.contains('landscape')) {
+      const left = W - this.sheetEl.offsetWidth
+      return left > 80 ? [left / 2, hud + (H - hud) / 2] : null
+    }
+    const top = H - this.sheetEl.offsetHeight
+    if (!(top > hud + 40)) return null
+    return [W / 2, hud + (top - hud) / 2]
+  }
+
+  /** Tell the camera how much of the screen the sheet and the queue bar cover, so it can carry the
+   *  map's edge up to them rather than leave what is being looked at behind them. */
+  private updateInset() {
+    const cam = this.scene.cam
+    // at sea before the first landing, the lander may sit in the middle of the picture even near
+    // the map's edge; after it, the map covers the screen as always
+    cam.overhang = this.state.settlements.some(x => x.owner === 0) ? 0 : C.feel.openingOverhang
+    const bar = this.queuebar.offsetHeight
+    const showing = this.sheetShowing() && !isFullScreenSheet(this.sheet)
+    if (!showing) { cam.inset = { right: 0, bottom: bar }; return }
+    if (this.root.classList.contains('landscape')) cam.inset = { right: this.sheetEl.offsetWidth, bottom: 0 }
+    else cam.inset = { right: 0, bottom: Math.max(bar, this.sheetEl.offsetHeight) }
   }
 
   commitAttack(unitId: number, tile: number) {
@@ -688,6 +837,7 @@ export class App {
 
   /** The queue at rest: one line carrying its top item and a count, and the turn. */
   renderQueueBar() {
+    if (this.heldFor !== null) return
     const s = this.state
     clear(this.queuebar)
     const q = this.queue
@@ -707,18 +857,48 @@ export class App {
     )
   }
 
+  /** The unit whose move is being drawn, or minus one for a turn's moves with none in particular:
+   *  until the drawing ends, its sheet and the queue go on showing what was true before the move,
+   *  so neither tells of a coast the picture has not reached yet. Null when nothing is held. */
+  private heldFor: number | null = null
+
+  private holdUi(unit: number | null) {
+    this.heldFor = unit ?? -1
+  }
+
+  /** The move has been drawn: the sheet and the queue catch up with it. */
+  private releaseUi() {
+    if (this.heldFor === null) return
+    this.heldFor = null
+    this.sheetEl.classList.remove('held')
+    this.renderQueueBar()
+    this.renderSheet()
+  }
+
+  private sheetHeld(): boolean {
+    if (this.heldFor === null || !this.sheetShowing()) return false
+    return this.sheet.kind === 'queue' || (this.sheet.kind === 'unit' && this.sheet.id === this.heldFor)
+  }
+
   renderSheet() {
+    // held while a move is drawn, and not touchable either, so a second tap on Go does nothing
+    if (this.sheetHeld()) { this.sheetEl.classList.add('held'); return }
+    this.sheetEl.classList.remove('held')
     const showing = this.sheetShowing()
     const full = showing && isFullScreenSheet(this.sheet)
     this.sheetEl.classList.toggle('open', showing)
     this.sheetEl.classList.toggle('full', full)
-    this.scrim.classList.toggle('show', showing && !full)
+    // a unit of the player's open in the sheet makes the map its target: a tap there plans a way,
+    // a hold goes, so nothing covers it. Any other sheet is dismissed by a tap away from it
+    const live = this.sheet.kind === 'unit' && this.state.units.some(u => u.id === (this.sheet as { id: number }).id && u.owner === 0)
+    this.scrim.classList.toggle('show', showing && !full && !live)
     clear(this.sheetBody)
     this.sheetBody.scrollTop = 0
     this.sheetEl.style.transform = ''
-    if (!showing) return
-    if (this.sheet.kind === 'queue') { this.sheetBody.append(this.renderQueue()); return }
-    this.sheetBody.append(renderSheet(this, this.sheet))
+    if (!showing) { this.updateInset(); return }
+    if (this.sheet.kind === 'queue') this.sheetBody.append(this.renderQueue())
+    else this.sheetBody.append(renderSheet(this, this.sheet))
+    this.updateInset()
   }
 
   /** A swipe down on the grip puts the sheet away, per section 1 of the layout brief. */
@@ -884,4 +1064,14 @@ export class App {
     this.input.enabled = true
     this.refresh()
   }
+}
+
+/** The tiles a unit went through in a move, from where it stood: the planned path up to where it
+ *  stopped. Where it stopped is not on the plan (it was planned again in the turn), the way it would
+ *  go now from where it stood to where it is stands in for it. */
+function trailOf(s: GameState, start: number, planned: number[], end: number, u: import('../sim/state').Unit): number[] {
+  const k = planned.indexOf(end)
+  if (k >= 0) return [start, ...planned.slice(0, k + 1)]
+  const again = findPath(s, { ...u, tile: start }, start, end)
+  return again && again.length ? [start, ...again] : [start, end]
 }

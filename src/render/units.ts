@@ -191,7 +191,14 @@ export interface UnitBuild {
 /** `sheet` is the units sheet's manifest, and `sheetIndex` where it stands in the list handed to
  *  buildBillboards. `visible` says which units the player can see; the rest are not built at all,
  *  so they cannot be drawn, tapped or counted. Everything is visible when nothing is passed. */
-export function buildUnits(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, sheet: AtlasManifest, sheetIndex: number, visible: (u: Unit) => boolean = () => true): UnitBuild {
+export function buildUnits(
+  s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, sheet: AtlasManifest, sheetIndex: number,
+  visible: (u: Unit) => boolean = () => true,
+  /** Which way a standing unit last went, where the scene remembers it: true for right. A unit with
+   *  somewhere to go faces that way; one standing still faces the way it was last going, rather
+   *  than snapping back to the way it was drawn the moment it stops. */
+  lastRight: (id: number) => boolean | undefined = () => undefined,
+): UnitBuild {
   const w = s.world.width
   const group = new THREE.Group()
   const close = new THREE.Group()
@@ -299,7 +306,9 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
       const { width, height } = drawnSize(e.piece, scale)
       const damaged = isDamaged(e.unit.kind)
       const hull = isHull(e.unit.kind)
-      const flip = e.piece.facing === 'left' && goesRight(s, e.unit)
+      const going = nextTileOf(s, e.unit)
+      const right = going !== null && going !== e.unit.tile ? goesRight(s, e.unit) : (lastRight(e.unit.id) ?? false)
+      const flip = e.piece.facing === 'left' && right
       const sh = UNIT_SPRITE.shadow
       if (hull) billboards.push({ ...waterBillboard(e.piece, scale, e.x, e.z, flip, sheetIndex, plain), tag: { kind: 'unit', id: e.unit.id } })
       else {
@@ -435,6 +444,41 @@ export function buildArrival(
   return { group: group.children.length ? group : null, steaming: steam.length }
 }
 
+/** A unit's picture alone at a point, for a move being drawn: the scene moves the mesh along the
+ *  path the unit took while the unit itself is not drawn. Null for a kind with no drawing, which
+ *  then simply appears where it went. */
+export function buildGhost(
+  u: Unit, x: number, z: number, right: boolean, heightAt: (x: number, z: number) => number,
+  light: LightUniforms, sheet: AtlasManifest, sheetIndex: number, sheets: THREE.IUniform[], sizes: [number, number][],
+): THREE.InstancedMesh | null {
+  const piece = pieceFor(u.kind, sheet)
+  if (!piece) return null
+  const scale = UNIT_SPRITE.scale[u.kind] ?? 1
+  const flip = piece.facing === 'left' && right
+  const plain = new THREE.Color(1, 1, 1)
+  let bill: Billboard
+  if (isHull(u.kind)) bill = waterBillboard(piece, scale, x, z, flip, sheetIndex, plain)
+  else {
+    const { width, height } = drawnSize(piece, scale)
+    bill = {
+      sheet: sheetIndex, piece, x, z, y: heightAt(x, z), width, height, lift: UNIT_SPRITE.lift, tint: plain,
+      exposure: UNIT_SPRITE.exposure, sunSide: UNIT_SPRITE.sunSide, probeHeight: Math.min(height, LIGHT.propShadowHeightMax),
+      flip, desaturate: 0, tilt: 0, cut: 0, bob: 0,
+    }
+  }
+  const mesh = buildBillboards([bill], light, sheets, sizes)
+  if (mesh) mesh.renderOrder = 0
+  return mesh
+}
+
+/** Where a lander's stacks are when it is drawn at a point: the steam comes off them. */
+export function stacksAt(x: number, z: number, sheet: AtlasManifest): [number, number] {
+  const lander = sheet.pieces['lander'] ?? null
+  if (!lander) return [x + 0.2, z - 0.1]
+  const { width, height } = drawnSize(lander)
+  return [x + width * ARRIVAL.plume.stacks[0], z - height * ARRIVAL.plume.stacks[1]]
+}
+
 /** The lander alone, as a picture at a point with so much of it there: the beaching draws this
  *  moving onto the shore and fading while the settlement comes up. */
 export function buildGhostLander(x: number, z: number, fade: number, light: LightUniforms, sheet: AtlasManifest, sheetIndex: number, sheets: THREE.IUniform[], sizes: [number, number][]): THREE.InstancedMesh | null {
@@ -542,7 +586,7 @@ void main() {
 /** Steam off a lander's stacks: a few soft quads lying on the water plane, each on its own phase of
  *  one cycle, so the plume drifts and thins and renews as the clock runs. One draw call however many
  *  landers are steaming, and small overdraw: a handful of quads a third of a tile across. */
-function buildPlume(at: [number, number][], light: LightUniforms): THREE.InstancedMesh {
+export function buildPlume(at: [number, number][], light: LightUniforms): THREE.InstancedMesh {
   const per = ARRIVAL.plume.count
   const n = at.length * per
   const geo = quadGeometry()

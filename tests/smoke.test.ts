@@ -5,6 +5,8 @@ import { SYSTEMS } from '../src/sim/systems'
 import { toSave, fromSave } from '../src/io/save'
 import { playOpening } from './helpers'
 import { voyageBand } from '../src/sim/worldgen'
+import { openingAction } from '../src/sim/autopilot'
+import { C } from '../src/sim/constants'
 
 describe('smoke', () => {
   it('generates a small world, puts the lander down at sea, and the opening founds', () => {
@@ -20,10 +22,19 @@ describe('smoke', () => {
     expect(lander.aboard.length).toBe(5)
     expect(s.world.tiles.filter(t => t.explored).length).toBeGreaterThan(0)
     expect(s.world.tiles.filter(t => t.explored).length).toBeLessThan(s.world.tiles.length / 4)
-    const founded = playOpening(s)
+    // the splashdown is out of sight of land and inside the band of open water from a viable coast
     const [lo, hi] = voyageBand()
-    expect(founded).toBeGreaterThanOrEqual(lo)
-    expect(founded).toBeLessThanOrEqual(hi + 2)
+    expect(lo).toBeGreaterThan(C.lander.sight + 1)
+    expect(hi).toBeLessThanOrEqual(C.lander.moves + C.lander.sight)
+    expect(s.world.tiles.filter(t => t.explored && t.terrain !== 'water').length).toBe(0)
+    // the opening is time spent choosing, not reaching: one move toward the coast sights land, and
+    // the autopilot founds within a few turns of splashing down. It was four to nine turns when the
+    // lander sailed one tile a turn
+    applyAction(s, openingAction(s)!)
+    expect(s.world.tiles.some(t => t.explored && t.terrain !== 'water')).toBe(true)
+    const founded = playOpening(s)
+    expect(founded).toBeGreaterThanOrEqual(1)
+    expect(founded).toBeLessThanOrEqual(4)
     const home = s.settlements.find(x => x.owner === 0)!
     expect(home.name).toBe('The Landing')
     expect(home.colonists.length).toBe(5)
@@ -35,7 +46,7 @@ describe('smoke', () => {
     for (let i = 0; i < 30; i++) applyAction(s, { t: 'endTurn' })
     expect(s.turn).toBe(from + 30)
     const q = deriveQueue(s, SYSTEMS)
-    console.log('queue', q.shown.map(g => g.title), 'food store', s.settlements[0].foodStore, 'stock', s.settlements[0].stock, 'frame', s.settlements[0].frame)
+    console.log('queue', q.shown.map(g => g.title), 'food store', s.settlements.find(x => x.owner === 0)!.foodStore, 'stock', s.settlements.find(x => x.owner === 0)!.stock, 'frame', s.settlements.find(x => x.owner === 0)!.frame)
     const save = toSave(s)
     const json = JSON.stringify(save)
     console.log('save bytes', json.length, 'deltas', Object.keys(save.tileDeltas).length)
