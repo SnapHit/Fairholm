@@ -33,7 +33,6 @@ import { UNITS, UNIT_SPRITE, LIGHT, ARRIVAL, hexRgb } from './look'
 import { surfaceMaterial, type LightUniforms } from './shading'
 import type { Occluder } from './shadow'
 import { buildBillboards, quadGeometry, type AtlasManifest, type AtlasPiece, type Billboard } from './billboards'
-import { waveCandidates, openWaterNear } from './selectors'
 import { C } from '../sim/constants'
 
 type Form = 'disc' | 'square' | 'long' | 'wedge' | 'rect' | 'hull' | 'company'
@@ -47,7 +46,7 @@ function formOf(kind: UnitKind): Form {
     case 'outrider': return 'long'
     case 'battery': case 'damagedBattery': case 'siegeTrain': case 'damagedSiegeTrain': return 'wedge'
     case 'hauler': return 'rect'
-    case 'lighter': case 'trader': case 'raider': case 'cutter': case 'companyShip': return 'hull'
+    case 'lighter': case 'trader': case 'raider': case 'cutter': case 'companyShip': case 'lander': return 'hull'
     default: return 'company'
   }
 }
@@ -73,8 +72,10 @@ export function pieceFor(kind: UnitKind, sheet: AtlasManifest): AtlasPiece | nul
   return alias ? sheet.pieces[alias] ?? null : null
 }
 
+/** Whether a kind lies in the water: the hulls, the Company's ship and the lander, which is the
+ *  first ship. Drawn at the waterline, riding the water, with a wake when under way. */
 export function isHull(kind: UnitKind): boolean {
-  return kind === 'lighter' || kind === 'trader' || kind === 'raider' || kind === 'cutter' || kind === 'companyShip'
+  return kind === 'lighter' || kind === 'trader' || kind === 'raider' || kind === 'cutter' || kind === 'companyShip' || kind === 'lander'
 }
 
 export function isDamaged(kind: UnitKind): boolean {
@@ -188,8 +189,9 @@ export interface UnitBuild {
 }
 
 /** `sheet` is the units sheet's manifest, and `sheetIndex` where it stands in the list handed to
- *  buildBillboards. */
-export function buildUnits(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, sheet: AtlasManifest, sheetIndex: number): UnitBuild {
+ *  buildBillboards. `visible` says which units the player can see; the rest are not built at all,
+ *  so they cannot be drawn, tapped or counted. Everything is visible when nothing is passed. */
+export function buildUnits(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, sheet: AtlasManifest, sheetIndex: number, visible: (u: Unit) => boolean = () => true): UnitBuild {
   const w = s.world.width
   const group = new THREE.Group()
   const close = new THREE.Group()
@@ -200,6 +202,7 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
   const drawn: { unit: Unit; x: number; z: number; piece: AtlasPiece }[] = []
   const perTile = new Map<number, number>()
   for (const u of s.units) {
+    if (!visible(u)) continue
     const k = perTile.get(u.tile) ?? 0
     perTile.set(u.tile, k + 1)
     const cx = (u.tile % w) + 0.5, cz = Math.floor(u.tile / w) + 0.5
@@ -298,7 +301,7 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
       const hull = isHull(e.unit.kind)
       const flip = e.piece.facing === 'left' && goesRight(s, e.unit)
       const sh = UNIT_SPRITE.shadow
-      if (hull) billboards.push(waterBillboard(e.piece, scale, e.x, e.z, flip, sheetIndex, plain))
+      if (hull) billboards.push({ ...waterBillboard(e.piece, scale, e.x, e.z, flip, sheetIndex, plain), tag: { kind: 'unit', id: e.unit.id } })
       else {
         // the light is read a little toward the sun, clear of the piece's own shadow, and no further:
         // a ship three people tall read its light from three tiles away, which was the next ship's
@@ -311,6 +314,7 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
           desaturate: damaged ? d.desaturate : 0,
           tilt: damaged ? (d.tiltDeg * Math.PI) / 180 : 0,
           cut: 0, bob: 0,
+          tag: { kind: 'unit', id: e.unit.id },
         })
       }
       occluders.push({ x: e.x, z: e.z, height: hull ? sh.hullHeight : height * sh.heightShare, radius: Math.max(sh.minRadius, width * sh.widthShare) })
@@ -369,60 +373,78 @@ export function buildUnits(s: GameState, heightAt: (x: number, z: number) => num
   return { group, close, far, billboards, positions, occluders }
 }
 
-/** What is on the water that is not a unit. Before the landing: the lander down and steaming
- *  offshore, and the boat making for the coast with a wake, the boat's progress animated once a site
- *  is chosen. After it: the Company's landers while a wave is at sea, steaming on the turn they came
- *  down. Setting brief section 7, onboarding brief section 2, military brief section 10. The pictures
- *  are a billboard layer of their own: they stand on open water, where nothing else drawn stands,
- *  so they need no sorting against the people and the buildings. Null when there is nothing. */
+/** What is on the water that is not a unit: steam. A lander that has just come down steams, the
+ *  player's and a rival's alike for the first turns of the game (while a rival's is in sight), and
+ *  the Company's landers steam on the turn they come down. The Company's landers are not units at
+ *  all while a wave is at sea, so they are drawn here too, where the simulation says they are, motoring
+ *  in from their splashdown toward the coast over the approach; military brief section 9 has the
+ *  approach always visible, whatever the fog hides. Null when there is nothing. `positions` is where
+ *  buildUnits put each unit, so the steam comes off the lander where it is drawn. */
 export function buildArrival(
-  s: GameState, site: number | null, progress: number, light: LightUniforms,
-  sheet: AtlasManifest, sheetIndex: number, sheets: THREE.IUniform[], sizes: [number, number][],
-  /** The arrival is drawn before the landing; the gallery asks for it whatever the turn. */
-  always = false,
-): THREE.Group | null {
+  s: GameState, light: LightUniforms, sheet: AtlasManifest, sheetIndex: number, sheets: THREE.IUniform[], sizes: [number, number][],
+  positions: Map<number, [number, number]>,
+): { group: THREE.Group | null; steaming: number } {
   const group = new THREE.Group()
   const w = s.world.width
   const bills: Billboard[] = []
   const steam: [number, number][] = []
   const plain = new THREE.Color(1, 1, 1)
   const lander = sheet.pieces['lander'] ?? null
-  const boatPiece = pieceFor('lighter', sheet)
 
-  /** The lander, drawn if the sheet has it and built if not, and where its stacks are. */
-  const putLander = (x: number, z: number, steaming: boolean) => {
-    if (lander) {
-      bills.push(waterBillboard(lander, 1, x, z, false, sheetIndex, plain))
-      const { width, height } = drawnSize(lander)
-      // the stacks are at the top right of the drawing, and the steam comes off them
-      if (steaming) steam.push([x + width * ARRIVAL.plume.stacks[0], z - height * ARRIVAL.plume.stacks[1]])
-    } else {
-      const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.12, 8), surfaceMaterial(light, 1, false, 0x2a2a2e))
-      hull.position.set(x, 0.05, z)
-      group.add(hull)
-      if (steaming) steam.push([x + 0.2, z - 0.1])
+  /** Where the stacks are on a lander drawn at a point: the steam comes off them. */
+  const stacksOf = (x: number, z: number): [number, number] => {
+    if (!lander) return [x + 0.2, z - 0.1]
+    const { width, height } = drawnSize(lander)
+    return [x + width * ARRIVAL.plume.stacks[0], z - height * ARRIVAL.plume.stacks[1]]
+  }
+
+  // the landers that are units, just down: the opening image is a lander settling at splashdown
+  // with its plume rising, setting brief section 7, and a rival's does the same when it is in sight
+  if (s.turn <= C.lander.steamTurns) {
+    for (const u of s.units) {
+      if (u.kind !== 'lander') continue
+      const p = positions.get(u.id)
+      if (!p) continue
+      steam.push(stacksOf(p[0], p[1]))
     }
   }
 
-  // the Company's landers: one a wave, where the simulation says it is, motoring in from its
-  // splashdown toward the coast over the approach, steaming on the turn it came down. Military
-  // brief section 9: the approach is always visible, whatever the fog hides
+  // the Company's landers: one a wave, where the simulation says it is, steaming on the turn it
+  // came down
   const d = s.declaration
   if (d?.declared) {
     for (const wave of d.waves) {
       if (wave.landed) continue
+      const x = (wave.at % w) + 0.5, z = Math.floor(wave.at / w) + 0.5
+      if (lander) bills.push({ ...waterBillboard(lander, 1, x, z, false, sheetIndex, plain), clear: true })
+      else {
+        const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.12, 8), surfaceMaterial(light, 1, false, 0x2a2a2e))
+        hull.position.set(x, 0.05, z)
+        group.add(hull)
+      }
       const since = C.military.approachTurns - wave.turnsToLand
-      putLander((wave.at % w) + 0.5, Math.floor(wave.at / w) + 0.5, since < ARRIVAL.waveSteamTurns)
+      if (since < ARRIVAL.waveSteamTurns) steam.push(stacksOf(x, z))
     }
   }
-  void site; void progress; void always; void boatPiece
 
   if (bills.length) {
     const mesh = buildBillboards(bills, light, sheets, sizes)
     if (mesh) { mesh.renderOrder = 0; group.add(mesh) }
   }
   if (steam.length) group.add(buildPlume(steam, light))
-  return group.children.length ? group : null
+  return { group: group.children.length ? group : null, steaming: steam.length }
+}
+
+/** The lander alone, as a picture at a point with so much of it there: the beaching draws this
+ *  moving onto the shore and fading while the settlement comes up. */
+export function buildGhostLander(x: number, z: number, fade: number, light: LightUniforms, sheet: AtlasManifest, sheetIndex: number, sheets: THREE.IUniform[], sizes: [number, number][]): THREE.InstancedMesh | null {
+  const lander = sheet.pieces['lander'] ?? null
+  if (!lander) return null
+  const bill = waterBillboard(lander, 1, x, z, false, sheetIndex, new THREE.Color(1, 1, 1))
+  bill.fade = fade
+  const mesh = buildBillboards([bill], light, sheets, sizes)
+  if (mesh) mesh.renderOrder = 0
+  return mesh
 }
 
 const WAKE_VS = /* glsl */ `

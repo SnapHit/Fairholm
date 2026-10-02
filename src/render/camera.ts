@@ -176,15 +176,19 @@ export class MapCamera {
   /** Smoothly move toward a target. Returns true while moving. */
   glideTarget: { cx: number; cz: number; zoom: number } | null = null
   glideTo(tile: number, zoom: number) {
+    this.glideToPoint((tile % this.mapW) + 0.5, Math.floor(tile / this.mapW) + 0.5, zoom)
+  }
+  /** Glide so that a world point is at the screen's centre, as near as the map's edges allow. */
+  glideToPoint(x: number, z: number, zoom: number) {
     // clamp the target into what the soft clamp will allow at the target zoom, so the glide lands
     // somewhere the camera is content to stay
-    const z = Math.max(this.minZoom(), Math.min(this.maxZoom(), zoom))
-    const hw = this.width / z / 2, hh = this.height / z / 2
+    const zz = Math.max(this.minZoom(), Math.min(this.maxZoom(), zoom))
+    const hw = this.width / zz / 2, hh = this.height / zz / 2
     const minX = Math.min(hw, this.mapW / 2), maxX = Math.max(this.mapW - hw, this.mapW / 2)
     const minZ = Math.min(hh, this.mapH / 2), maxZ = Math.max(this.mapH - hh, this.mapH / 2)
-    const cx = Math.max(minX, Math.min(maxX, (tile % this.mapW) + 0.5))
-    const cz = Math.max(minZ, Math.min(maxZ, Math.floor(tile / this.mapW) + 0.5))
-    this.glideTarget = { cx, cz, zoom: z }
+    const cx = Math.max(minX, Math.min(maxX, x))
+    const cz = Math.max(minZ, Math.min(maxZ, z))
+    this.glideTarget = { cx, cz, zoom: zz }
   }
   glideTick(): boolean {
     const g = this.glideTarget

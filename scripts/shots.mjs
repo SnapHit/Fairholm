@@ -59,8 +59,9 @@ async function overflow(page) {
   const { ctx, page } = await open(390)
   await page.screenshot({ path: `${OUT}/01-arrival.png` })
   const t0 = Date.now()
-  await page.locator('.card.tappable').first().tap()
-  await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+  // the first tap anywhere: on the map, which also takes the opening's lines away
+  await page.touchscreen.tap(195, 300)
+  await page.evaluate(() => window.fairholm.autoplayOpening())
 
   // music: audible within five seconds of that first tap, measured by the element moving
   let heard = null
@@ -105,13 +106,12 @@ async function overflow(page) {
 // ---- 2: the settlement screen at three widths ---------------------------------------------------
 for (const width of [320, 390, 430]) {
   const { ctx, page } = await open(width)
-  await page.locator('.card.tappable').first().tap()
-  await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+  await page.evaluate(() => window.fairholm.autoplayOpening())
   await page.waitForTimeout(300)
   // give the settlement something to show: a few buildings and some goods
   await page.evaluate(() => {
     const a = window.fairholm
-    const st = a.state.settlements[0]
+    const st = a.state.settlements.find(x => x.owner === 0)
     st.buildings.carpenter = 1
     st.buildings.meeting = 1
     st.buildings.storage = 1
@@ -120,8 +120,8 @@ for (const width of [320, 390, 430]) {
     st.buildings.school = 1
     st.buildings.works = 1
     st.stock.timber = 40; st.stock.flax = 22; st.stock.food = 61; st.stock.ore = 9; st.stock.linen = 14
-    a.dispatch({ t: 'autoAssign', settlement: 0 })
-    a.open({ kind: 'settlement', id: 0 })
+    a.dispatch({ t: 'autoAssign', settlement: st.id })
+    a.open({ kind: 'settlement', id: st.id })
   })
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${OUT}/03-settlement-${width}.png` })
@@ -145,21 +145,20 @@ for (const width of [320, 390, 430]) {
 // ---- 3: assignment and navigation ----------------------------------------------------------------
 {
   const { ctx, page } = await open(390)
-  await page.locator('.card.tappable').first().tap()
-  await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+  await page.evaluate(() => window.fairholm.autoplayOpening())
   await page.waitForTimeout(300)
   await page.evaluate(() => {
     const a = window.fairholm
-    const st = a.state.settlements[0]
+    const st = a.state.settlements.find(x => x.owner === 0)
     st.buildings.carpenter = 1
     st.stock.timber = 40
     for (const c of st.colonists) c.job = { kind: 'idle' }
-    a.open({ kind: 'settlement', id: 0 })
+    a.open({ kind: 'settlement', id: st.id })
   })
   await page.waitForTimeout(300)
 
   // path one: tap the tile, then tap a person in the sheet
-  const before = await page.evaluate(() => window.fairholm.state.settlements[0].colonists.map(c => c.job.kind))
+  const before = await page.evaluate(() => window.fairholm.state.settlements.find(x => x.owner === 0).colonists.map(c => c.job.kind))
   await page.evaluate(() => {
     const a = window.fairholm
     const cells = [...document.querySelectorAll('.st-ring .cell')]
@@ -170,7 +169,7 @@ for (const width of [320, 390, 430]) {
   await page.screenshot({ path: `${OUT}/04-assign-a-tile.png` })
   await page.evaluate(() => document.querySelector('#sheet .section .line .btn').click())
   await page.waitForTimeout(250)
-  const afterTile = await page.evaluate(() => window.fairholm.state.settlements[0].colonists.map(c => c.job.kind))
+  const afterTile = await page.evaluate(() => window.fairholm.state.settlements.find(x => x.owner === 0).colonists.map(c => c.job.kind))
   check('a colonist can be put on a tile', afterTile.filter(k => k === 'tile').length > before.filter(k => k === 'tile').length, afterTile.join(','))
 
   // path two: tap an idle person, the useful places light up, tap one
@@ -189,7 +188,7 @@ for (const width of [320, 390, 430]) {
     const slot = [...document.querySelectorAll('.slot.can-take')][0]
     if (!slot) return null
     slot.click()
-    return a.state.settlements[0].colonists.map(c => c.job.kind)
+    return a.state.settlements.find(x => x.owner === 0).colonists.map(c => c.job.kind)
   })
   check('a colonist can be put in a building', !!afterBuilding && afterBuilding.includes('building'), (afterBuilding || []).join(','))
   await page.waitForTimeout(200)
@@ -198,14 +197,14 @@ for (const width of [320, 390, 430]) {
   // navigation between settlements
   const nav = await page.evaluate(() => {
     const a = window.fairholm
-    const st = a.state.settlements[0]
+    const st = a.state.settlements.find(x => x.owner === 0)
     const w = a.state.world.width
     // a second settlement well clear of the first, so the header's arrows have somewhere to go
     const mod = a.state.settlements
     const tile = st.tile + 6
     const s2 = { ...structuredClone(st), id: mod.length, tile, name: 'Second' }
     mod.push(s2)
-    a.open({ kind: 'settlement', id: 0 })
+    a.open({ kind: 'settlement', id: st.id })
     const first = document.querySelector('.st-head .name').textContent
     a.gotoSettlement(1)
     const second = document.querySelector('.st-head .name').textContent
@@ -222,8 +221,7 @@ for (const width of [320, 390, 430]) {
 // ---- 4: the sheet goes away, and the queue collapses when its top item is dealt with -------------
 {
   const { ctx, page } = await open(390)
-  await page.locator('.card.tappable').first().tap()
-  await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+  await page.evaluate(() => window.fairholm.autoplayOpening())
   await page.waitForTimeout(300)
 
   const bar = await page.evaluate(() => {
@@ -239,7 +237,7 @@ for (const width of [320, 390, 430]) {
   check('tapping the bar expands the queue', expanded)
 
   const away = await page.evaluate(() => {
-    document.getElementById('scrim').click()
+    document.getElementById('scrim').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, bubbles: true }))
     return document.getElementById('sheet').classList.contains('open')
   })
   check('tapping away puts the sheet back', !away)
@@ -270,17 +268,16 @@ for (const width of [320, 390, 430]) {
   const { ctx, page } = await open(390)
   await page.addStyleTag({ content: 'html { font-size: 20px }' })
   await page.evaluate(() => window.fairholm.layout())
-  await page.locator('.card.tappable').first().tap()
-  await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+  await page.evaluate(() => window.fairholm.autoplayOpening())
   await page.waitForTimeout(300)
   await page.evaluate(() => {
     const a = window.fairholm
-    const st = a.state.settlements[0]
+    const st = a.state.settlements.find(x => x.owner === 0)
     st.buildings.carpenter = 1; st.buildings.meeting = 1; st.buildings.storage = 1
     st.buildings.linenWorks = 1; st.buildings.smelter = 1; st.buildings.school = 1
     st.stock.timber = 40; st.stock.flax = 22; st.stock.food = 61
-    a.dispatch({ t: 'autoAssign', settlement: 0 })
-    a.open({ kind: 'settlement', id: 0 })
+    a.dispatch({ t: 'autoAssign', settlement: st.id })
+    a.open({ kind: 'settlement', id: st.id })
   })
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${OUT}/09-large-type.png` })
@@ -298,10 +295,9 @@ for (const width of [320, 390, 430]) {
 // ---- 6: landscape ---------------------------------------------------------------------------------
 {
   const { ctx, page } = await open(844, 390)
-  await page.locator('.card.tappable').first().tap()
-  await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+  await page.evaluate(() => window.fairholm.autoplayOpening())
   await page.waitForTimeout(400)
-  await page.evaluate(() => window.fairholm.open({ kind: 'settlement', id: 0 }))
+  await page.evaluate(() => { const a = window.fairholm; a.open({ kind: 'settlement', id: a.state.settlements.find(x => x.owner === 0).id }) })
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${OUT}/08-landscape-settlement.png` })
   const land = await page.evaluate(() => ({

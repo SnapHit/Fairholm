@@ -124,6 +124,14 @@ describe('turn loop pin', () => {
   // timber in reach), the spare colonist is the lighter the lander carried, and the rivals' landers
   // took two more ids. Old: turn 51, foodStore 4, stock { timber: 40, tooling: 8, flax: 40 },
   // prices { timber: 2, tooling: 5, instruments: 14 }, units 1, dispatch 40, nextId 7.
+  //
+  // Re-recorded again on 2 October 2026: the generator now prefers a splashdown whose whole sight
+  // square lies on the map, so the opening shot has open sea all round the lander (DECISIONS.md,
+  // the fog opening). That moved pin-seed's splashdown, and with it the coast the autopilot chose
+  // and everything the fifty turns did on it: timber country rather than flax, a hungrier store.
+  // Old: foodStore 108, stock { timber: 10, tooling: 8, flax: 40 }, prices { timber: 1, tooling: 6,
+  // arms: 6, instruments: 15, linen: 11 }, units 2, dispatch 49, nextId 11. The founding turn and
+  // the rival count did not move.
   it('fifty turns from a fixed seed reproduce the recorded aggregates', () => {
     const s = landed('pin-seed')
     expect(s.turn).toBe(3)
@@ -131,11 +139,11 @@ describe('turn loop pin', () => {
     expect(aggregates(s)).toEqual({
       turn: 53, pop: 4, settlements: 1, rivalSettlements: 3,
       gold: 40, word: 0, passages: 0,
-      foodStore: 108, frame: 0,
-      stock: { timber: 10, tooling: 8, flax: 40 },
-      prices: { timber: 1, tooling: 6, arms: 6, instruments: 15, linen: 11 },
-      charge: 0.08, units: 2, dispatch: 49, grievance: 0, fleet: 4,
-      nextId: 11, demand: null, embargoed: 0,
+      foodStore: 4, frame: 0,
+      stock: { timber: 40, tooling: 8 },
+      prices: { timber: 2, tooling: 4, arms: 6, instruments: 13, linen: 11 },
+      charge: 0.08, units: 1, dispatch: 53, grievance: 0, fleet: 4,
+      nextId: 10, demand: null, embargoed: 0,
     })
   })
 
@@ -333,7 +341,7 @@ describe('long game save round-trip', () => {
         }
       }
       if (s.company.demand) applyAction(s, { t: 'answerDemand', accept: turn % 3 !== 0 })
-      if (turn === 30) { home.stock.tooling = 40; try { applyAction(s, { t: 'equip', settlement: 0, colonist: 0, as: 'improver' }) } catch { /* fine */ } }
+      if (turn === 30) { home.stock.tooling = 40; try { applyAction(s, { t: 'equip', settlement: home.id, colonist: 0, as: 'improver' }) } catch { /* fine */ } }
       const imp = s.units.find(u => u.owner === 0 && u.kind === 'improver')
       if (imp && !imp.order) { const t = s.world.tiles[imp.tile]; if (!t.road) try { applyAction(s, { t: 'improve', unit: imp.id, task: 'road' }) } catch { /* fine */ } }
       if (turn === 120) { for (const st of s.settlements.filter(x => x.owner === 0)) st.resolve = 1; try { applyAction(s, { t: 'declare' }) } catch { /* fine */ } }

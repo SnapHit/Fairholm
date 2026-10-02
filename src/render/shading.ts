@@ -12,7 +12,8 @@
 // Every number and colour here comes from src/render/look.ts.
 
 import * as THREE from 'three'
-import { seasonLook, sunVector, hexRgb, LIGHT, CLOUD, SURFACE, SHADOW, type SeasonLook } from './look'
+import { C } from '../sim/constants'
+import { seasonLook, sunVector, hexRgb, LIGHT, CLOUD, SURFACE, SHADOW, FOG, type SeasonLook } from './look'
 
 export type LightUniforms = Record<string, THREE.IUniform>
 
@@ -40,6 +41,13 @@ export function makeLightUniforms(): LightUniforms {
     uMapSize: { value: new THREE.Vector2(1, 1) },
     uSunLift: { value: 1 },
     uFilm: { value: SURFACE.filmStrength },
+    /** What is known of the ground, one texel a tile: red explored, green in sight now, blue how deep
+     *  into the unknown. The scene writes it after every state change. Art brief section 10a. */
+    uVis: { value: null as THREE.Texture | null },
+    uHazeDeep: { value: new THREE.Color(0.16, 0.22, 0.27) },
+    uHazeEdge: { value: new THREE.Color(0.38, 0.47, 0.53) },
+    /** One while the fog is on. With it off every shader draws the ground as it is. */
+    uFog: { value: C.flags.fogOfWar ? 1 : 0 },
   }
 }
 
@@ -58,6 +66,8 @@ export function applyLook(u: LightUniforms, look: SeasonLook) {
   u.uRimStrength.value = look.rimStrength
   u.uContrast.value = look.contrast
   u.uLift.value = look.lift
+  ;(u.uHazeDeep.value as THREE.Color).setRGB(...hexRgb(look.hazeDeep))
+  ;(u.uHazeEdge.value as THREE.Color).setRGB(...hexRgb(look.hazeEdge))
   // how far toward the sun a point standing this high above the ground has to look to find its own
   // light: its height over the tangent of the sun's elevation, capped so it does not read the
   // shadow of somewhere else entirely
@@ -85,6 +95,10 @@ uniform sampler2D uShadowMap;
 uniform vec2 uMapSize;
 uniform float uFilm;
 uniform float uSunLift;
+uniform sampler2D uVis;
+uniform vec3 uHazeDeep;
+uniform vec3 uHazeEdge;
+uniform float uFog;
 
 float fhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float fnoise(vec2 p) {
@@ -144,6 +158,42 @@ vec3 finish(vec3 c, vec3 world) {
   c = (c - 0.5) * uContrast + 0.5 + uLift;
   return max(c, vec3(0.0));
 }
+
+/** What is known of the ground under this fragment: x known (nought unexplored to one explored),
+ *  y in sight now, z how deep into the unknown it lies, nought at the frontier and one far from it.
+ *  Four taps a third of a tile apart soften the per tile mask across tile edges about as far as the
+ *  terrain blends its own colours, and a slow noise wanders the frontier so that land fades into the
+ *  haze rather than stopping at a grid line. Beyond the map's edge nothing is known. */
+vec3 knownHere(vec3 world) {
+  vec2 uv = world.xz / uMapSize;
+  vec2 o = vec2(${FOG.tapOffset.toFixed(3)}) / uMapSize;
+  vec4 v = (texture2D(uVis, uv + vec2(o.x, 0.0)) + texture2D(uVis, uv - vec2(o.x, 0.0))
+          + texture2D(uVis, uv + vec2(0.0, o.y)) + texture2D(uVis, uv - vec2(0.0, o.y))) * 0.25;
+  float wander = (fnoise(world.xz * ${FOG.edgeScale.toFixed(3)} + uCloudTime * vec2(2.0, 1.3)) - 0.5) * ${FOG.edgeWander.toFixed(3)};
+  float known = smoothstep(0.5 - ${FOG.edgeSoft.toFixed(3)}, 0.5 + ${FOG.edgeSoft.toFixed(3)}, v.r + wander);
+  vec2 past = max(-world.xz, world.xz - uMapSize);
+  float outside = smoothstep(0.0, ${FOG.edgeFade.toFixed(3)}, max(past.x, past.y));
+  known *= 1.0 - outside;
+  return vec3(known, v.g, max(v.b, outside));
+}
+
+/** The fog, art brief section 10a: unexplored ground is the sea's own haze, brighter toward the edge
+ *  of what is known and deeper beyond it, with a slow drift of weather across it that moves only
+ *  when a frame is drawn; remembered ground out of sight is drawn as known, a little dimmer and
+ *  greyer. Applied after finish, so the haze keeps the colours it was given, with the same grain. */
+vec3 fogged(vec3 c, vec3 world) {
+  if (uFog < 0.5) return c;
+  vec3 k = knownHere(world);
+  float grey = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  vec3 remembered = mix(c, vec3(grey), ${FOG.rememberedGrey.toFixed(3)}) * ${FOG.rememberedDim.toFixed(3)};
+  c = mix(remembered, c, smoothstep(0.25, 0.75, k.y));
+  vec3 haze = mix(uHazeEdge, uHazeDeep, smoothstep(0.0, 1.0, k.z));
+  float drift = fnoise(world.xz * ${FOG.driftScale.toFixed(3)} + uCloudTime * vec2(${FOG.driftSpeed.toFixed(2)}, ${(FOG.driftSpeed * 0.7).toFixed(2)})) - 0.5;
+  haze *= 1.0 + drift * ${FOG.driftStrength.toFixed(3)};
+  float film = fnoise(gl_FragCoord.xy * ${SURFACE.filmScale.toFixed(3)}) - 0.5;
+  haze *= 1.0 + film * uFilm;
+  return mix(haze, c, k.x);
+}
 `
 
 /** The vertex shader every instanced form on the map shares: world position, smooth normal and the
@@ -189,7 +239,7 @@ void main() {
   vec3 probe = vWorld + uSunHoriz * (min(max(0.0, vWorld.y), ${LIGHT.propShadowHeightMax.toFixed(3)}) * uSunLift);
   float shadow = sunReach(probe);
   vec3 c = shade(vTint * uTint, n, shadow, uAo, cloudShadow(vWorld));
-  gl_FragColor = vec4(finish(c, vWorld), uOpacity);
+  gl_FragColor = vec4(fogged(finish(c, vWorld), vWorld), uOpacity);
 }
 `
 

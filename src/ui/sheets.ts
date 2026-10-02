@@ -6,18 +6,20 @@ import { GOODS, BUILDING_LINES } from '../sim/state'
 import { C } from '../sim/constants'
 import { unitLabel } from '../sim/queue'
 import { workableTiles, tileOffers, tileYield, passageCost, goldPassageCost, buildingWorkers, foodBalance, workerOutput, landingSettlement, clerksRequired } from '../sim/labour'
-import { previewProduction, buildable, buildingName, storageCapacity, isCoastalSettlement, canStart } from '../sim/settlement'
+import { previewProduction, buildable, buildingName, storageCapacity, isCoastalSettlement, canStart, foundingProblem } from '../sim/settlement'
+import { neighbours8, isLand } from '../sim/worldgen'
+import { turnsToCoast } from '../sim/autopilot'
 import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, recompute } from '../sim/market'
 import { maxMoves, cargoCapacity, equipCost, isHull, unitAttack, unitDefence } from '../sim/units'
 import { signatoryList } from '../sim/grievance'
 import { term, TERMS } from './glossary'
 import { h, button, row, muted, fmt, signed, plural } from './dom'
-import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS } from '../render/tiles'
+import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS, tileLook, tileWords } from '../render/tiles'
 import {
-  GOOD_WORDS, ringCells, tileCandidates, buildingCandidates, standingWords, jobWords, goodWord,
+  GOOD_WORDS, ringCells, ringPreview, tileCandidates, buildingCandidates, standingWords, jobWords, goodWord,
   takesWorkers, type Candidate,
 } from './selectors'
-import { settlementScreen, tileGoodOrder } from './settlement'
+import { settlementScreen, terrainLayers, tileGoodOrder } from './settlement'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
 import type { App } from './app'
@@ -515,9 +517,18 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   const w = s.world.width
   const here = s.settlements.find(x => x.tile === u.tile)
   const mine = u.owner === 0
-  const panel = h('div', { class: 'panel' }, header(app, [T(app, u.kind, unitLabel(u.kind))], `${mine ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name} · ${u.moves}/${maxMoves(u)} moves · ${u.quality}${u.colonist ? ` · ${colonistLabel(u.colonist)}` : ''}`))
+  const lander = u.kind === 'lander'
+  const sub = lander
+    ? `yours · ${u.moves}/${maxMoves(u)} moves · ${plural(u.aboard.length, 'colonist')} aboard`
+    : `${mine ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name} · ${u.moves}/${maxMoves(u)} moves · ${u.quality}${u.colonist ? ` · ${colonistLabel(u.colonist)}` : ''}`
+  const panel = h('div', { class: 'panel' }, header(app, [T(app, u.kind, unitLabel(u.kind))], sub))
   if (!mine) { panel.append(muted(`Attack ${unitAttack(u, 'open')}, defence ${unitDefence(u, !!here)}.`)); return panel }
   const path = app.pathPreview
+  if (lander) {
+    // the lander's whole business is the shore beside it: where it can go ashore, what the ground
+    // there would give, and the one control that founds. Interaction brief section 8
+    panel.append(landerControls(app, s, u))
+  }
   if (path && path.length) {
     const dest = path[path.length - 1]
     const ds = s.settlements.find(x => x.tile === dest)
@@ -531,16 +542,22 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
       h('div', {}, `${path.length} tiles, about ${plural(turns, 'turn')}. Hold the tile to go, or tap below.`),
       row(button('Go', () => app.commitMove(u.id), 'primary'), enemy ? button('Attack', () => app.commitAttack(u.id, dest), 'danger') : null, button('Clear', () => { app.pathPreview = null; app.paintPath(); app.scene.requestDraw(); app.renderSheet() }, 'ghost')),
     ))
-  } else panel.append(h('p', { class: 'muted' }, 'Tap a tile to plan a move, then hold it to go.'))
+  } else if (!lander) panel.append(h('p', { class: 'muted' }, 'Tap a tile to plan a move, then hold it to go.'))
+  else if (!neighbours8(w, s.world.height, u.tile).some(n => isLand(s.world.tiles[n]))) {
+    const turns = turnsToCoast(s)
+    panel.append(h('p', { class: 'muted' }, `Open sea. Tap a water tile to plan a course, then hold it to sail.${isFinite(turns) && turns > 0 ? ` The nearest coast you could found on is about ${plural(turns, 'turn')} away, though you cannot see it yet.` : ''}`))
+  }
   const actions: HTMLElement[] = []
   if (u.kind === 'colonist' && !here) {
-    const t = s.world.tiles[u.tile]
-    const near = s.settlements.some(x => Math.max(Math.abs((x.tile % w) - (u.tile % w)), Math.abs(Math.floor(x.tile / w) - Math.floor(u.tile / w))) < 2)
-    const onPred = s.predecessors.some(p => p.territory.includes(u.tile))
-    actions.push(button('Found a settlement here', () => app.dispatch({ t: 'found', unit: u.id }, 'Settlement founded'), 'primary'))
-    if (near) actions.push(muted('Too close to another settlement.'))
-    else if (onPred) actions.push(muted('This is predecessor ground.'))
-    else if (t.terrain === 'water' || t.terrain === 'mountain') actions.push(muted('Not here.'))
+    // a colonist founds where it stands, once the lander has founded the first settlement
+    const own = s.settlements.some(x => x.owner === 0)
+    const problem = foundingProblem(s, u.tile)
+    const focused = app.foundTarget === u.tile
+    if (!own) actions.push(muted('The lander founds the first settlement. Beach it first; a colonist may found after that.'))
+    else if (!focused) actions.push(button('Found a settlement here', () => app.setFoundTarget(u.tile), 'small'))
+    else actions.push(foundPreview(app, s, u.tile, problem, () => app.found(u.id, u.tile)))
+    const beside = s.units.find(x => x.owner === 0 && x.kind === 'lander' && neighbours8(w, s.world.height, x.tile).includes(u.tile))
+    if (beside) actions.push(button('Go back aboard the lander', () => app.dispatch({ t: 'embark', unit: u.id, lander: beside.id }, 'Came aboard'), 'small ghost'))
   }
   if (here && here.owner === 0) {
     if (u.colonist) actions.push(button(u.kind === 'colonist' ? 'Join the settlement' : 'Stand down', () => app.dispatch({ t: 'disband', unit: u.id }, u.kind === 'colonist' ? 'Joined' : 'Stood down'), 'small'))
@@ -563,6 +580,64 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   if (Object.keys(u.cargo).length) actions.push(muted('Carrying ' + Object.entries(u.cargo).map(([g, n]) => `${n} ${g}`).join(', ')))
   panel.append(section('Do', ...actions))
   return panel
+}
+
+/** Which way from one tile to another, in a word. */
+function bearing(w: number, from: number, to: number): string {
+  const dx = (to % w) - (from % w), dz = Math.floor(to / w) - Math.floor(from / w)
+  const ns = dz < 0 ? 'north' : dz > 0 ? 'south' : ''
+  const ew = dx < 0 ? 'west' : dx > 0 ? 'east' : ''
+  return ns && ew ? `${ns}-${ew}` : ns || ew || 'here'
+}
+
+/** The shore beside the lander, and the founding control for whichever bit of it is in focus. */
+function landerControls(app: App, s: GameState, u: Unit): HTMLElement {
+  const w = s.world.width, h2 = s.world.height
+  const shore = neighbours8(w, h2, u.tile).filter(n => isLand(s.world.tiles[n]))
+  const box = h('div', { class: 'section' })
+  if (!shore.length) return box
+  const first = !s.settlements.some(x => x.owner === 0)
+  const target = app.foundTarget !== null && shore.includes(app.foundTarget) ? app.foundTarget : null
+  box.append(h('div', { class: 'section-title' }, 'The shore'))
+  box.append(h('div', { class: 'chips' }, shore.map(t => {
+    const look = tileLook(s, t)
+    return h('button', { class: 'chip' + (t === target ? ' on' : ''), type: 'button', onClick: () => app.setFoundTarget(t) }, `${bearing(w, u.tile, t)}: ${tileWords(look).toLowerCase()}`)
+  })))
+  if (target === null) {
+    box.append(muted(first ? 'Pick the shore to beach on. Everyone aboard becomes the settlement, and the boat stays on the water.' : 'Pick the shore to beach on.'))
+    return box
+  }
+  const problem = foundingProblem(s, target)
+  box.append(foundPreview(app, s, target, problem, () => app.found(u.id, target), first ? `Beach the lander and found ${C.lander.firstName}` : 'Beach the lander and found a settlement'))
+  if (u.aboard.length && s.world.tiles[target].terrain !== 'mountain') {
+    box.append(row(button('Send one ashore to scout', () => app.dispatch({ t: 'disembark', unit: u.id, tile: target }, 'Went ashore'), 'small ghost'),
+      u.aboard.length === 1 ? muted('The last one aboard. The lander cannot found with no one in it.') : null))
+  }
+  return box
+}
+
+/** The ring a settlement founded at `tile` would work, and the control that founds it, or the reason
+ *  it cannot be founded there: mountain, water, or too close to which settlement. */
+function foundPreview(app: App, s: GameState, tile: number, problem: string | null, found: () => void, label = 'Found a settlement here'): HTMLElement {
+  const cells = ringPreview(s, tile)
+  const ring = h('div', { class: 'st-ring compact' }, ...cells.map(c => {
+    if (c.tile === null || !c.look) return h('div', { class: 'cell dim', 'aria-label': c.words }, h('div', { class: 'label' }, c.words))
+    const el = h('div', { class: 'cell' + (c.reason && !c.centre ? ' bad' : ''), 'aria-label': `${c.words}${c.best ? `, ${goodWord(c.best.good as GoodId)} ${c.best.yield}` : ''}` }, ...terrainLayers(c.look))
+    if (c.centre) el.append(h('div', { class: 'centre' }, problem ? '✕' : '●'))
+    else if (c.best && !c.reason) el.append(h('div', { class: 'label' }, `${goodWord(c.best.good as GoodId)} ${c.best.yield}`))
+    return el
+  }))
+  const yields = cells.filter(c => c.best && !c.reason && !c.centre).reduce((acc, c) => { acc[c.best!.good] = (acc[c.best!.good] ?? 0) + c.best!.yield; return acc }, {} as Partial<Record<TileGood, number>>)
+  const words = Object.entries(yields).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).slice(0, 4).map(([g, v]) => `${v} ${GOOD_NAMES[g].toLowerCase()}`).join(', ')
+  const about = h('div', { class: 'about' })
+  if (problem) {
+    about.append(h('div', { class: 'big warn' }, 'Not here'), h('p', { class: 'muted' }, `${problem[0].toUpperCase()}${problem.slice(1)}. ${problem.startsWith('too close') ? 'Two settlements need two clear tiles between them.' : ''}`))
+  } else {
+    const t = s.world.tiles[tile]
+    about.append(h('div', { class: 'big' }, tileWords(tileLook(s, tile))), h('p', { class: 'muted' }, `Its best work: ${words || 'little'}.${t.river ? ' Fresh water.' : ''}${neighbours8(s.world.width, s.world.height, tile).some(n => s.world.tiles[n].terrain === 'water') ? ' On the coast, so ships and freight landers come to it.' : ' Inland: it will haul to the coast.'}`))
+    about.append(button(label, found, 'primary'))
+  }
+  return h('div', { class: 'found' }, ring, about)
 }
 
 function stackSheet(app: App, s: GameState, tile: number): HTMLElement {
@@ -591,6 +666,13 @@ function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
   const t = s.world.tiles[tile]
   const w = s.world.width
   const x = tile % w, z = Math.floor(tile / w)
+  if (C.flags.fogOfWar && !t.explored) {
+    // nothing is known of it but where it is and whatever of yours stands on it
+    const panel = h('div', { class: 'panel' }, header(app, 'Unexplored', `${x}, ${z}`), h('p', { class: 'muted' }, 'Nothing is known of this ground yet. Sail or walk toward it and it will show itself.'))
+    const own = s.units.filter(u => u.tile === tile && u.owner === 0)
+    if (own.length) panel.append(section('Here', ...own.map(u => line([unitLabel(u.kind)], 'select', () => { app.scene.cam.view.activeUnit = u.id; app.open({ kind: 'unit', id: u.id }); app.scene.updateRings(s); app.scene.requestDraw() }))))
+    return panel
+  }
   const title = t.forest ? `${TERRAIN_NAMES[t.terrain]}, ${FOREST_NAMES[t.forest]}` : TERRAIN_NAMES[t.terrain]
   const bits: string[] = []
   if (t.river === 2) bits.push('on a major river'); else if (t.river === 1) bits.push('by a river')
@@ -607,7 +689,7 @@ function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
   if (pred) panel.append(line([T(app, 'predecessor', pred.name), muted(' ground')], 'open', () => app.open({ kind: 'predecessor', id: pred.id })))
   const st = s.settlements.find(x => x.tile === tile)
   if (st) panel.append(line([st.owner === 0 ? st.name : `${st.name} (${s.charters[st.owner]?.name})`], st.owner === 0 ? 'open' : `${st.abstractPop} people`, st.owner === 0 ? () => app.open({ kind: 'settlement', id: st.id }) : undefined))
-  const units = s.units.filter(u => u.tile === tile)
+  const units = s.units.filter(u => u.tile === tile && app.scene.unitPositions.has(u.id))
   if (units.length) panel.append(section('Here', ...units.map(u => line([unitLabel(u.kind), muted(` · ${u.owner === 0 ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name}`)], u.owner === 0 ? 'select' : `${unitAttack(u, 'open')}/${unitDefence(u, !!st)}`, u.owner === 0 ? () => { app.scene.cam.view.activeUnit = u.id; app.open({ kind: 'unit', id: u.id }); app.scene.updateRings(s); app.scene.requestDraw() } : undefined))))
   // assign a worker from a settlement in reach
   const reach = s.settlements.filter(x => x.owner === 0 && workableTiles(s, x).includes(tile))

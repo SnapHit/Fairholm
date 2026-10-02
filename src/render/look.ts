@@ -69,6 +69,11 @@ export interface SeasonLook {
   /** How strongly the detail textures show. */
   grainStrength: number
   rockStrength: number
+  /** Unexplored ground, art brief section 10a: the sea's own blue-grey haze, deep far from anything
+   *  known and brighter toward the edge of what is. Cool and quiet, so the five lines of the opening
+   *  stay legible over it. */
+  hazeDeep: string
+  hazeEdge: string
 }
 
 const P = C.art.palette
@@ -91,6 +96,7 @@ export const SEASONS: SeasonLook[] = [
     snow: '#e8e6da', snowFrom: 0.86,
     clear: '#0f2c33', sky: '#cfe2ea',
     grainStrength: 0.16, rockStrength: 0.22,
+    hazeDeep: '#27363f', hazeEdge: '#5e7584',
   },
   {
     // deep summer: the fullest colour of the year, the sun at its highest, shadows short
@@ -109,6 +115,7 @@ export const SEASONS: SeasonLook[] = [
     snow: P.snow, snowFrom: 0.92,
     clear: '#123c44', sky: '#d6e6ea',
     grainStrength: 0.17, rockStrength: 0.24,
+    hazeDeep: '#283844', hazeEdge: '#617887',
   },
   {
     // the turn of the leaf: ochre and rust, a low amber sun and long shadows
@@ -127,6 +134,7 @@ export const SEASONS: SeasonLook[] = [
     snow: '#e4e0d2', snowFrom: 0.84,
     clear: '#0e3239', sky: '#e0dcd0',
     grainStrength: 0.19, rockStrength: 0.26,
+    hazeDeep: '#29343d', hazeEdge: '#657480',
   },
   {
     // bare ground: frost on the low country, snow on the high, a cold blue fill and a very low sun.
@@ -147,6 +155,7 @@ export const SEASONS: SeasonLook[] = [
     snow: '#f2f3f0', snowFrom: 0.52,
     clear: '#0c232b', sky: '#e6ecf2',
     grainStrength: 0.13, rockStrength: 0.20,
+    hazeDeep: '#252f3a', hazeEdge: '#6a7a8a',
   },
 ]
 
@@ -483,13 +492,10 @@ export const UNITS = {
 // ---- the water scene: the arrival, and the Company's landers -----------------------------------------
 
 export const ARRIVAL = {
-  /** The boat that comes off the lander is the smallest hull, at the lighter's share of the trader. */
-  boatScale: 0.6,
-  /** How far out from the first landing site the lander is looked for, in tiles. */
-  offshoreReach: 5,
-  /** Where the boat starts, as a share of the way from the lander to the shore, before a site is
-   *  chosen; then it goes the rest of the way. */
-  boatStart: 0.18,
+  /** The beaching: how long the lander takes to run onto the shore and fade as the settlement's
+   *  first buildings and the boat appear, in milliseconds; where in that it stops moving; where the
+   *  lander begins and ends its fade; and where the settlement and the boat begin and end theirs. */
+  beach: { ms: 1600, moveUntil: 0.55, fadeFrom: 0.4, fadeTo: 0.85, appearFrom: 0.35, appearTo: 0.9 },
   /** How far a hull drifts on the water as it rides, in tiles. Small: a thing you notice has moved
    *  when you look again, not a thing that moves while you look. */
   bob: 0.012,
@@ -505,6 +511,43 @@ export const ARRIVAL = {
   waveSpacing: 1.4,
   /** A splashdown steams for this many turns after it comes down. */
   waveSteamTurns: 1,
+}
+
+// ---- unexplored ground --------------------------------------------------------------------------------
+
+/** The fog, art direction brief section 10a: one mask from a per tile visibility texture, no cloud
+ *  layers, and a haze that is the sea's own colour rather than black. */
+export const FOG = {
+  /** How far into the unknown the haze goes from its edge colour to its deep one, in tiles. */
+  depthTiles: 4,
+  /** The mask is sampled four times this far apart, in tiles, which softens it across tile edges
+   *  about as far as the terrain blends its own colours (SURFACE.blendRadius). */
+  tapOffset: 0.5,
+  /** How soft the frontier is, as a band either side of the blended mask's half way point. */
+  edgeSoft: 0.28,
+  /** The frontier wanders off the tile edge by this much, in tiles, at this scale in cycles per
+   *  tile, so land fades into the haze rather than stopping at a grid line. */
+  edgeWander: 0.5,
+  edgeScale: 0.9,
+  /** The haze's weather: a slow drift of value across it. How strong, how large in cycles per tile,
+   *  and how fast against the cloud clock, which only runs while frames are drawn. */
+  driftStrength: 0.18,
+  driftScale: 0.3,
+  driftSpeed: 1.5,
+  /** Remembered ground out of sight: how far toward grey, and how much of its value it keeps. */
+  rememberedGrey: 0.38,
+  rememberedDim: 0.8,
+  /** Beyond the map's edge nothing is known; the known fades out over this many tiles. */
+  edgeFade: 1.5,
+}
+
+/** The founding preview on the map: the nine tiles a settlement would work, in bone where it may be
+ *  founded and in the loss colour where it may not, the centre stronger than the ring. */
+export const FOUND_PREVIEW = {
+  legal: '#f5eed1',
+  illegal: '#d8553e',
+  centre: 0.62,
+  ring: 0.3,
 }
 
 // ---- cloud shadow ------------------------------------------------------------------------------------

@@ -108,8 +108,8 @@ await page.evaluate(async (seed) => {
   a.beginArrival()
 }, process.env.SEED || 'fairholm-shots')
 await page.waitForTimeout(700)
-await page.locator('.card.tappable').first().tap()
-await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
+if (foundedOn < 0) throw new Error('the opening did not found')
 await page.evaluate(() => window.fairholm.closeSheet())
 await page.waitForTimeout(400)
 

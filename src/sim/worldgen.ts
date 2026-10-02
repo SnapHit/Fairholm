@@ -277,6 +277,8 @@ function generateOnce(seed: string, settings: Settings, attempt: number): World 
   // the player's: the main landmass's coast only
   const playerDist = sailingDistance(w, h, tiles, i => viableCoast(i) && comp[i] === bigComp)
   const anyDist = sailingDistance(w, h, tiles, viableCoast)
+  // a splashdown clear of the map's edge is preferred, so the opening has open sea all round
+  const preferOffEdge = (cands: number[]): number[] => { const off = cands.filter(i => offEdge(w, h, i)); return off.length ? off : cands }
   const pickSplash = (d: Int32Array, taken: number[]): number => {
     const cands: number[] = []
     for (let i = 0; i < N; i++) {
@@ -286,7 +288,7 @@ function generateOnce(seed: string, settings: Settings, attempt: number): World 
       cands.push(i)
     }
     if (!cands.length) return -1
-    return pick(splashRng, cands)
+    return pick(splashRng, preferOffEdge(cands))
   }
   const nearestCoast = (from: number, d: Int32Array, test: (i: number) => boolean): number => {
     // walk the distance field downhill to the coast it was measured from
@@ -314,7 +316,7 @@ function generateOnce(seed: string, settings: Settings, attempt: number): World 
     if (at < 0) {
       const cands: number[] = []
       for (let i = 0; i < N; i++) if (isOpenSea(w, h, tiles, i) && nothingInSight(w, h, tiles, i) && anyDist[i] >= band[0] && anyDist[i] <= band[1] && splashdowns.every(t => dist(w, t, i) >= Math.floor(sep * 0.6))) cands.push(i)
-      if (cands.length) at = pick(splashRng, cands)
+      if (cands.length) at = pick(splashRng, preferOffEdge(cands))
     }
     if (at < 0) break
     splashdowns.push(at)
@@ -379,6 +381,16 @@ export function nothingInSight(w: number, h: number, tiles: Tile[], i: number): 
     if (tiles[zz * w + xx].terrain !== 'water') return false
   }
   return true
+}
+
+/** Whether everything a lander at `i` can see lies on the map. The opening shot wants a little open
+ *  sea all round the lander, and a splashdown against the edge has its known square cut off on one
+ *  side; the generator prefers these and falls back to the edge only when a tight map leaves
+ *  nothing else. */
+export function offEdge(w: number, h: number, i: number): boolean {
+  const r = C.lander.sight + 1
+  const x = i % w, z = Math.floor(i / w)
+  return x - r >= 0 && z - r >= 0 && x + r < w && z + r < h
 }
 
 /** Open sea: water with nothing but water around it, inside the map. */

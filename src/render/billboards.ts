@@ -149,7 +149,18 @@ export interface Billboard {
   cut: number
   /** How far the picture drifts on the water as the clock runs, in tiles. Nought for a thing on land. */
   bob: number
+  /** How much of it is there, nought to one. One unless something is appearing or going: the
+   *  settlement the lander founds comes up out of nothing while the lander itself fades on the shore. */
+  fade?: number
+  /** Drawn through the fog rather than in it: the recall fleet's landers, whose approach is always
+   *  visible, military brief section 9. Everything else is in the fog with the ground under it. */
+  clear?: boolean
+  /** What on the map this picture belongs to, so the scene can find its instances again after the
+   *  sort and fade them without rebuilding. */
+  tag?: BillboardTag
 }
+
+export interface BillboardTag { kind: 'settlement' | 'unit'; id: number }
 
 /** A unit quad lying in the ground plane, with v running up the screen so the top of a drawing is
  *  the far side of it. */
@@ -166,6 +177,7 @@ attribute vec4 aRect;
 attribute vec3 aFoot;
 attribute vec4 aStyle;
 attribute vec4 aExtra;
+attribute vec2 aFade;
 uniform float uTime;
 varying vec2 vUv;
 varying vec2 vLocal;
@@ -173,7 +185,9 @@ varying vec3 vFoot;
 varying vec3 vTint;
 varying vec4 vStyle;
 varying vec4 vExtra;
+varying vec2 vFade;
 void main() {
+  vFade = aFade;
   // a flipped picture reads its sheet from right to left; the quad itself is not turned, so the
   // side the light falls on stays the side the light comes from
   float u = mix(uv.x, 1.0 - uv.x, aExtra.x);
@@ -205,6 +219,7 @@ varying vec3 vFoot;
 varying vec3 vTint;
 varying vec4 vStyle;
 varying vec4 vExtra;
+varying vec2 vFade;
 
 void main() {
   // both sheets are sampled, so the mip level is chosen outside any branch
@@ -214,6 +229,8 @@ void main() {
   // below the waterline the hull is in the water, and goes: a short fade rather than a cut, so the
   // bow and the stern go under the way a hull does
   texel.a *= smoothstep(vExtra.z - 0.07, vExtra.z, vLocal.y);
+  // a picture appearing or going is simply less there
+  texel.a *= vFade.x;
   if (texel.a < 0.03) discard;
   // the light at the foot, not per fragment: a picture is not a surface, and one shadow across the
   // whole of it is what a thing in shade looks like. The sample is taken toward the sun by the
@@ -240,7 +257,10 @@ void main() {
   // a damaged piece drains toward grey before the light is applied, so it still takes the light
   vec3 drawn = mix(texel.rgb, vec3(dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722))), vExtra.y);
   vec3 c = drawn * vTint * (lit / norm) * vStyle.x;
-  gl_FragColor = vec4(finish(c, vFoot), texel.a);
+  // a picture in fog is in the fog with the ground it stands on, read at its foot, unless it is one
+  // of the few things drawn through the fog
+  vec3 col = finish(c, vFoot);
+  gl_FragColor = vec4(mix(fogged(col, vFoot), col, vFade.y), texel.a);
 }
 `
 
@@ -254,6 +274,7 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
   const foot = new Float32Array(sorted.length * 3)
   const style = new Float32Array(sorted.length * 4)
   const extra = new Float32Array(sorted.length * 4)
+  const fade = new Float32Array(sorted.length * 2)
   const blank = sheets[0]
   const material = new THREE.ShaderMaterial({
     vertexShader: BILLBOARD_VS,
@@ -313,12 +334,32 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
     extra[i * 4 + 1] = b.desaturate
     extra[i * 4 + 2] = b.cut
     extra[i * 4 + 3] = b.bob
+    fade[i * 2] = b.fade ?? 1
+    fade[i * 2 + 1] = b.clear ? 1 : 0
   })
   geo.setAttribute('aRect', new THREE.InstancedBufferAttribute(rect, 4))
   geo.setAttribute('aFoot', new THREE.InstancedBufferAttribute(foot, 3))
   geo.setAttribute('aStyle', new THREE.InstancedBufferAttribute(style, 4))
   geo.setAttribute('aExtra', new THREE.InstancedBufferAttribute(extra, 4))
+  geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(fade, 2))
   mesh.instanceMatrix.needsUpdate = true
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  // what each instance belongs to, in the sorted order, so a fade can find it again
+  mesh.userData.tags = sorted.map(b => b.tag ?? null)
   return mesh
+}
+
+/** Set how much of some pictures is there, without rebuilding the layer: for every instance whose
+ *  tag the picker answers for, its fade becomes the answer. Nought to one. */
+export function setBillboardFade(mesh: THREE.InstancedMesh, pick: (tag: BillboardTag | null) => number | null) {
+  const attr = mesh.geometry.getAttribute('aFade') as THREE.InstancedBufferAttribute | undefined
+  const tags = mesh.userData.tags as (BillboardTag | null)[] | undefined
+  if (!attr || !tags) return
+  const arr = attr.array as Float32Array
+  let changed = false
+  for (let i = 0; i < tags.length; i++) {
+    const f = pick(tags[i])
+    if (f !== null && arr[i * 2] !== f) { arr[i * 2] = f; changed = true }
+  }
+  if (changed) attr.needsUpdate = true
 }

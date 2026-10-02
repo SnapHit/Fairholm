@@ -17,7 +17,7 @@
 // settlement of any size is two draw calls.
 
 import * as THREE from 'three'
-import type { GameState, Settlement } from '../sim/state'
+import type { GameState, Settlement, PredecessorSettlement } from '../sim/state'
 import { hexRgb, BUILD, SPRITE, seasonLook } from './look'
 import { surfaceMaterial, type LightUniforms } from './shading'
 import type { Occluder } from './shadow'
@@ -82,8 +82,18 @@ export interface SettlementBuild {
   occluders: Occluder[]
 }
 
+/** What the player knows of the other charters' places, for the fog: whether a settlement is drawn
+ *  at all (once seen, it is), whether its tile is in sight now (if not, it is drawn as it was last
+ *  seen), and whether a predecessor settlement has been found. Everything is known when nothing is
+ *  passed, which is the fog off. */
+export interface SettlementVisibility {
+  known(st: Settlement): boolean
+  inSight(tile: number): boolean
+  predecessor(p: PredecessorSettlement): boolean
+}
+
 /** `sheet` is the index the settlement sheet is handed to buildBillboards at. */
-export function buildSettlements(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, sheet: number, season: number): SettlementBuild {
+export function buildSettlements(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, sheet: number, season: number, vis: SettlementVisibility | null = null): SettlementBuild {
   const w = s.world.width
   const group = new THREE.Group()
   const close = new THREE.Group()
@@ -104,7 +114,12 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     return !!t && t.terrain !== 'water'
   }
 
-  for (const st of s.settlements) {
+  for (const real of s.settlements) {
+    if (vis && !vis.known(real)) continue
+    // another charter's settlement out of sight is drawn as it was last seen, art brief section 10a:
+    // the people and the buildings it had then, not the ones it has now
+    const remembered = vis && real.owner !== 0 && real.seen && !vis.inSight(real.tile)
+    const st: Settlement = remembered ? { ...real, abstractPop: real.seen!.pop, buildings: real.seen!.buildings } : real
     const cx = (st.tile % w) + 0.5, cz = Math.floor(st.tile / w) + 0.5
     const pop = st.owner === 0 ? st.colonists.length : st.abstractPop
     const era = st.owner === 0 ? eraOf(st) : (pop > 14 ? 2 : pop > 7 ? 1 : 0)
@@ -116,6 +131,7 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     const drawn = era === 0
     if (drawn) {
       for (const place of layOut(st, pop, cx, cz, heightAt, onLand, sheet)) {
+        place.tag = { kind: 'settlement', id: st.id }
         billboards.push(place)
         // one group per settlement: the buildings shade together, not one on top of another
         occluders.push({ x: place.x, z: place.z, height: place.height * SPRITE.occluderHeightShare, radius: place.width * SPRITE.occluderWidthShare, group: st.id + 1 })
@@ -203,6 +219,7 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
   // predecessor settlements: round-set roofs in ochre inside a low ring
   const pRoof = hexRgb(BUILD.predecessorRoof), pRing = hexRgb(BUILD.predecessorRing)
   for (const p of s.predecessors) {
+    if (vis && !vis.predecessor(p)) continue
     const cx = (p.tile % w) + 0.5, cz = Math.floor(p.tile / w) + 0.5
     for (let k = 0; k < 7; k++) {
       const a = k / 7 * Math.PI * 2 + hash(p.id, k)

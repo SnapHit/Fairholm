@@ -41,14 +41,13 @@ await page.evaluate(async (seed) => {
   a.state = actions.createGame(seed, { size: 'small', shape: 'continent', firstGame: false }, 1)
   a.undoStack = []
   a.scene.cam.view.selectedTile = null
-  a.scene.arrivalProgress = 0
-  a.scene.arrivalSite = null
   a.scene.rebuild(a.state, 'full')
   a.beginArrival()
 }, process.env.SEED || 'fairholm-shots')
 await page.waitForTimeout(800)
-await page.locator('.card.tappable').first().tap()
-await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+// the machine sails the lander to the coast and founds, through the game's own actions
+const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
+if (foundedOn < 0) throw new Error('the opening did not found')
 await page.waitForTimeout(400)
 
 // people to look at: the colonist the landing left standing, plus a militia block and an improver
@@ -58,12 +57,12 @@ await page.waitForTimeout(400)
 // casts a shadow of its own that can be told from a tree's
 const made = await page.evaluate(() => {
   const a = window.fairholm
-  const st = a.state.settlements[0]
+  const st = a.state.settlements.find(x => x.owner === 0)
   for (const g of Object.keys(st.stock)) st.stock[g] += 200
   const before = a.state.units.length
   const failed = []
   for (const as of ['militia', 'improver', 'outrider', 'hauler', 'battery']) {
-    try { a.dispatch({ t: 'equip', settlement: 0, colonist: 0, as }) } catch (e) { failed.push(as + ': ' + e.message) }
+    try { a.dispatch({ t: 'equip', settlement: st.id, colonist: 0, as }) } catch (e) { failed.push(as + ': ' + e.message) }
   }
   a.closeSheet()
   // This seed puts the settlement in a pocket of water and wood with no open land within four
@@ -120,7 +119,7 @@ for (const [seasonName, turn] of Object.entries(SEASONS)) {
       const a = window.fairholm
       a.scene.cam.glideTarget = null
       a.scene.cam.stop()
-      a.scene.cam.centreOn(a.state.settlements[0].tile, z)
+      a.scene.cam.centreOn(a.state.settlements.find(x => x.owner === 0).tile, z)
       a.scene.requestDraw()
     }, zoom)
     await page.waitForFunction(() => !window.fairholm.scene.loopRunning, null, { timeout: 15000 }).catch(() => {})
@@ -128,7 +127,7 @@ for (const [seasonName, turn] of Object.entries(SEASONS)) {
     const m = await page.evaluate(() => {
       const a = window.fairholm
       const w = a.state.world.width
-      const st = a.state.settlements[0]
+      const st = a.state.settlements.find(x => x.owner === 0)
       const [sx, sy] = a.scene.cam.worldToScreen((st.tile % w) + 0.5, Math.floor(st.tile / w) + 0.5)
       const op = window.__openUnit !== null ? a.scene.unitPositions.get(window.__openUnit) : null
       const [ox, oy] = op ? a.scene.cam.worldToScreen(op[0], op[1]) : [sx, sy]
@@ -158,7 +157,7 @@ await page.evaluate(() => {
   const a = window.fairholm
   a.scene.cam.glideTarget = null
   a.scene.cam.stop()
-  a.scene.cam.centreOn(a.state.settlements[0].tile, 16)
+  a.scene.cam.centreOn(a.state.settlements.find(x => x.owner === 0).tile, 16)
   a.scene.requestDraw()
 })
 await page.waitForFunction(() => !window.fairholm.scene.loopRunning, null, { timeout: 15000 }).catch(() => {})

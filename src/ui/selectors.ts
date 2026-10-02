@@ -108,6 +108,48 @@ export function ringCells(s: GameState, st: Settlement): RingCell[] {
   return out
 }
 
+/** One tile of a ring that does not exist yet: what a settlement founded at `centre` would have to
+ *  work. For the founding control, interaction brief section 8. */
+export interface PreviewCell {
+  slot: number
+  tile: number | null
+  centre: boolean
+  look: TileLook | null
+  words: string
+  best: { good: TileGood; yield: number } | null
+  /** Why this tile would yield nothing to the new settlement: someone else's, or barren. */
+  reason: string | null
+}
+
+/** The nine tiles a settlement founded at `centre` would work, in reading order, with the best
+ *  yield of each. Unexplored tiles are shown as unknown, because the player has not seen them. */
+export function ringPreview(s: GameState, centre: number): PreviewCell[] {
+  const w = s.world.width, h = s.world.height
+  const cx = centre % w, cy = Math.floor(centre / w)
+  const out: PreviewCell[] = []
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const slot = (dy + 1) * 3 + (dx + 1)
+    const x = cx + dx, y = cy + dy
+    if (x < 0 || y < 0 || x >= w || y >= h) { out.push({ slot, tile: null, centre: false, look: null, words: 'Off the map', best: null, reason: 'Beyond the edge of the map.' }); continue }
+    const tile = y * w + x
+    const t = s.world.tiles[tile]
+    if (C.flags.fogOfWar && !t.explored) { out.push({ slot, tile, centre: tile === centre, look: null, words: 'Unexplored', best: null, reason: 'Not seen yet.' }); continue }
+    const look = tileLook(s, tile)
+    let best: { good: TileGood; yield: number } | null = null
+    for (const g of tileOffers(t)) {
+      const v = tileYield(s, tile, g, null)
+      if (v > 0 && (!best || v > best.yield)) best = { good: g, yield: v }
+    }
+    let reason: string | null = null
+    if (t.worked !== null) reason = `Worked by ${s.settlements[t.worked]?.name ?? 'another settlement'}.`
+    else if (t.owner !== null && t.owner !== 0) reason = `${s.charters[t.owner]?.name ?? 'Another charter'} holds this ground.`
+    else if (s.predecessors.some(p => p.territory.includes(tile))) reason = 'Predecessor ground.'
+    else if (!best) reason = 'Nothing grows or is dug here.'
+    out.push({ slot, tile, centre: tile === centre, look, words: tileWords(look), best, reason })
+  }
+  return out
+}
+
 // ---- buildings ----------------------------------------------------------------------------------
 
 export interface BuildingSlot {

@@ -155,8 +155,7 @@ export function mountGallery(root: HTMLElement): Gallery {
   let seasonNow = 1
   const show = () => {
     scene.rebuild(state, 'full')
-    // the arrival is drawn for a game that has not landed; the stage has, and wants it anyway
-    scene.showArrival(state, true)
+    scene.showArrival(state)
     stacks.rebuild(state)
     scene.requestDraw()
   }

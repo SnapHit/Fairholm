@@ -34,17 +34,17 @@ await page.evaluate(async (seed) => {
   a.beginArrival()
 }, 'fairholm-shots')
 await page.waitForTimeout(700)
-await page.locator('.card.tappable').first().tap()
-await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
+if (foundedOn < 0) throw new Error('the opening did not found')
 await page.waitForTimeout(400)
 await page.evaluate(() => {
   const a = window.fairholm
-  const st = a.state.settlements[0]
+  const st = a.state.settlements.find(x => x.owner === 0)
   st.buildings.carpenter = 2; st.buildings.smelter = 2; st.buildings.toolworks = 1
   st.buildings.meeting = 1; st.buildings.storage = 2; st.buildings.works = 2
   st.buildings.school = 1; st.buildings.linenWorks = 1
   if (a.state.world.tiles.some(t => t.terrain === 'water')) st.buildings.wharf = 1
-  a.dispatch({ t: 'autoAssign', settlement: 0 })
+  a.dispatch({ t: 'autoAssign', settlement: st.id })
   a.closeSheet()
   a.state.turn = 4          // deep summer
   a.scene.applySeason(a.state)
@@ -228,7 +228,7 @@ const reset = async () => {
     a.scene.applySeason(a.state)
     a.scene.cam.glideTarget = null
     a.scene.cam.stop()
-    a.scene.cam.centreOn(a.state.settlements[0].tile, 72)
+    a.scene.cam.centreOn(a.state.settlements.find(x => x.owner === 0).tile, 72)
     a.scene.draw(false)
   })
   await page.waitForTimeout(500)

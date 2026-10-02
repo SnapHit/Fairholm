@@ -116,6 +116,9 @@ void main() {
   float shadow = sunReach(probe);
   vec3 c = shade(albedo, n, shadow, vAo, cloudShadow(vWorld));
   c = finish(c, vWorld);
+  // what is not known is haze, art brief section 10a; the overlays and the grid draw over it, so a
+  // path can be planned into the unknown
+  c = fogged(c, vWorld);
 
   // overlays are a temporary recolouring, off by default
   vec2 uv = vWorld.xz / uMapSize;
@@ -172,7 +175,7 @@ void main() {
 
   // the shallows keep a little warmth off the sand under them
   c += vec3(0.10, 0.09, 0.05) * (1.0 - smoothstep(0.0, 0.2, d));
-  gl_FragColor = vec4(finish(c, vWorld), 1.0);
+  gl_FragColor = vec4(fogged(finish(c, vWorld), vWorld), 1.0);
 }`
 
 export interface TerrainBuild {

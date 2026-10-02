@@ -13,6 +13,9 @@ import { SEASON_NAMES, season, year } from '../sim/turn'
 import { randomSeed, playRng } from '../sim/rng'
 import { C } from '../sim/constants'
 import { findPath } from '../sim/units'
+import { neighbours8, isLand } from '../sim/worldgen'
+import { foundingProblem } from '../sim/settlement'
+import { openingAction } from '../sim/autopilot'
 import { Scene } from '../render/scene'
 import { pick, tileUnderPoint } from '../render/picking'
 import { Input } from './input'
@@ -22,6 +25,7 @@ import { h, clear, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
 import { SHEET_DISMISS_PX, installTheme, shouldReflow } from './theme'
+import { mountOpening, type Opening } from './opening'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
 import { term } from './glossary'
@@ -43,6 +47,11 @@ export class App {
   pathPreview: number[] | null = null
   /** The colonist being placed, while the player is choosing where they should work. */
   pick: { settlement: number; colonist: number } | null = null
+  /** The tile the founding control is looking at: the shore the lander would beach on, or the
+   *  ground a colonist stands on. The map paints the ring it would work while this is set. */
+  foundTarget: number | null = null
+  /** The five lines over the opening shot, while they are up. */
+  opening: Opening | null = null
   /** Whether the queue is showing its list rather than just its top item. */
   queueExpanded = false
   root: HTMLElement
@@ -66,7 +75,10 @@ export class App {
     this.state = state
     this.canvas = h('canvas', { id: 'map' }) as HTMLCanvasElement
     this.hud = h('div', { id: 'hud' })
-    this.scrim = h('div', { id: 'scrim', onClick: () => this.closeSheet() })
+    // pointerdown rather than click: a tap on the map that opens a sheet puts the scrim up under
+    // the finger before the browser's click arrives, and a click handler here closed the sheet
+    // the same tap had opened. A dismissing tap begins on the scrim; the browser's click does not
+    this.scrim = h('div', { id: 'scrim', onPointerdown: () => this.closeSheet() })
     this.sheetBody = h('div', { class: 'body' })
     this.sheetEl = h('div', { id: 'sheet' }, h('div', { class: 'grip' }), this.sheetBody)
     this.queuebar = h('div', { id: 'queuebar' })
@@ -129,15 +141,108 @@ export class App {
 
   // ---- arrival ----------------------------------------------------------------------------------
   /** The opening: a fresh game at sea. The camera settles on the lander at working zoom, the queue
-   *  bar is there as always, and the first tap is the player's; the lines over the shot are the
-   *  interface's business, in opening.ts, and never block input. */
+   *  bar is there as always, the five lines fade in over the shot, and the first tap anywhere is the
+   *  player's: it takes the lines away and starts the music, and nothing was ever blocked. */
   beginArrival() {
     this.scene.cam.centreOn(this.homeTile(), C.feel.zoom.working)
     this.scene.requestDraw()
     this.sheet = { kind: 'queue' }
     this.queueExpanded = false
+    this.foundTarget = null
+    this.scene.foundPreview = null
+    this.opening?.dismiss()
+    this.opening = mountOpening(this.root)
     Telemetry.newGame()
     this.refresh()
+  }
+
+  /** The voyage played by the machine, for the rigs and the smoke test: sail to the best coast and
+   *  found, ending turns as it goes, through the same actions a player would take. Resolves to the
+   *  turn the first settlement was founded on, or -1 if forty turns were not enough. */
+  async autoplayOpening(maxTurns = 40): Promise<number> {
+    this.opening?.dismiss()
+    for (let i = 0; i < maxTurns; i++) {
+      if (this.state.settlements.some(x => x.owner === 0)) return this.state.turn
+      let guard = 0
+      for (;;) {
+        const a = openingAction(this.state)
+        if (!a || guard++ > 4) break
+        if (a.t === 'found') { await this.found(a.unit, a.tile); break }
+        if (!this.dispatch(a)) break
+      }
+      if (this.state.settlements.some(x => x.owner === 0)) return this.state.turn
+      this.endTurn()
+    }
+    return -1
+  }
+
+  // ---- founding ---------------------------------------------------------------------------------
+  /** Look at a tile with the founding control: the map paints the ring a settlement there would
+   *  work, in bone where it may be founded and in the loss colour where it may not. */
+  setFoundTarget(tile: number | null) {
+    this.foundTarget = tile
+    this.scene.foundPreview = tile === null ? null : { tile, legal: foundingProblem(this.state, tile) === null }
+    this.scene.updateOverlay(this.state)
+    this.scene.requestDraw()
+    this.renderSheet()
+    if (tile !== null) this.showAboveSheet(tile)
+  }
+
+  /** Bring a tile into the strip of map left above the sheet, so what the sheet is talking about can
+   *  be seen while it is open. In landscape the sheet is beside the map and nothing need move. */
+  showAboveSheet(tile: number) {
+    if (this.root.classList.contains('landscape') || !this.sheetShowing()) return
+    const w = this.state.world.width
+    const cam = this.scene.cam
+    const top = this.sheetEl.getBoundingClientRect().top - this.canvas.getBoundingClientRect().top
+    const hud = this.hud.getBoundingClientRect().height
+    if (!(top > hud + 40)) return
+    const wantY = hud + (top - hud) / 2
+    const zoom = Math.max(cam.view.zoom, C.feel.zoom.working)
+    const tx = (tile % w) + 0.5, tz = Math.floor(tile / w) + 0.5
+    // the camera's centre sits as far below the tile as the strip's middle sits above the screen's
+    this.scene.glideToPoint(tx, tz + (this.canvas.clientHeight / 2 - wantY) / zoom, zoom)
+  }
+
+  /** Found a settlement with a unit: a colonist where it stands, the lander on the shore beside it.
+   *  The lander's founding is the beaching, drawn over a second and a half while the state has
+   *  already moved on; the settlement screen opens when it is done. Resolves to whether it happened. */
+  found(unitId: number, tile?: number): Promise<boolean> {
+    const s = this.state
+    const u = s.units.find(x => x.id === unitId)
+    if (!u) return Promise.resolve(false)
+    const lander = u.kind === 'lander'
+    const shore = tile ?? u.tile
+    const from = this.scene.unitPositions.get(unitId) ?? [(u.tile % s.world.width) + 0.5, Math.floor(u.tile / s.world.width) + 0.5]
+    // the ids the action will give the settlement and the boat, so the first frame after it draws
+    // them at nothing rather than letting them pop in
+    if (lander) this.scene.prepareBeaching(s.settlements.length, s.nextId)
+    const first = !s.settlements.some(x => x.owner === 0)
+    const ok = this.dispatch({ t: 'found', unit: unitId, tile }, first ? `${C.lander.firstName} founded` : 'Settlement founded')
+    this.foundTarget = null
+    this.scene.foundPreview = null
+    this.scene.cam.view.activeUnit = null
+    if (!ok) { this.scene.beaching = false; this.scene.updateOverlay(this.state); this.scene.requestDraw(); this.renderSheet(); return Promise.resolve(false) }
+    const st = this.state.settlements.find(x => x.owner === 0 && x.tile === shore)
+    this.scene.cam.view.selectedTile = shore
+    this.paintPath()
+    if (!lander || !st) { if (st) this.open({ kind: 'settlement', id: st.id }); this.afterSelect(); return Promise.resolve(true) }
+    return new Promise(resolve => {
+      this.scene.animateBeaching(this.state, from, shore, () => {
+        this.open({ kind: 'settlement', id: st.id })
+        this.afterSelect()
+        resolve(true)
+      })
+    })
+  }
+
+  /** Whether a tap with this unit active is a look at founding there: the lander beside land, or a
+   *  colonist on the ground it stands on. */
+  private foundingLook(u: import('../sim/state').Unit, tile: number): boolean {
+    const s = this.state
+    if (u.kind === 'lander') return neighbours8(s.world.width, s.world.height, u.tile).includes(tile) && isLand(s.world.tiles[tile])
+    if (u.kind === 'colonist') return tile === u.tile && s.settlements.some(x => x.owner === 0) && !s.settlements.some(x => x.tile === tile)
+    return false
   }
 
   // ---- state changes -----------------------------------------------------------------------------
@@ -177,6 +282,9 @@ export class App {
     this.state.rng.play = play
     this.pathPreview = null
     this.pick = null
+    this.foundTarget = null
+    this.scene.foundPreview = null
+    this.scene.beaching = false
     this.scene.rebuild(this.state, 'dynamic')
     this.refresh()
     this.toast('Undone')
@@ -198,6 +306,7 @@ export class App {
     this.save()
     // a sheet on a thing that no longer exists closes
     if (this.sheet.kind === 'unit' && !this.state.units.some(u => u.id === (this.sheet as { id: number }).id)) this.sheet = { kind: 'queue' }
+    if (this.foundTarget !== null) { this.scene.foundPreview = { tile: this.foundTarget, legal: foundingProblem(this.state, this.foundTarget) === null }; this.scene.updateOverlay(this.state) }
     this.refresh()
     if (this.state.declaration?.won) this.showEnd(true)
     else if (this.state.declaration?.lost) this.showEnd(false)
@@ -217,6 +326,7 @@ export class App {
     this.state = s
     this.undoStack = []
     this.pick = null
+    this.sheetHistory = []
     this.scene.cam.view.selectedTile = null
     this.scene.cam.view.activeUnit = null
     this.scene.rebuild(this.state, 'full')
@@ -286,9 +396,14 @@ export class App {
     if (p.tile !== null) {
       v.selectedTile = p.tile
       if (v.activeUnit !== null) {
-        if (this.previewPath(p.tile)) { this.open({ kind: 'unit', id: v.activeUnit }); this.afterSelect(); return }
+        const au = s.units.find(x => x.id === v.activeUnit)
+        // the lander beside the shore, or a colonist on its own ground: the tap looks at founding
+        // there rather than at going there
+        if (au && au.owner === 0 && this.foundingLook(au, p.tile)) { this.pathPreview = null; this.setFoundTarget(p.tile); this.open({ kind: 'unit', id: au.id }); this.afterSelect(); return }
+        if (this.previewPath(p.tile)) { if (this.foundTarget !== null) this.setFoundTarget(null); this.open({ kind: 'unit', id: v.activeUnit }); this.afterSelect(); return }
         v.activeUnit = null
       }
+      if (this.foundTarget !== null) this.setFoundTarget(null)
       this.open({ kind: 'tile', tile: p.tile })
       this.afterSelect()
       return
@@ -297,6 +412,7 @@ export class App {
     v.selectedTile = null
     v.activeUnit = null
     this.pathPreview = null
+    if (this.foundTarget !== null) this.setFoundTarget(null)
     this.closeSheet()
     this.afterSelect()
   }
@@ -341,6 +457,9 @@ export class App {
       if (u && u.owner === 0) {
         const enemy = s.units.find(x => x.tile === t && x.owner !== 0 && (x.owner === -1 || s.charters[x.owner]?.relation === 'war'))
         if (enemy) { this.commitAttack(u.id, t); return }
+        // a hold on the shore beside the lander, or on the ground a colonist stands on, founds there;
+        // the control in the bottom third does the same, and undo takes it back
+        if (this.foundingLook(u, t)) { void this.found(u.id, u.kind === 'lander' ? t : undefined); return }
         if (this.previewPath(t)) { this.commitMove(u.id); return }
       }
     }
@@ -401,6 +520,7 @@ export class App {
     const prev = this.sheetHistory.pop()
     this.sheet = prev ?? { kind: 'queue' }
     if (this.sheet.kind === 'queue') { this.queueExpanded = true; this.scene.cam.view.activeUnit = null; this.pathPreview = null; this.afterSelect() }
+    if (this.sheet.kind !== 'unit' && this.foundTarget !== null) this.setFoundTarget(null)
     this.renderSheet()
   }
 
@@ -410,6 +530,7 @@ export class App {
     this.sheetHistory = []
     this.queueExpanded = false
     this.pick = null
+    if (this.foundTarget !== null) { this.foundTarget = null; this.scene.foundPreview = null; this.scene.updateOverlay(this.state); this.scene.requestDraw() }
     this.renderSheet()
     this.renderQueueBar()
   }

@@ -24,6 +24,11 @@ export const SHEET_DISMISS_PX = 72
 /** Nothing the player must hit is ever smaller than this. Feel brief section 5. */
 export const TAP_MIN_PX = 44
 
+/** The opening's five lines, onboarding brief section 2: one fades in every two seconds or so, each
+ *  over this long, and the first tap anywhere takes them all away over the same time. */
+export const OPENING_LINE_MS = 2000
+export const OPENING_FADE_MS = 900
+
 /** Settlement screen brief section 2. The ring wants 88 and the flanks 56; the ring gives way
  *  first on a narrow screen because it has the most to give and stays furthest above the floor. */
 export const RING_CELL_PX = 88
@@ -115,6 +120,9 @@ export const TOKENS: Record<string, string> = {
   '--text-title': '1.0625rem',   // 17
   '--text-head': '1.125rem',     // 18
   '--text-display': '1.625rem',  // 26
+  /** The opening's lines: the display face a size down, because at twenty-six a sentence wraps to
+   *  three rows on a phone and five of them covered the picture they are meant to sit over. */
+  '--text-opening': '1.375rem',  // 22
   '--weight-normal': '400',
   '--weight-medium': '600',
   '--weight-strong': '650',
@@ -151,6 +159,12 @@ export const TOKENS: Record<string, string> = {
   '--hold-ms': `${HOLD_MS}ms`,
   '--slide-ms': '180ms',
   '--fade-ms': '200ms',
+  '--opening-fade-ms': `${OPENING_FADE_MS}ms`,
+  /** The lines of the opening sit this far down the screen, as a share of its height, and are
+   *  this wide at most. They lie over the haze above the lander, never over a control. */
+  '--opening-top': '14%',
+  '--opening-width': '30rem',
+  '--shadow-opening': '0 1px 2px rgba(0,0,0,0.7), 0 0 18px rgba(0,0,0,0.45)',
   '--ease': 'cubic-bezier(0.2, 0.7, 0.3, 1)',
 
   // Safe areas, so nothing sits under a notch or a home bar

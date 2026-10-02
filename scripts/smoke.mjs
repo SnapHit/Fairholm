@@ -29,21 +29,34 @@ await page.waitForFunction(() => !!window.fairholm && window.fairholm.state, nul
 const bootMs = Date.now() - t0
 check('1 coastline within about a second', bootMs < 2500, bootMs + ' ms to boot')
 await page.waitForTimeout(800)
-const pre = await page.evaluate(() => ({ turn: window.fairholm.state.turn, sites: window.fairholm.state.world.landingSites.length, sheet: window.fairholm.sheet.kind }))
-check('2 three landing sites', pre.sites === 3 && pre.sheet === 'landing')
+// 2: the game opens at sea, in fog, with the lines over the shot; nothing is offered
+const pre = await page.evaluate(() => {
+  const s = window.fairholm.state
+  return {
+    turn: s.turn, lander: !!s.units.find(u => u.owner === 0 && u.kind === 'lander'), settlements: s.settlements.filter(x => x.owner === 0).length,
+    lines: document.querySelectorAll('#opening .line').length, sheet: window.fairholm.sheet.kind, chooser: document.querySelectorAll('.card.tappable').length,
+    explored: s.world.tiles.filter(t => t.explored).length / s.world.tiles.length,
+  }
+})
+check('2 opens at sea in fog with the lines, nothing offered', pre.turn === 1 && pre.lander && pre.settlements === 0 && pre.lines === 5 && pre.chooser === 0 && pre.explored < 0.25, JSON.stringify(pre))
 await page.screenshot({ path: `${OUT}/shot-arrival.png` })
-// one tap starts: tap the first card
-await page.locator('.card.tappable').first().tap()
-await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 10000 })
+// the first tap anywhere takes the lines away and starts the music
+await page.touchscreen.tap(195, 300)
+await page.waitForTimeout(1200)
+const tapped = await page.evaluate(() => ({ lines: !!document.querySelector('#opening'), music: window.fairholm.music.position > 0 || window.fairholm.music.playing }))
+check('2 the first tap dismisses the lines', !tapped.lines, JSON.stringify(tapped))
+// the voyage: the machine sails the lander to the coast and founds, through the game's own actions
+const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
 await page.waitForTimeout(400)
-const landed = await page.evaluate(() => ({ turn: window.fairholm.state.turn, settlements: window.fairholm.state.settlements.filter(s => s.owner === 0).length, sheet: window.fairholm.sheet.kind, queue: window.fairholm.queue.shown.map(g => g.title) }))
-check('2 one tap starts', landed.turn === 1 && landed.settlements === 1, JSON.stringify(landed.queue))
+const landed = await page.evaluate(() => ({ turn: window.fairholm.state.turn, settlements: window.fairholm.state.settlements.filter(s => s.owner === 0).length, name: window.fairholm.state.settlements.find(s => s.owner === 0)?.name, boat: window.fairholm.state.units.some(u => u.owner === 0 && u.kind === 'lighter'), lander: window.fairholm.state.units.some(u => u.owner === 0 && u.kind === 'lander'), queue: window.fairholm.queue.shown.map(g => g.title) }))
+check('2 the voyage founds within a few turns, the lander consumed and the boat left', foundedOn >= 3 && foundedOn <= 9 && landed.settlements === 1 && landed.boat && !landed.lander && landed.name === 'The Landing', `founded on turn ${foundedOn}; ${JSON.stringify(landed.queue)}`)
 await page.screenshot({ path: `${OUT}/shot-landed.png` })
+await page.evaluate(() => window.fairholm.closeSheet())
 // 3: tiles tappable at working zoom, not at overview
 const tapTest = await page.evaluate(async () => {
   const a = window.fairholm
   a.scene.cam.view.zoom = 44; a.scene.cam.apply()
-  const st = a.state.settlements[0]
+  const st = a.state.settlements.find(x => x.owner === 0)
   const w = a.state.world.width
   const [sx, sy] = a.scene.cam.worldToScreen((st.tile % w) + 1.5, Math.floor(st.tile / w) + 0.5)
   a.tap(sx, sy)
@@ -60,33 +73,33 @@ check('3 tiles tappable at working zoom, not at overview', tapTest.working && ta
 // 4: assign a worker, output next turn
 const assign = await page.evaluate(() => {
   const a = window.fairholm
-  const st = a.state.settlements[0]
+  const st = a.state.settlements.find(x => x.owner === 0)
   const idle = st.colonists.findIndex(c => c.job.kind === 'idle')
   const before = st.stock.timber
-  a.open({ kind: 'settlementDetail', id: 0 })
-  a.open({ kind: 'workers', settlement: 0, colonist: Math.max(0, idle) })
+  a.open({ kind: 'settlementDetail', id: st.id })
+  a.open({ kind: 'workers', settlement: st.id, colonist: Math.max(0, idle) })
   const n = document.querySelectorAll('#sheet .line.tappable').length
   return { idle, before, options: n }
 })
 await page.locator('#sheet .line.tappable').first().tap()
 await page.waitForTimeout(200)
-const assigned = await page.evaluate(() => { const st = window.fairholm.state.settlements[0]; return st.colonists.map(c => c.job.kind + (c.job.good ? ':' + c.job.good : '')) })
+const assigned = await page.evaluate(() => { const st = window.fairholm.state.settlements.find(x => x.owner === 0); return st.colonists.map(c => c.job.kind + (c.job.good ? ':' + c.job.good : '')) })
 await page.locator('#queuebar .btn.primary').tap()
 await page.waitForTimeout(300)
-const after = await page.evaluate(() => { const st = window.fairholm.state.settlements[0]; return { turn: window.fairholm.state.turn, produced: st.lastProduced, stock: st.stock } })
-check('4 worker assigned, output next turn', after.turn === 2 && Object.values(after.produced).some(v => v > 0), JSON.stringify({ assigned, produced: after.produced }))
+const after = await page.evaluate(() => { const st = window.fairholm.state.settlements.find(x => x.owner === 0); return { turn: window.fairholm.state.turn, produced: st.lastProduced, stock: st.stock } })
+check('4 worker assigned, output next turn', after.turn === foundedOn + 1 && Object.values(after.produced).some(v => v > 0), JSON.stringify({ assigned, produced: after.produced }))
 // 5: quiet turn one tap (end turn button always present; ensure one tap advances)
 await page.locator('#queuebar .btn.primary').tap()
 await page.waitForTimeout(200)
 const t3 = await page.evaluate(() => window.fairholm.state.turn)
-check('5 a turn is one tap', t3 === 3)
+check('5 a turn is one tap', t3 === foundedOn + 2)
 // 6: consign and watch the price fall
 const consignRes = await page.evaluate(() => {
   const a = window.fairholm
-  const st = a.state.settlements[0]
+  const st = a.state.settlements.find(x => x.owner === 0)
   st.stock.timber = 200
   const before = a.state.market.tables[0].timber.price
-  a.open({ kind: 'consign', settlement: 0, good: 'timber' })
+  a.open({ kind: 'consign', settlement: st.id, good: 'timber' })
   return { before, text: document.querySelector('#sheet .preview')?.textContent }
 })
 await page.evaluate(() => { const s = document.querySelector('#sheet input[type=range]'); s.value = '200'; s.dispatchEvent(new Event('input')) })
@@ -96,7 +109,7 @@ const afterC = await page.evaluate(() => ({ price: window.fairholm.state.market.
 check('6 consign walks the price down', afterC.price < consignRes.before, `${consignRes.before} -> ${afterC.price}; ${afterC.log}`)
 // play a run of turns via the UI
 for (let i = 0; i < 12; i++) { await page.locator('#queuebar .btn.primary').tap(); await page.waitForTimeout(60) }
-const mid = await page.evaluate(() => ({ turn: window.fairholm.state.turn, queue: window.fairholm.queue.shown.map(g => g.title), pop: window.fairholm.state.settlements[0].colonists.length, gold: window.fairholm.state.charters[0].gold, word: window.fairholm.state.charters[0].word }))
+const mid = await page.evaluate(() => ({ turn: window.fairholm.state.turn, queue: window.fairholm.queue.shown.map(g => g.title), pop: window.fairholm.state.settlements.find(x => x.owner === 0).colonists.length, gold: window.fairholm.state.charters[0].gold, word: window.fairholm.state.charters[0].word }))
 console.log('mid game', JSON.stringify(mid))
 await page.screenshot({ path: `${OUT}/shot-midgame.png` })
 // 7: save and reload

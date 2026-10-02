@@ -7,8 +7,13 @@
 // What is baked, and when, per architecture brief section 3:
 //   world     terrain mesh, vertex colours, baked occlusion, props, the shadow map's base
 //   season    vertex colours, prop colours, the light, the shadow map's base, the clear colour
-//   turn      ribbons, settlements, units, and the shadow map's dynamic layer
+//   turn      ribbons, settlements, units, the visibility texture, and the shadow map's dynamic layer
 //   frame     nothing but the draw itself and the drifting cloud
+//
+// The fog, art direction brief section 10a, is one texture a texel a tile (explored, in sight, how
+// deep into the unknown) that every shader reads through one function in shading.ts, and a filter on
+// what is built at all: a unit out of sight or a settlement never seen is not drawn, not tappable and
+// not counted. The haze drifts on the cloud clock, which only runs while frames are drawn.
 //
 // There are no three.js lights in this scene. Every material is one custom shader in shading.ts, so
 // the ground, a canopy, a roof and a unit are lit by the same warm key and the same cool sky.
@@ -21,18 +26,20 @@ import { buildTerrain, setOverlayTile, clearOverlay, type TerrainBuild } from '.
 import { buildRibbons } from './ribbons'
 import { buildProps } from './props'
 import { buildSettlements } from './settlements'
-import { buildUnits, buildArrival, makeRing } from './units'
+import { buildUnits, buildArrival, buildGhostLander, makeRing } from './units'
 import { season } from '../sim/turn'
 import { hex, tileColour, clearColour, type RGB } from './palette'
 import { workableTiles, tileYield, tileOffers } from '../sim/labour'
+import { neighbours8 } from '../sim/worldgen'
+import { sightMask, unitVisible, settlementKnown } from '../sim/fog'
 import { seedNumber } from './seed'
 import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
 import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
-import { spriteSheet, buildBillboards, manifestFrom, type AtlasManifest } from './billboards'
+import { spriteSheet, buildBillboards, setBillboardFade, manifestFrom, type AtlasManifest, type BillboardTag } from './billboards'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
-import { seasonLook, sunVector, PROPS, SHADOW } from './look'
+import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL } from './look'
 
 /** Where each sheet stands in the list handed to billboards.ts. */
 const SHEET_SETTLEMENTS = 0
@@ -57,10 +64,20 @@ export class Scene {
   private settlementFar: THREE.Group | null = null
   units: THREE.Group | null = null
   unitPositions = new Map<number, [number, number]>()
+  /** What is on the water that is not a unit: steam, and the Company's landers while a wave is at sea. */
   arrival: THREE.Group | null = null
-  arrivalProgress = 0
-  arrivalSite: number | null = null
-  arrivalAnimating = false
+  /** How many plumes are rising. While any is, the loop runs so the steam moves. */
+  private steamCount = 0
+  /** The fog's texture, one texel a tile, and the sight mask it was last written from. */
+  private vis: THREE.DataTexture | null = null
+  private visMask: Uint8Array | null = null
+  /** The nine tiles a settlement would work if founded here, painted on the map while the founding
+   *  control is in focus: in bone where it may be founded, in the loss colour where it may not. */
+  foundPreview: { tile: number; legal: boolean } | null = null
+  /** The beaching: the settlement and the boat coming up out of nothing while the lander goes. */
+  private fading: { k: number; settlements: Set<number>; units: Set<number> } | null = null
+  private ghost: THREE.InstancedMesh | null = null
+  beaching = false
   selRing: THREE.Mesh
   unitRing: THREE.Mesh
   /** One set of light uniforms, shared by every material on the map. */
@@ -146,6 +163,14 @@ export class Scene {
       applyLook(this.light, seasonLook(sn))
       this.terrain = buildTerrain(s, seedNumber(s.seed), this.light, this.detail, sn)
       this.scene.add(this.terrain.mesh, this.terrain.water)
+      // the fog's texture: a texel a tile, filtered, so a tile edge is already a gradient before
+      // the shader softens it further
+      if (this.vis) this.vis.dispose()
+      this.vis = new THREE.DataTexture(new Uint8Array(s.world.width * s.world.height * 4), s.world.width, s.world.height, THREE.RGBAFormat)
+      this.vis.magFilter = THREE.LinearFilter
+      this.vis.minFilter = THREE.LinearFilter
+      this.vis.needsUpdate = true
+      this.light.uVis.value = this.vis
       this.lastClearKey = s.settlements.map(x => x.tile).join(',') + '|' + s.predecessors.map(x => x.tile).join(',')
       this.buildPropLayers(s, sn)
       this.shadow = new ShadowBake(s.world.width, s.world.height)
@@ -184,15 +209,69 @@ export class Scene {
     this.shadow.bakeBase((x, z) => Math.max(0, h(x, z)) * SHADOW.terrainScale, sun, this.staticOccluders)
   }
 
+  /** Beyond everything drawn is the clear colour: with the fog on it is the haze, because nothing
+   *  beyond the map is known either; off, the season's own. */
   private setClear(sn: number) {
-    const c = clearColour(sn)
+    const c = C.flags.fogOfWar ? hexRgb(seasonLook(sn).hazeDeep) : clearColour(sn)
     this.renderer.setClearColor(new THREE.Color(c[0], c[1], c[2]))
+  }
+
+  /** Write what is known into the fog's texture: red where the ground has been seen, green where it
+   *  is in sight now, blue how far into the unknown a tile lies, from the frontier out to the depth
+   *  at which the haze is at its deepest. A breadth first spread from the known tiles, eight ways,
+   *  once per state change. */
+  private updateVisibility(s: GameState) {
+    if (!this.vis) return
+    const w = s.world.width, h = s.world.height, n = w * h
+    const tiles = s.world.tiles
+    const mask = sightMask(s)
+    this.visMask = mask
+    const data = this.vis.image.data as Uint8Array
+    const far = new Int16Array(n).fill(-1)
+    const queue: number[] = []
+    for (let i = 0; i < n; i++) if (tiles[i].explored) { far[i] = 0; queue.push(i) }
+    for (let q = 0; q < queue.length; q++) {
+      const i = queue[q]
+      if (far[i] >= FOG.depthTiles) continue
+      const x = i % w, z = (i - x) / w
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, zz = z + dz
+        if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue
+        const j = zz * w + xx
+        if (far[j] < 0) { far[j] = far[i] + 1; queue.push(j) }
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const known = tiles[i].explored
+      data[i * 4] = known ? 255 : 0
+      data[i * 4 + 1] = mask[i] ? 255 : 0
+      data[i * 4 + 2] = known ? 0 : Math.round(255 * Math.min(1, (far[i] < 0 ? FOG.depthTiles : far[i]) / FOG.depthTiles))
+      data[i * 4 + 3] = 255
+    }
+    this.vis.needsUpdate = true
+  }
+
+  /** The fog as a filter on what is built: the player's own things always, the Company's landers
+   *  always, anyone else's only in sight; a settlement once seen; a predecessor people once found. */
+  private visibility(s: GameState) {
+    if (!C.flags.fogOfWar) return null
+    const mask = this.visMask ?? sightMask(s)
+    return {
+      unit: (u: GameState['units'][number]) => unitVisible(s, u, mask),
+      settlements: {
+        known: settlementKnown,
+        inSight: (tile: number) => mask[tile] === 1,
+        predecessor: (p: GameState['predecessors'][number]) => p.scouted,
+      },
+    }
   }
 
   private rebuildDynamic(s: GameState) {
     if (!this.terrain) return
     const h = this.terrain.heightAt
     const sn = this.lastSeason >= 0 ? this.lastSeason : season(s.turn)
+    this.updateVisibility(s)
+    const vis = this.visibility(s)
     // a settlement clears the ground it stands on, so a new one means the props change
     const clearKey = s.settlements.map(x => x.tile).join(',') + '|' + s.predecessors.map(x => x.tile).join(',')
     if (clearKey !== this.lastClearKey) {
@@ -204,13 +283,13 @@ export class Scene {
     this.ribbons = buildRibbons(s, h, this.light, sn)
     this.scene.add(this.ribbons)
     if (this.settlements) { this.scene.remove(this.settlements); disposeGroup(this.settlements) }
-    const sb = buildSettlements(s, h, this.light, SHEET_SETTLEMENTS, sn)
+    const sb = buildSettlements(s, h, this.light, SHEET_SETTLEMENTS, sn, vis?.settlements ?? null)
     this.settlements = sb.group
     this.settlementClose = sb.close
     this.settlementFar = sb.far
     this.scene.add(this.settlements)
     if (this.units) { this.scene.remove(this.units); disposeGroup(this.units) }
-    const ub = buildUnits(s, h, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS)
+    const ub = buildUnits(s, h, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, vis?.unit)
     this.units = ub.group
     this.unitClose = ub.close
     this.unitFar = ub.far
@@ -220,9 +299,9 @@ export class Scene {
     if (this.billboards) { this.scene.remove(this.billboards); this.billboards.geometry.dispose(); (this.billboards.material as THREE.Material).dispose() }
     this.billboards = buildBillboards([...sb.billboards, ...ub.billboards], this.light, this.sheets, this.sheetManifests.map(m => m.size))
     if (this.billboards) this.scene.add(this.billboards)
+    this.applyFades()
     this.applyTierVisibility()
-    // what is on the water that is not a unit: the arrival before the landing, and the Company's
-    // landers while a wave is at sea
+    // what is on the water that is not a unit: steam, and the Company's landers while a wave is at sea
     this.showArrival(s)
     // whatever moved this turn puts its shadow back on top of the baked base
     this.dynamicOccluders = [...sb.occluders, ...ub.occluders]
@@ -232,6 +311,7 @@ export class Scene {
   }
 
   private disposeWorld() {
+    if (this.vis) { this.vis.dispose(); this.vis = null; this.light.uVis.value = null }
     if (this.terrain) {
       this.scene.remove(this.terrain.mesh, this.terrain.water)
       this.terrain.mesh.geometry.dispose(); this.terrain.material.dispose()
@@ -262,29 +342,75 @@ export class Scene {
     this.requestDraw()
   }
 
-  /** The water scene: before the landing, the lander offshore and the boat, with the boat's progress
-   *  animated after the site is chosen; after it, the Company's landers while a wave is at sea. */
-  showArrival(s: GameState, always = false) {
+  /** What is on the water that is not a unit: the steam off a lander just down, and the Company's
+   *  landers while a wave is at sea. */
+  showArrival(s: GameState) {
     if (this.arrival) { this.scene.remove(this.arrival); disposeGroup(this.arrival); this.arrival = null }
-    this.arrival = buildArrival(s, this.arrivalSite, this.arrivalProgress, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, this.sheets, this.sheetManifests.map(m => m.size), always)
+    const vis = this.visibility(s)
+    const positions = new Map(this.unitPositions)
+    // a rival's lander steams only where it can be seen, which is wherever it was drawn
+    if (vis) for (const u of s.units) if (!vis.unit(u)) positions.delete(u.id)
+    const ab = buildArrival(s, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, this.sheets, this.sheetManifests.map(m => m.size), positions)
+    this.arrival = ab.group
+    this.steamCount = ab.steaming
     if (this.arrival) this.scene.add(this.arrival)
     if (this.steaming()) this.startLoop()
   }
 
-  animateLanding(s: GameState, site: number, done: () => void) {
-    this.arrivalSite = site
-    this.arrivalAnimating = true
+  /** The beaching, onboarding brief section 2. The state has already changed: the lander is gone,
+   *  the settlement stands on the shore and the boat lies on the water. This draws the moment
+   *  between: a picture of the lander runs from where it lay onto the shore and fades as the
+   *  settlement's first buildings and the boat come up out of nothing. Nothing in the state moves.
+   *  Call `prepareBeaching` before the action is applied, so the first rebuild after it draws the
+   *  settlement and the boat at nothing rather than letting them pop in. */
+  prepareBeaching(settlementId: number, boatId: number) {
+    this.fading = { k: 0, settlements: new Set([settlementId]), units: new Set([boatId]) }
+    this.beaching = true
+  }
+
+  animateBeaching(s: GameState, from: [number, number], shoreTile: number, done: () => void) {
+    if (!this.fading) { done(); return }
+    const w = s.world.width
+    const to: [number, number] = [(shoreTile % w) + 0.5, Math.floor(shoreTile / w) + 0.5]
+    const B = ARRIVAL.beach
     const start = performance.now()
-    const dur = 1400
+    const smooth = (t: number) => t * t * (3 - 2 * t)
+    const band = (t: number, a: number, b: number) => smooth(Math.max(0, Math.min(1, (t - a) / (b - a))))
     const step = () => {
-      const t = Math.min(1, (performance.now() - start) / dur)
-      this.arrivalProgress = t * t * (3 - 2 * t)
-      this.showArrival(s)
-      this.draw(true)
+      const t = Math.min(1, (performance.now() - start) / B.ms)
+      const move = smooth(Math.min(1, t / B.moveUntil))
+      const x = from[0] + (to[0] - from[0]) * move, z = from[1] + (to[1] - from[1]) * move
+      const gone = band(t, B.fadeFrom, B.fadeTo)
+      if (this.ghost) { this.scene.remove(this.ghost); this.ghost.geometry.dispose(); (this.ghost.material as THREE.Material).dispose(); this.ghost = null }
+      if (gone < 1) {
+        this.ghost = buildGhostLander(x, z, 1 - gone, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, this.sheets, this.sheetManifests.map(m => m.size))
+        if (this.ghost) this.scene.add(this.ghost)
+      }
+      if (this.fading) { this.fading.k = band(t, B.appearFrom, B.appearTo); this.applyFades() }
+      if (!this.loopRunning) this.draw(true)
       if (t < 1) requestAnimationFrame(step)
-      else { this.arrivalAnimating = false; done() }
+      else {
+        this.fading = null
+        this.beaching = false
+        this.applyFades()
+        this.requestDraw()
+        done()
+      }
     }
     requestAnimationFrame(step)
+  }
+
+  /** Put the beaching's fade onto the pictures it concerns, in place, without a rebuild. */
+  private applyFades() {
+    if (!this.billboards) return
+    const f = this.fading
+    setBillboardFade(this.billboards, (tag: BillboardTag | null) => {
+      if (!tag) return null
+      if (!f) return 1
+      if (tag.kind === 'settlement' && f.settlements.has(tag.id)) return f.k
+      if (tag.kind === 'unit' && f.units.has(tag.id)) return f.k
+      return 1
+    })
   }
 
   /** Selection ring and unit ring follow ViewState. */
@@ -316,12 +442,14 @@ export class Scene {
     clearOverlay(tex)
     const w = s.world.width
     const mode = this.overlayMode
+    const fog = C.flags.fogOfWar
+    const known = (i: number) => !fog || s.world.tiles[i].explored
     if (mode === 'territory') {
       for (let i = 0; i < s.world.tiles.length; i++) {
         const t = s.world.tiles[i]
-        if (t.owner !== null && s.charters[t.owner]) setOverlayTile(tex, w, i, hex(s.charters[t.owner].colour), 0.28)
+        if (t.owner !== null && s.charters[t.owner] && known(i)) setOverlayTile(tex, w, i, hex(s.charters[t.owner].colour), 0.28)
       }
-      for (const p of s.predecessors) for (const t of p.territory) setOverlayTile(tex, w, t, [0.72, 0.6, 0.38], 0.22)
+      for (const p of s.predecessors) if (!fog || p.scouted) for (const t of p.territory) if (known(t)) setOverlayTile(tex, w, t, [0.72, 0.6, 0.38], 0.22)
     } else if (mode === 'yields') {
       const v = this.cam.view
       const st = v.selectedTile !== null ? s.settlements.find(x => x.owner === 0 && workableTiles(s, x).includes(v.selectedTile!)) : undefined
@@ -339,8 +467,10 @@ export class Scene {
         }
       }
     } else if (mode === 'threat') {
+      const mask = fog ? (this.visMask ?? sightMask(s)) : null
       for (const u of s.units) {
         if (u.owner === 0) continue
+        if (mask && !unitVisible(s, u, mask)) continue
         const hostile = u.owner === -1 || (s.charters[u.owner] && s.charters[u.owner].relation === 'war')
         if (!hostile) continue
         const x0 = u.tile % w, z0 = Math.floor(u.tile / w)
@@ -355,8 +485,13 @@ export class Scene {
     if (this.pathTiles && this.pathTiles.length) {
       this.pathTiles.forEach((t, i) => setOverlayTile(tex, w, t, [0.96, 0.93, 0.82], i === this.pathTiles!.length - 1 ? 0.75 : 0.42))
     }
-    // unexplored tiles are dimmed when fog is on
-    if (C.flags.fogOfWar) for (let i = 0; i < s.world.tiles.length; i++) if (!s.world.tiles[i].explored) setOverlayTile(tex, w, i, [0.05, 0.05, 0.08], 0.85)
+    // the founding preview: the nine tiles a settlement here would work
+    if (this.foundPreview) {
+      const fp = this.foundPreview
+      const c = hexRgb(fp.legal ? FOUND_PREVIEW.legal : FOUND_PREVIEW.illegal)
+      for (const t of neighbours8(w, s.world.height, fp.tile)) setOverlayTile(tex, w, t, c, FOUND_PREVIEW.ring)
+      setOverlayTile(tex, w, fp.tile, c, FOUND_PREVIEW.centre)
+    }
     tex.needsUpdate = true
   }
 
@@ -417,6 +552,11 @@ export class Scene {
     this.startLoop()
   }
 
+  glideToPoint(x: number, z: number, zoom: number) {
+    this.cam.glideToPoint(x, z, zoom)
+    this.startLoop()
+  }
+
   requestDraw() {
     if (this.drawQueued) return
     this.drawQueued = true
@@ -431,10 +571,10 @@ export class Scene {
       // both, every frame: a short-circuit here starves the glide whenever the camera is springing
       const settling = this.cam.tick()
       const gliding = this.cam.glideTick()
-      const moving = this.gestureActive || settling || gliding || this.arrivalAnimating
+      const moving = this.gestureActive || settling || gliding || this.beaching
       // the opening image is a lander down and steaming, and steam that does not move is not
-      // steaming: while the game waits for its first tap the plume drifts, at full resolution,
-      // and the loop ends with the landing. Nothing else idle draws anything
+      // steaming: while a plume rises the loop runs, and it ends when the steam does. Nothing else
+      // idle draws anything; the haze drifts only when a frame is drawn for some other reason
       const ambient = this.steaming()
       this.draw(moving)
       if (moving || ambient) requestAnimationFrame(frame)
@@ -476,9 +616,9 @@ export class Scene {
     }
   }
 
-  /** True while the lander is down and steaming offshore before the landing. */
+  /** True while a plume is rising off a lander just down. */
   private steaming(): boolean {
-    return !!this.arrival && !!this.lastState && this.lastState.turn === 0 && !this.contextLost
+    return this.steamCount > 0 && !this.contextLost
   }
 
   /** Nudge the clouds a little between turns so a quiet turn still moves. */

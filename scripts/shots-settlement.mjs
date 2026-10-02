@@ -38,14 +38,13 @@ await page.evaluate(async (seed) => {
   a.state = actions.createGame(seed, { size: 'small', shape: 'continent', firstGame: false }, 1)
   a.undoStack = []
   a.scene.cam.view.selectedTile = null
-  a.scene.arrivalProgress = 0
-  a.scene.arrivalSite = null
   a.scene.rebuild(a.state, 'full')
   a.beginArrival()
 }, process.env.SEED || 'fairholm-shots')
 await page.waitForTimeout(800)
-await page.locator('.card.tappable').first().tap()
-await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+// the machine sails the lander to the coast and founds, through the game's own actions
+const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
+if (foundedOn < 0) throw new Error('the opening did not found')
 await page.waitForTimeout(400)
 
 // the season the sprites were drawn for, so the buildings are judged against summer light
@@ -62,7 +61,7 @@ const rows = []
 for (const size of SIZES) {
   await page.evaluate((n) => {
     const a = window.fairholm
-    const st = a.state.settlements[0]
+    const st = a.state.settlements.find(x => x.owner === 0)
     // the render layer reads how many people live here off the length of this, and nothing else
     while (st.colonists.length > 1) st.colonists.pop()
     while (st.colonists.length < n) st.colonists.push(st.colonists[0])
@@ -73,7 +72,7 @@ for (const size of SIZES) {
   for (const [name, zoom] of Object.entries(ZOOMS)) {
     await page.evaluate((z) => {
       const a = window.fairholm
-      const st = a.state.settlements[0]
+      const st = a.state.settlements.find(x => x.owner === 0)
       a.scene.cam.glideTarget = null
       a.scene.cam.stop()
       a.scene.cam.centreOn(st.tile, z)
@@ -96,7 +95,7 @@ await page.evaluate(() => {
   const a = window.fairholm
   a.scene.cam.glideTarget = null
   a.scene.cam.stop()
-  a.scene.cam.centreOn(a.state.settlements[0].tile, 16)
+  a.scene.cam.centreOn(a.state.settlements.find(x => x.owner === 0).tile, 16)
   a.scene.requestDraw()
 })
 await page.waitForFunction(() => !window.fairholm.scene.loopRunning, null, { timeout: 15000 }).catch(() => {})

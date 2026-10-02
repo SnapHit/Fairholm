@@ -24,7 +24,7 @@ import type { App } from './app'
 
 /** The ring cell's ground: the tile's own colour, then its features drawn over it. Every colour comes
  *  from the renderer's palette; every size and tint comes from the theme. */
-function terrainLayers(look: TileLook): HTMLElement[] {
+export function terrainLayers(look: TileLook): HTMLElement[] {
   const ground = h('div', { class: 'terrain', style: { background: look.colour } })
   const bits: string[] = []
   if (look.canopy) {

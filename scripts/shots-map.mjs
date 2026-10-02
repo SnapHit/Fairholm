@@ -40,27 +40,26 @@ await page.evaluate(async (seed) => {
   a.state = actions.createGame(seed, { size: 'small', shape: 'continent', firstGame: false }, 1)
   a.undoStack = []
   a.scene.cam.view.selectedTile = null
-  a.scene.arrivalProgress = 0
-  a.scene.arrivalSite = null
   a.scene.rebuild(a.state, 'full')
   a.beginArrival()
 }, process.env.SEED || 'fairholm-shots')
 await page.waitForTimeout(800)
 
-// land, so there is a settlement, some units and a worked tile to look at
-await page.locator('.card.tappable').first().tap()
-await page.waitForFunction(() => window.fairholm.state.turn === 1, null, { timeout: 15000 })
+// ashore, so there is a settlement, some units and a worked tile to look at: the machine sails the
+// lander to the coast and founds, through the game's own actions
+const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
+if (foundedOn < 0) throw new Error('the opening did not found')
 await page.waitForTimeout(400)
 
 // give the settlement something to be: buildings, walls, a wharf, a few turns of growth
 await page.evaluate(() => {
   const a = window.fairholm
-  const st = a.state.settlements[0]
+  const st = a.state.settlements.find(x => x.owner === 0)
   st.buildings.carpenter = 2; st.buildings.smelter = 2; st.buildings.toolworks = 1
   st.buildings.meeting = 1; st.buildings.storage = 2; st.buildings.works = 2
   st.buildings.school = 1; st.buildings.linenWorks = 1
   if (a.state.world.tiles.some(t => t.terrain === 'water')) st.buildings.wharf = 1
-  a.dispatch({ t: 'autoAssign', settlement: 0 })
+  a.dispatch({ t: 'autoAssign', settlement: st.id })
   a.closeSheet()
 })
 await page.waitForTimeout(400)
@@ -139,7 +138,7 @@ for (let season = 0; season < 4; season++) {
   for (const [name, zoom] of Object.entries(ZOOMS)) {
     await page.evaluate((z) => {
       const a = window.fairholm
-      const st = a.state.settlements[0]
+      const st = a.state.settlements.find(x => x.owner === 0)
       a.scene.cam.glideTarget = null    // otherwise the landing glide drags the zoom back
       a.scene.cam.stop()
       a.scene.cam.centreOn(st.tile, z)

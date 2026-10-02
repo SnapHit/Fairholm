@@ -83,6 +83,26 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ---- the opening: five lines over the haze, never a screen ------------------------------------ */
+#opening {
+  position: absolute; left: 0; right: 0; top: var(--opening-top); z-index: 3;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-5);
+  padding: 0 var(--space-7); pointer-events: none;
+  transition: opacity var(--opening-fade-ms) var(--ease);
+}
+#opening.gone { opacity: 0; }
+#opening .line {
+  max-width: var(--opening-width); margin: 0; text-align: center;
+  font-size: var(--text-opening); line-height: var(--leading); font-weight: var(--weight-medium);
+  color: var(--ink); text-shadow: var(--shadow-opening);
+  opacity: 0; transform: translateY(var(--space-3));
+  transition: opacity var(--opening-fade-ms) var(--ease), transform var(--opening-fade-ms) var(--ease);
+}
+#opening .line.in { opacity: 1; transform: none; }
+/* on a phone held sideways the lines take less of the little height there is */
+#app.landscape #opening { top: var(--space-8); gap: var(--space-2); }
+#app.landscape #opening .line { font-size: var(--text-head); }
+
 /* ---- the count on a stacked tile, following the map ------------------------------------------- */
 #stacks { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
 #stacks .stack {
@@ -386,6 +406,15 @@ input[type=text] {
   position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center;
   font-size: var(--text-tiny); font-weight: var(--weight-strong); text-shadow: var(--shadow-text);
 }
+
+/* the founding preview in a sheet: the ring the settlement would work, at the slot's size rather
+   than the ring's, so it fits the bottom third with its words beside it */
+.st-ring.compact { max-width: calc(var(--slot-w) * 3 + var(--cell-gap) * 2); margin: var(--space-3) 0; }
+.st-ring.compact .cell { cursor: default; }
+.st-ring.compact .cell.bad { opacity: 0.45; }
+.found { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
+.found .about { flex: 1; min-width: 9rem; }
+.found .about .big { font-size: var(--text-head); font-weight: var(--weight-strong); }
 
 /* building slots */
 .slot {
