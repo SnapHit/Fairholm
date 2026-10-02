@@ -577,7 +577,8 @@ export class App {
     const start = u.tile
     this.scene.prepareMove(this.state, [unitId])
     this.holdUi(unitId)
-    const ok = this.dispatch({ t: 'moveUnit', unit: unitId, path: planned }, `${unitLabel(u.kind)} moved`)
+    // a unit with no moves left is given the way to go next turn, and the toast says so
+    const ok = this.dispatch({ t: 'moveUnit', unit: unitId, path: planned }, u.moves > 0 ? `${unitLabel(u.kind)} moved` : `${unitLabel(u.kind)} will go next turn`)
     const nu = this.state.units.find(x => x.id === unitId)
     if (!ok || !nu || nu.tile === start) { this.scene.cancelMove(); this.releaseUi(); if (ok && nu) { this.open({ kind: 'unit', id: unitId }); this.afterSelect() } return Promise.resolve(ok) }
     this.scene.cam.view.selectedTile = nu.tile

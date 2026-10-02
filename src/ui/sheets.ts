@@ -644,6 +644,8 @@ const STOP_LABELS: Record<string, string> = {
   patrol: 'Stop the patrol',
   haul: 'Stop the haul route',
   improve: 'Stop the work',
+  reserve: 'Leave the reserve',
+  screen: 'Stop screening',
 }
 
 /** Which way from one tile to another, in a word. */
