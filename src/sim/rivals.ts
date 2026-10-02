@@ -79,7 +79,8 @@ function expand(s: GameState, id: number, ctx: TurnContext) {
   const st = foundSettlement(s, tile, id, [], `${ch.name.split(' ')[0]} ${['Reach', 'Cross', 'Ford', 'Stand', 'Hollow', 'Rise', 'Bank', 'Gate'][own.length % 8]}`)
   st.abstractPop = 2
   st.nameChosen = true
-  ctx.log({ kind: 'rival', text: `${ch.name} founded ${st.name}.`, tile })
+  // a founding out of sight is not news; the settlement shows itself when it is seen
+  if (canSee(s, tile)) ctx.log({ kind: 'rival', text: `${ch.name} founded ${st.name}.`, tile })
 }
 
 export const rivalsSystem: System = {

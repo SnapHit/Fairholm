@@ -13,6 +13,7 @@ import { isHostileTo } from './military'
 import { unitLabel } from './queue'
 import { sightMask } from './fog'
 import { isCoastalSettlement } from './settlement'
+import { isArmedShip } from './units'
 
 export function buildHull(s: GameState, st: Settlement, kind: HullKind, ctx: TurnContext) {
   const d = C.naval.hulls[kind]
@@ -60,6 +61,38 @@ function engage(s: GameState, a: Unit, b: Unit, ctx: TurnContext) {
 }
 
 function ownerOf(s: GameState, u: Unit): string { return u.owner === -1 ? "the Company's" : u.flagged ? `${s.charters[u.owner]?.name}'s` : 'an unflagged' }
+
+/** Coastal batteries fire on adjacent hostile ships, military brief section 11. Every battery
+ *  standing on one of the player's settlements fires once at each hostile armed ship on the water
+ *  beside the settlement; a hit does a round's damage. A hull that has lost all its speed founders,
+ *  and the Company's landing craft is driven off once it has taken enough. The shore fires first,
+ *  before the ships' own engagements. Returns how many hits were made, for the tests. */
+export function batteryFire(s: GameState, ctx: TurnContext): number {
+  const w = s.world.width, h = s.world.height
+  const B = C.naval.batteryFire
+  let hits = 0
+  for (const st of s.settlements) {
+    if (st.owner !== 0) continue
+    const guns = s.units.filter(u => u.owner === 0 && u.tile === st.tile && (u.kind === 'battery' || u.kind === 'damagedBattery'))
+    if (!guns.length) continue
+    const beside = neighbours8(w, h, st.tile)
+    const ships = s.units.filter(u => u.owner !== 0 && isHostileTo(s, u.owner, 0) && isArmedShip(u) && (u.flagged || u.owner === -1) && beside.includes(u.tile) && s.world.tiles[u.tile].terrain === 'water')
+    for (const ship of ships) {
+      let hit = 0
+      for (const g of guns) if (chance(ctx.rngPlay, g.kind === 'battery' ? B.hit : B.damagedHit)) hit++
+      if (!hit) { ctx.log({ kind: 'war', text: `The batteries at ${st.name} fired on ${ownerOf(s, ship)} ${unitLabel(ship.kind).toLowerCase()} and missed.`, tile: ship.tile }); continue }
+      hits += hit
+      ship.damage += hit * C.naval.damagePerLostRound
+      // a hull founders by the naval rule; the landing craft is driven off
+      const gone = ship.kind === 'companyShip' ? ship.damage >= B.companyShipEndurance : ship.damage >= C.naval.hulls[ship.kind as HullKind].speed + 1
+      if (gone) s.units = s.units.filter(x => x !== ship)
+      // a raider hit from the shore is as good as caught
+      if (!gone && !ship.flagged && ship.owner > 0) { ship.flagged = true; s.charters[ship.owner].suspicion += C.rivals.suspicionPerRaid }
+      ctx.log({ kind: 'war', text: `The batteries at ${st.name} fired on ${ownerOf(s, ship)} ${unitLabel(ship.kind).toLowerCase()}: ${hit} ${hit === 1 ? 'hit' : 'hits'}. ${gone ? (ship.kind === 'companyShip' ? 'It was driven off.' : 'It foundered.') : 'It lies damaged off the shore.'}`, why: 'Batteries on a settlement fire on hostile ships beside it every turn. A ship with no speed left founders.', tile: ship.tile, settlement: st.id })
+    }
+  }
+  return hits
+}
 
 function sendRaider(s: GameState, ctx: TurnContext) {
   const rivals = s.charters.filter(c => !c.player && !c.fell && (c.relation === 'tense' || c.relation === 'war'))
@@ -123,6 +156,8 @@ export const navalSystem: System = {
       const path = findPath(s, u, u.tile, target)
       if (path) { u.path = path.slice(0, 6); advance(s, u) }
     }
+    // the shore fires first: coastal batteries on hostile ships beside their settlement
+    batteryFire(s, ctx)
     // the player's hulls can be brought to action by the Company's blockade ships
     for (const u of s.units) {
       if (u.owner !== -1 || u.kind !== 'companyShip') continue

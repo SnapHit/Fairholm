@@ -39,7 +39,8 @@ import { detailTextures, type DetailTextures } from './textures'
 import { spriteSheet, buildBillboards, setBillboardFade, manifestFrom, type AtlasManifest, type BillboardTag } from './billboards'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
-import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL } from './look'
+import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL, WAVE_COAST } from './look'
+import { waveCandidates } from './selectors'
 
 /** Where each sheet stands in the list handed to billboards.ts. */
 const SHEET_SETTLEMENTS = 0
@@ -479,6 +480,18 @@ export class Scene {
           if (nx < 0 || nz < 0 || nx >= w || nz >= s.world.height) continue
           setOverlayTile(tex, w, nz * w + nx, [0.85, 0.2, 0.15], 0.35 - 0.06 * (Math.abs(dx) + Math.abs(dz)))
         }
+      }
+    }
+    // the war: while a wave is at sea, the coast it might still come ashore on, narrowing each turn.
+    // Military brief section 10: three turns of visible, progressively narrowing approach
+    const d = s.declaration
+    if (d?.declared) {
+      const wc = hexRgb(WAVE_COAST.colour)
+      for (const wave of d.waves) {
+        if (wave.landed) continue
+        const k = 1 - wave.turnsToLand / C.military.approachTurns
+        const a = WAVE_COAST.alphaFrom + (WAVE_COAST.alphaTo - WAVE_COAST.alphaFrom) * Math.max(0, Math.min(1, k))
+        for (const t of waveCandidates(s, wave)) setOverlayTile(tex, w, t, wc, a)
       }
     }
     // a path preview for the active unit

@@ -541,6 +541,15 @@ export const FOG = {
   edgeFade: 1.5,
 }
 
+/** The coast a wave at sea might still come ashore on, painted while it is at sea, military brief
+ *  section 10: in the loss colour, faint while the whole coast is possible and stronger as the
+ *  approach narrows it to a stretch. */
+export const WAVE_COAST = {
+  colour: '#d8553e',
+  alphaFrom: 0.14,
+  alphaTo: 0.42,
+}
+
 /** The founding preview on the map: the nine tiles a settlement would work, in bone where it may be
  *  founded and in the loss colour where it may not, the centre stronger than the ring. */
 export const FOUND_PREVIEW = {

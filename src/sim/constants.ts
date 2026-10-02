@@ -186,6 +186,12 @@ export const C = {
     raidCargoFraction: 0.6,    // cargo transferred on a successful raid
     rivalRaidChancePerTurn: 0.03,
     repairPerTurn: 1,
+    /** Coastal batteries fire on adjacent hostile ships automatically, military brief section 11.
+     *  Each battery standing on a settlement's tile fires once a turn at each hostile armed ship on
+     *  the water beside it: a hit does one round's damage, as a lost exchange does. A damaged
+     *  battery hits less often. A hull founders by the naval rule; the Company's landing craft,
+     *  which has no hull entry, is driven off after this many hits. */
+    batteryFire: { hit: 0.5, damagedHit: 0.25, companyShipEndurance: 4 },
   },
 
   // -------------------------------------------------------------------------------------------
