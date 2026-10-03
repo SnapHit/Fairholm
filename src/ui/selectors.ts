@@ -11,7 +11,7 @@ import {
   workableTiles, tileOffers, tileYield, workerOutput, buildingWorkers,
 } from '../sim/labour'
 import {
-  previewProduction, buildable, buildingName, storageCapacity, outputModifier, effectiveTier, canStart,
+  previewProduction, buildable, buildingName, storageCapacity, outputModifier, effectiveTier, canStart, surplusRuleFor,
 } from '../sim/settlement'
 import { sellPrice, canConsign } from '../sim/market'
 import { tileLook, tileWords, type TileLook } from '../render/tiles'
@@ -335,6 +335,9 @@ export interface GoodChip {
   spoiling: boolean
   price: number | null
   made: number
+  /** What the surplus rule does with it, in a word or two, and whether the rule is this good's own. */
+  rule: string
+  ownRule: boolean
 }
 
 /** What is stored against capacity, what is about to spoil, what it fetches. */
@@ -346,11 +349,15 @@ export function goodsStrip(s: GameState, st: Settlement): GoodChip[] {
     const stock = st.stock[g]
     const m = made[g] ?? 0
     if (stock <= 0 && m <= 0) continue
+    const r = surplusRuleFor(st, g)
+    const traded = C.market.goods[g].traded
+    const rule = g === 'food' ? '' : r.destination.kind === 'consign' ? (traded ? `consigned above ${r.threshold}` : '') : r.destination.kind === 'hold' ? 'held' : r.destination.kind === 'ship' ? `to ${s.settlements[r.destination.settlement]?.name ?? '?'} above ${r.threshold}` : r.destination.kind === 'offer' ? `offered to ${s.predecessors[r.destination.predecessor]?.name ?? '?'}` : ''
     out.push({
       good: g, stock, capacity: cap,
       spoiling: g !== 'food' && stock > cap,
-      price: C.market.goods[g].traded ? sellPrice(s, g) : null,
+      price: traded ? sellPrice(s, g) : null,
       made: m,
+      rule, ownRule: r.own,
     })
   }
   out.sort((a, b) => (b.spoiling ? 1 : 0) - (a.spoiling ? 1 : 0) || b.stock - a.stock)

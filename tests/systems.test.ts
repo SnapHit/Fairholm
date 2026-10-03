@@ -5,7 +5,7 @@ import { SYSTEMS } from '../src/sim/systems'
 import { C } from '../src/sim/constants'
 import { consign, sellPrice } from '../src/sim/market'
 import { makeContext } from '../src/sim/turn'
-import { foundSettlement } from '../src/sim/settlement'
+import { foundSettlement, foundingProblem } from '../src/sim/settlement'
 import { makeColonist, workableTiles } from '../src/sim/labour'
 import { makeUnit, findPath } from '../src/sim/units'
 import { isLand, neighbours8, dist } from '../src/sim/worldgen'
@@ -90,6 +90,46 @@ describe('dumping by standing order is never silent', () => {
     applyAction(s, { t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { threshold: 10, destination: { kind: 'hold' } } })
     for (let i = 0; i < 80; i++) applyAction(s, { t: 'endTurn' })
     expect(deriveQueue(s, SYSTEMS).shown.find(g => g.group === 'dumping')).toBeUndefined()
+  })
+})
+
+describe('a surplus rule for one good', () => {
+  it('holds one good while the settlement consigns the rest, ships one to a named settlement, and the dumping card holds it everywhere', () => {
+    const s = landed('good-rule-seed')
+    const st = s.settlements.find(x => x.owner === 0)!
+    applyAction(s, { t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { threshold: 20, destination: { kind: 'consign' } } })
+    applyAction(s, { t: 'setGoodRule', settlement: st.id, good: 'linen', rule: { destination: { kind: 'hold' } } })
+    st.buildings.storage = 2   // a warehouse, so nothing here spoils and only the rules move goods
+    st.stock.linen = 120
+    st.stock.cordage = 120
+    applyAction(s, { t: 'endTurn' })
+    // linen held by its own rule, cordage consigned by the settlement's
+    expect(st.stock.linen).toBe(120)
+    expect(st.stock.cordage).toBeLessThan(120)
+    expect(s.dispatch.some(d => /consigned \d+ cordage by standing order/.test(d.text))).toBe(true)
+    expect(s.dispatch.some(d => /consigned \d+ linen by standing order/.test(d.text))).toBe(false)
+    // the good's own threshold, and clearing the rule
+    applyAction(s, { t: 'setGoodRule', settlement: st.id, good: 'linen', rule: { destination: { kind: 'consign' }, threshold: 100 } })
+    st.stock.linen = 130
+    applyAction(s, { t: 'endTurn' })
+    expect(st.stock.linen).toBe(100)
+    applyAction(s, { t: 'setGoodRule', settlement: st.id, good: 'linen', rule: null })
+    expect(st.orders.goods?.linen).toBeUndefined()
+    // shipping one good to a named settlement under its own rule
+    const second = foundSettlement(s, s.world.tiles.findIndex((tt, i) => isLand(tt) && tt.terrain !== 'mountain' && dist(s.world.width, i, st.tile) === 4 && foundingProblem(s, i) === null), 0, [makeColonist(s, 'free')])
+    applyAction(s, { t: 'setGoodRule', settlement: st.id, good: 'linen', rule: { destination: { kind: 'ship', settlement: second.id }, threshold: 20 } })
+    const before = s.transits.length
+    applyAction(s, { t: 'endTurn' })
+    expect(s.transits.length + (second.stock.linen > 0 ? 1 : 0)).toBeGreaterThan(before)
+    expect(st.stock.linen).toBeLessThanOrEqual(20)
+    // the dumping card's choice holds the good at every settlement of the player's
+    applyAction(s, { t: 'setGoodRule', settlement: -1, good: 'dye', rule: { destination: { kind: 'hold' } } })
+    for (const x of s.settlements.filter(x => x.owner === 0)) expect(x.orders.goods?.dye?.destination.kind).toBe('hold')
+    // and a hold holds even with a consignment office
+    st.buildings.consignment = 1
+    st.stock.dye = 150
+    applyAction(s, { t: 'endTurn' })
+    expect(st.stock.dye).toBe(150)
   })
 })
 

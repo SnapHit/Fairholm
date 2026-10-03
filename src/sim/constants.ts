@@ -460,6 +460,10 @@ export const C = {
     unseenSitePenalty: 5,
     /** A sally is made at these odds or better: against a siege train, and against anything else. */
     sallyOdds: { siege: 0.45, other: 0.55 },
+    /** A good standing below this share of its baseline is held by a rule of its own, and sold
+     *  again once it stands at this share. */
+    holdBelow: 0.7,
+    sellAgainAt: 0.9,
     /** Gold kept in hand when buying the tooling a build in progress is waiting on. */
     toolingFloat: 40,
     /** Buy arms for the muster only while gold stays above this, a lot at a time. */

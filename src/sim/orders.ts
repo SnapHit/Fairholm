@@ -10,6 +10,7 @@ import { C } from './constants'
 import { findPath, advance, maxMoves, cargoCapacity, isArmed, isHull, enterCost } from './units'
 import { neighbours8, isLand, dist } from './worldgen'
 import { isHostileTo } from './military'
+import { surplusRuleFor } from './settlement'
 import { pick } from './rng'
 import { unitLabel } from './queue'
 
@@ -21,29 +22,32 @@ function hostileNear(s: GameState, tile: number, radius: number): boolean {
   return s.units.some(u => u.owner !== 0 && isArmed(u.kind) && !isHull(u.kind) && isHostileTo(s, u.owner, 0) && dist(w, u.tile, tile) <= radius)
 }
 
+/** Surplus shipped to a named settlement, good by good: a good's own rule where the player set one,
+ *  else the settlement's. Tooling, arms and instruments ship only under a rule of their own. */
 function shipSurplus(s: GameState, st: Settlement, ctx: TurnContext) {
-  const dest = st.orders.surplus.destination
-  if (dest.kind !== 'ship') return
-  const to = s.settlements[dest.settlement]
-  if (!to || to.owner !== 0) { st.conditions['orderUnsatisfiable'] = st.conditions['orderUnsatisfiable'] ?? s.turn; return }
   const w = s.world.width
-  const d = dist(w, st.tile, to.tile)
-  if (hostileNear(s, st.tile, 3) || hostileNear(s, to.tile, 3)) { st.conditions['orderBlocked'] = st.conditions['orderBlocked'] ?? s.turn; return }
-  delete st.conditions['orderBlocked']
-  delete st.conditions['orderUnsatisfiable']
-  const threshold = st.orders.surplus.threshold
-  // a road most of the way halves the time
-  const roaded = neighbours8(w, s.world.height, st.tile).filter(n => s.world.tiles[n].road).length > 0 && neighbours8(w, s.world.height, to.tile).filter(n => s.world.tiles[n].road).length > 0
-  const turns = Math.max(1, Math.ceil(d / (roaded ? 4 : 2)))
+  let blocked = false, unsatisfiable = false, any = false
   for (const g of GOODS) {
-    if (g === 'tooling' || g === 'arms' || g === 'horses' || g === 'instruments') continue
-    const surplus = st.stock[g] - threshold
-    if (surplus >= 10) {
-      st.stock[g] -= surplus
-      transits(s).push({ to: to.id, good: g, amount: surplus, due: s.turn + turns })
-      ctx.log({ kind: 'note', text: `${st.name} sent ${surplus} ${g} to ${to.name} under standing orders, ${turns} turns on the road.`, settlement: st.id })
-    }
+    const rule = surplusRuleFor(st, g)
+    if (rule.destination.kind !== 'ship') continue
+    if (!rule.own && (g === 'tooling' || g === 'arms' || g === 'horses' || g === 'instruments')) continue
+    any = true
+    const to = s.settlements[rule.destination.settlement]
+    if (!to || to.owner !== 0) { unsatisfiable = true; continue }
+    if (hostileNear(s, st.tile, 3) || hostileNear(s, to.tile, 3)) { blocked = true; continue }
+    const surplus = st.stock[g] - rule.threshold
+    if (surplus < 10) continue
+    // a road most of the way halves the time
+    const d = dist(w, st.tile, to.tile)
+    const roaded = neighbours8(w, s.world.height, st.tile).filter(n => s.world.tiles[n].road).length > 0 && neighbours8(w, s.world.height, to.tile).filter(n => s.world.tiles[n].road).length > 0
+    const turns = Math.max(1, Math.ceil(d / (roaded ? 4 : 2)))
+    st.stock[g] -= surplus
+    transits(s).push({ to: to.id, good: g, amount: surplus, due: s.turn + turns })
+    ctx.log({ kind: 'note', text: `${st.name} sent ${surplus} ${g} to ${to.name} under standing orders, ${turns} turns on the road.`, settlement: st.id })
   }
+  if (!any) { delete st.conditions['orderBlocked']; delete st.conditions['orderUnsatisfiable']; return }
+  if (unsatisfiable) st.conditions['orderUnsatisfiable'] = st.conditions['orderUnsatisfiable'] ?? s.turn; else delete st.conditions['orderUnsatisfiable']
+  if (blocked) st.conditions['orderBlocked'] = st.conditions['orderBlocked'] ?? s.turn; else delete st.conditions['orderBlocked']
 }
 
 function runImprover(s: GameState, u: Unit, ctx: TurnContext) {

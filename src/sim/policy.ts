@@ -303,11 +303,20 @@ function keepBuilding(s: GameState, st: Settlement, k: Knobs, policy: Policy) {
 // ---------------------------------------------------------------------------------------------
 
 /** A lot of something traded, held at a fair price, is consigned: a competent player does not wait
- *  for the standing order to notice. Inputs a shop here needs are kept. */
+ *  for the standing order to notice. Inputs a shop here needs are kept. And a good the colony's own
+ *  selling has walked well down is held, by a rule for that good alone, until the price mends. */
 function sellLots(s: GameState, st: Settlement, policy: Policy) {
   if (policy === 'lazy') return
   if (!isCoastalSettlement(s, st) && st.buildings.consignment === 0) return
   const table = s.market.tables[0]
+  for (const g of Object.keys(table) as GoodId[]) {
+    if (!C.market.goods[g].traded) continue
+    const own = st.orders.goods?.[g]
+    const low = table[g].price < table[g].baseline * C.autopilot.holdBelow
+    const mended = table[g].price >= table[g].baseline * C.autopilot.sellAgainAt
+    if (low && !own && st.orders.surplus.destination.kind === 'consign') tryAction(s, { t: 'setGoodRule', settlement: st.id, good: g, rule: { destination: { kind: 'hold' } } })
+    else if (mended && own && own.destination.kind === 'hold') tryAction(s, { t: 'setGoodRule', settlement: st.id, good: g, rule: null })
+  }
   for (const g of Object.keys(st.stock) as GoodId[]) {
     const p = C.market.goods[g]
     if (!p.traded || g === 'tooling' || g === 'arms' || g === 'horses' || g === 'instruments') continue
@@ -317,7 +326,7 @@ function sellLots(s: GameState, st: Settlement, policy: Policy) {
     const surplus = st.stock[g] - keep
     if (surplus < C.market.lotSize) continue
     // not into a price the colony itself has walked down
-    if (table[g].price < table[g].baseline * 0.7) continue
+    if (table[g].price < table[g].baseline * C.autopilot.holdBelow) continue
     tryAction(s, { t: 'consign', settlement: st.id, good: g, amount: Math.min(surplus, C.market.lotSize * 2) })
   }
 }

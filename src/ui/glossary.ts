@@ -54,7 +54,7 @@ export const TERMS: Record<string, Term> = {
   workers: { title: 'Workers', text: 'Two colonists fit in any building. Their standing sets their output, and the tier multiplies it.' },
   standingOrders: { title: 'Standing orders', text: 'Four rules a settlement follows by itself: what it is for, what to do with surplus, what to do with growth, and what to build. They never fight you.' },
   purpose: { title: 'Purpose', text: 'What a settlement is for. New arrivals take jobs that serve it, after feeding themselves.' },
-  surplus: { title: 'Surplus rule', text: 'What a settlement does with stock above a threshold: consign, hold, ship to another settlement, or offer to a predecessor people.' },
+  surplus: { title: 'Surplus rule', text: 'What a settlement does with stock above a threshold: consign, hold, ship to another settlement, or offer to a predecessor people. Tap a good in the strip to give that good a rule of its own.' },
   growth: { title: 'Growth rule', text: 'What happens when food banks a new colonist: keep them, or send them to another settlement.' },
   grievance: { title: 'Grievance', text: 'Grievance is the settled anger at the Company, gathered at the meeting house and spread by the press. It buys signatories and, at sixty per cent resolve across your settlements, a declaration.', state: s => `${Math.round(s.charters[0].grievance)} unspent, ${Math.round(s.charters[0].grievanceTotal)} gathered in all.` },
   resolve: { title: 'Resolve', text: 'How settled a settlement is against the Company, from the grievance gathered per head. Above half it works harder; left unresolved it works worse.' },

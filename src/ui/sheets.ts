@@ -1,12 +1,12 @@
 // The sheets. Each is a function of the app and a spec, returning DOM for the bottom third.
 // Everything that changes state goes through app.dispatch, so it is undoable and never a dialog.
 
-import type { GameState, Settlement, Unit, Colonist, GoodId, BuildId, BuildingLine, TileGood, LandKind, Purpose, HullKind, Difficulty, MapSize, LandShape } from '../sim/state'
+import type { GameState, Settlement, Unit, Colonist, GoodId, BuildId, BuildingLine, TileGood, LandKind, Purpose, HullKind, Difficulty, MapSize, LandShape, GoodRule, SurplusDestination } from '../sim/state'
 import { GOODS, BUILDING_LINES } from '../sim/state'
 import { C } from '../sim/constants'
 import { unitLabel } from '../sim/queue'
 import { workableTiles, tileOffers, tileYield, passageCost, goldPassageCost, buildingWorkers, foodBalance, workerOutput, landingSettlement, clerksRequired } from '../sim/labour'
-import { previewProduction, buildable, buildingName, storageCapacity, isCoastalSettlement, canStart, foundingProblem } from '../sim/settlement'
+import { previewProduction, buildable, buildingName, storageCapacity, isCoastalSettlement, canStart, foundingProblem, surplusRuleFor } from '../sim/settlement'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { turnsToCoast } from '../sim/autopilot'
 import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, recompute } from '../sim/market'
@@ -290,18 +290,41 @@ function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HT
   acts.append(button('Market', () => app.open({ kind: 'market', settlement: st.id }), 'small ghost'))
   panel.append(acts)
   if (!ok.ok && ok.reason) panel.append(muted(ok.reason))
-  // hold and send are the settlement's surplus rule, not a rule for this good alone: the simulation
-  // keeps one rule per settlement, so saying otherwise here would be a lie
-  panel.append(section('What this settlement does with its surplus',
-    h('p', { class: 'muted' }, `Everything above ${o.surplus.threshold} in store, this good included.`),
+  // this good's own surplus rule, over the settlement's: consign, hold, or send, above a threshold
+  // of its own (DECISIONS.md 159). Clearing it puts the settlement's rule back
+  const rule = surplusRuleFor(st, g)
+  const word = GOOD_NAMES[g].toLowerCase()
+  const setRule = (r: GoodRule | null, label: string) => app.dispatch({ t: 'setGoodRule', settlement: st.id, good: g, rule: r }, label)
+  const keep = (dest: SurplusDestination) => ({ destination: dest, ...(o.goods?.[g]?.threshold !== undefined ? { threshold: o.goods[g]!.threshold } : {}) })
+  const on = (k: boolean) => 'chip' + (k ? ' on' : '')
+  panel.append(section(`What ${st.name} does with its ${word}`,
+    h('p', { class: 'muted' }, rule.own
+      ? `A rule for ${word} alone: ${destinationWords(s, rule.destination)} above ${rule.threshold}.`
+      : `The settlement's rule: ${destinationWords(s, rule.destination)} above ${rule.threshold}, ${word} included.`),
     h('div', { class: 'chips' },
-      h('button', { class: 'chip' + (o.surplus.destination.kind === 'hold' ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { ...o.surplus, destination: { kind: 'hold' } } }, 'Surplus: hold') }, 'hold it'),
-      h('button', { class: 'chip' + (o.surplus.destination.kind === 'consign' ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { ...o.surplus, destination: { kind: 'consign' } } }, 'Surplus: consign') }, 'consign it'),
-      others.map(x => h('button', { class: 'chip' + (o.surplus.destination.kind === 'ship' && o.surplus.destination.settlement === x.id ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { ...o.surplus, destination: { kind: 'ship', settlement: x.id } } }, `Surplus: ship to ${x.name}`) }, `send to ${x.name}`)),
+      h('button', { class: on(rule.destination.kind === 'hold'), type: 'button', onClick: () => setRule(keep({ kind: 'hold' }), `Hold ${word}`) }, 'hold it'),
+      h('button', { class: on(rule.destination.kind === 'consign'), type: 'button', onClick: () => setRule(keep({ kind: 'consign' }), `Consign ${word}`) }, 'consign it'),
+      others.map(x => h('button', { class: on(rule.destination.kind === 'ship' && rule.destination.settlement === x.id), type: 'button', onClick: () => setRule(keep({ kind: 'ship', settlement: x.id }), `Send ${word} to ${x.name}`) }, `send to ${x.name}`)),
     ),
+    h('div', { class: 'chips' }, SURPLUS_THRESHOLDS.map(th => h('button', { class: on(rule.own && rule.threshold === th), type: 'button', onClick: () => setRule({ destination: rule.destination, threshold: th }, `${GOOD_NAMES[g]} above ${th}`) }, `above ${th}`))),
+    rule.own ? button(`Use the settlement's rule for ${word}`, () => setRule(null, `${GOOD_NAMES[g]}: the settlement's rule`), 'small ghost') : '',
     button('All the standing orders', () => app.open({ kind: 'orders', settlement: st.id }), 'small ghost'),
   ))
   return panel
+}
+
+/** The surplus threshold chips, shared by the orders sheet and the good panel. */
+const SURPLUS_THRESHOLDS = [20, 40, 60, 100, 150]
+
+/** A surplus destination in the player's words. */
+export function destinationWords(s: GameState, d: SurplusDestination): string {
+  switch (d.kind) {
+    case 'consign': return 'consigned to the Company'
+    case 'hold': return 'held'
+    case 'ship': return `sent to ${s.settlements[d.settlement]?.name ?? 'a settlement that is gone'}`
+    case 'offer': return `offered to ${s.predecessors[d.predecessor]?.name ?? 'a people'}`
+    case 'ask': return 'asked about'
+  }
 }
 
 function workersSheet(app: App, s: GameState, st: Settlement, idx: number): HTMLElement {
@@ -386,7 +409,8 @@ function ordersSheet(app: App, s: GameState, st: Settlement): HTMLElement {
   const panel = h('div', { class: 'panel' }, header(app, 'Standing orders', st.name),
     h('p', { class: 'muted' }, 'The settlement follows these by itself. Anything you set by hand is left alone.'))
   panel.append(section('Purpose', h('div', { class: 'chips' }, PURPOSES.map(p => h('button', { class: 'chip' + (o.purpose === p ? ' on' : ''), type: 'button', onClick: () => set('purpose', p, `Purpose: ${p}`) }, p)))))
-  const thresholds = [20, 40, 60, 100, 150]
+  const thresholds = SURPLUS_THRESHOLDS
+  const goodRules = Object.entries(o.goods ?? {}) as [GoodId, GoodRule][]
   panel.append(section('Surplus',
     h('div', { class: 'chips' }, thresholds.map(t => h('button', { class: 'chip' + (o.surplus.threshold === t ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, threshold: t }, `Surplus above ${t}`) }, `above ${t}`))),
     h('div', { class: 'chips' },
@@ -394,6 +418,8 @@ function ordersSheet(app: App, s: GameState, st: Settlement): HTMLElement {
       h('button', { class: 'chip' + (o.surplus.destination.kind === 'hold' ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'hold' } }, 'Surplus: hold') }, 'hold'),
       others.map(x => h('button', { class: 'chip' + (o.surplus.destination.kind === 'ship' && o.surplus.destination.settlement === x.id ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'ship', settlement: x.id } }, `Surplus: ship to ${x.name}`) }, `ship to ${x.name}`)),
     ),
+    goodRules.length ? h('p', { class: 'muted' }, 'Rules for one good, set from the goods strip:') : '',
+    ...goodRules.map(([g, r]) => line([GOOD_NAMES[g], muted(` · ${destinationWords(s, r.destination)} above ${r.threshold ?? o.surplus.threshold}`)], 'remove', () => app.dispatch({ t: 'setGoodRule', settlement: st.id, good: g, rule: null }, `${GOOD_NAMES[g]}: the settlement's rule`))),
   ))
   panel.append(section('Growth', h('div', { class: 'chips' },
     h('button', { class: 'chip' + (o.growth.kind === 'keep' ? ' on' : ''), type: 'button', onClick: () => set('growth', { kind: 'keep' }, 'Growth: keep') }, 'keep'),

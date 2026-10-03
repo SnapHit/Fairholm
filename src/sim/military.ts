@@ -244,9 +244,14 @@ function moveHostiles(s: GameState, ctx: TurnContext) {
     if (!isHostileTo(s, u.owner, 0)) continue
     if (u.owner === -1 && over) continue
     u.moves = maxMoves(u)
-    // the Company marches on the Landing when it can, otherwise the nearest settlement
+    // the Company marches on the Landing wherever it can reach it, since the Landing falling is the
+    // war, and otherwise on the nearest settlement it has not lately sacked; a rival's war party on
+    // the nearest. Before, a wave that came ashore far from the Landing sat beside an outpost and
+    // sacked it every cooldown to the end of the game, and the war never ended (DECISIONS.md 154)
     const landing = mine.find(x => x.tile === s.charters[0].landing)
-    const target = (u.owner === -1 && landing && dist(w, u.tile, landing.tile) <= 12) ? landing : mine.reduce((a, b) => dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a)
+    const standing = mine.filter(x => !(u.owner === -1 && x.conditions['sacked'] !== undefined && s.turn - x.conditions['sacked'] < C.military.sackCooldown))
+    const nearestOf = (list: Settlement[]) => list.reduce((a, b) => dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a)
+    const target = (u.owner === -1 && landing && findPath(s, u, u.tile, landing.tile)) ? landing : nearestOf(standing.length ? standing : mine)
     // attack anything of the player's beside it first. A settlement the Company sacked lately is
     // left alone while the cooldown runs: it has been broken, and the landing is the war
     const recentlySacked = (st: Settlement) => u.owner === -1 && st.conditions['sacked'] !== undefined && s.turn - st.conditions['sacked'] < C.military.sackCooldown && !s.units.some(x => x.tile === st.tile && x.owner === 0 && isArmed(x.kind))

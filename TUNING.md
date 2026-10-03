@@ -107,7 +107,7 @@ has been sent. The player should feel it on the first big sale.
 | The price hits the floor and the lesson is "nothing matters below here" | Floor too high or too low | `C.market.goods[good].floor` | Set the floor so a dump of four lots lands above it | |
 | The dispatch does not say why | The `why` text only appears when the price fell | `market.ts` `consign` | | |
 | The office dumps on the player's behalf | Office threshold | `C.market.consignmentOfficeThreshold` | Raise | The office's keep-back for building inputs is twice the threshold |
-| New settlements sell everything, or nothing | The inferred threshold | `C.market.defaultSurplusThreshold` | Raise or lower; keep it under the base storage | Horses and inputs are kept at twice it |
+| New settlements sell everything, or nothing | The inferred threshold | `C.market.defaultSurplusThreshold` | Raise or lower; keep it under the base storage | Horses and inputs are kept at twice it; a good's own rule (decision 159) overrides both |
 | The dispatch is full of one-unit sales | The full store sale | `C.market.fullStoreMinSale` | Raise | Spoilage takes what is not sold |
 | A steady seller's price walks to the floor by itself | Recovery too slow for the output | `C.market.goods[good].recovery` | Raise; it is twice the proposal's now (decision 157) | The quiet turn test is twice the recovery |
 | The dumping card nags a settlement that sells a little | The card's thresholds | `C.market.dumpingAlertShare`, `dumpingAlertDrop` | Raise | Nothing else |

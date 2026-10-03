@@ -142,9 +142,19 @@ export type GrowthRule =
   | { kind: 'send'; settlement: number }
   | { kind: 'ask' }
 
+/** A surplus rule for one good, overriding the settlement's: its own destination, and its own
+ *  threshold when it has one. Queue brief section 3 and the settlement screen brief section 4,
+ *  where tapping a good offers consign, hold or send for that good (DECISIONS.md 159). */
+export interface GoodRule {
+  threshold?: number
+  destination: SurplusDestination
+}
+
 export interface StandingOrders {
   purpose: Purpose | 'ask'
   surplus: { threshold: number; destination: SurplusDestination }
+  /** Per-good rules over the settlement's surplus rule. Absent in saves from before this. */
+  goods?: Partial<Record<GoodId, GoodRule>>
   growth: GrowthRule
   reviewed: boolean            // the one-tap founding review has been done
 }

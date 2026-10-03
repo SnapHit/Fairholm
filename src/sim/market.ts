@@ -8,7 +8,7 @@ import { GOODS } from './state'
 import type { System } from './turn'
 import { wordForValue } from './labour'
 import { chance, int } from './rng'
-import { isCoastalSettlement, storageCapacity } from './settlement'
+import { isCoastalSettlement, storageCapacity, surplusRuleFor } from './settlement'
 import { isBlockaded } from './military'
 
 export function initMarket(charters: number): Market {
@@ -197,18 +197,19 @@ export const marketSystem: System = {
   enabled: c => c.flags.market,
   resolve(s: GameState, ctx: TurnContext) {
     const diff = difficultyOf(s.settings.difficulty)
-    // consignment office and surplus orders
+    // consignment office and surplus orders, good by good: a good's own rule where the player set
+    // one, else the settlement's. A hold holds, office or no office
     for (const st of s.settlements) {
       if (st.owner !== 0) continue
       const office = st.buildings.consignment > 0
-      const dest = st.orders.surplus.destination
-      if (!office && dest.kind !== 'consign') continue
       if (!office && !canConsign(s, st).ok) continue
-      const threshold = office ? Math.min(st.orders.surplus.threshold, C.market.consignmentOfficeThreshold) : st.orders.surplus.threshold
       for (const g of GOODS) {
         const p = C.market.goods[g]
         if (!p.traded) continue
+        const rule = surplusRuleFor(st, g)
+        if (rule.destination.kind !== 'consign' && !(office && !rule.own && rule.destination.kind !== 'hold')) continue
         if (!office && isEmbargoed(s, g)) continue
+        const threshold = office ? Math.min(rule.threshold, C.market.consignmentOfficeThreshold) : rule.threshold
         // keep inputs a building needs, and keep tooling, arms and instruments, which are capability
         // not cargo. Horses are both: a stud is kept at twice the threshold and the rest are sold,
         // or a settlement whose ground is pasture earns nothing (DECISIONS.md 151)
@@ -280,13 +281,14 @@ export const marketSystem: System = {
     const out: QueueItem[] = []
     // dumping by standing order: a price the player's own automation has walked well down
     for (const d of dumpedGoods(s)) {
-      const sellers = s.settlements.filter(st => st.owner === 0 && (st.buildings.consignment > 0 || st.orders.surplus.destination.kind === 'consign'))
+      const sellers = s.settlements.filter(st => st.owner === 0 && (st.buildings.consignment > 0 || surplusRuleFor(st, d.good).destination.kind === 'consign'))
       const worst = sellers.sort((a, b) => b.stock[d.good] - a.stock[d.good])[0]
       out.push({
         key: `dumping:${d.good}`, group: 'dumping', type: 1, title: `Your standing orders are dumping ${d.good}`,
         body: `${d.good} stands at ${d.price}, ${d.below} below where it would be with nothing sold, and ${d.autoShare} of that fall is your own automatic selling. Each lot fetches less than the last.`,
-        settlement: worst?.id, magnitude: d.below, since: s.turn, choices: [], opens: 'orders',
-        explain: 'A standing order sells everything above its threshold every turn, and the Company pays less the more it is sent. Raise the threshold, hold the good, or sell it in smaller lots.',
+        settlement: worst?.id, magnitude: d.below, since: s.turn, opens: 'orders',
+        choices: [{ label: `Hold ${d.good} everywhere`, action: { t: 'setGoodRule', settlement: -1, good: d.good, rule: { destination: { kind: 'hold' } } } }],
+        explain: 'A standing order sells everything above its threshold every turn, and the Company pays less the more it is sent. Hold the good until the price mends, raise its threshold, or sell it in smaller lots.',
       })
     }
     if (s.company.demand) {

@@ -7,7 +7,7 @@
 // and no offered site.
 
 import { C, SCHEMA_VERSION, WORLDGEN_VERSION, difficultyOf } from './constants'
-import type { GameState, Settings, Job, BuildId, GoodId, UnitOrder, Charter, SignatoryCategory, Difficulty, Pace, LandKind, HullKind, Purpose, SurplusDestination, GrowthRule, MapSize, LandShape, Unit, TurnContext } from './state'
+import type { GameState, Settings, Job, BuildId, GoodId, UnitOrder, Charter, SignatoryCategory, Difficulty, Pace, LandKind, HullKind, Purpose, SurplusDestination, GrowthRule, MapSize, LandShape, Unit, TurnContext, GoodRule } from './state'
 import { GOODS, emptyStock } from './state'
 import { seedRng, playRng, fork, next } from './rng'
 import { generateWorld, worldToState, describeSite, type World } from './worldgen'
@@ -32,6 +32,9 @@ export type Action =
   | { t: 'autoAssign'; settlement: number }
   | { t: 'setBuildOrder'; settlement: number; queue: BuildId[] }
   | { t: 'setStandingOrder'; settlement: number; rule: 'purpose' | 'surplus' | 'growth'; value: unknown }
+  /** A surplus rule for one good at one settlement, or at every settlement of the player's when
+   *  `settlement` is -1; null clears it and the settlement's rule applies again. */
+  | { t: 'setGoodRule'; settlement: number; good: GoodId; rule: GoodRule | null }
   | { t: 'reviewOrders'; settlement: number }
   | { t: 'renameSettlement'; settlement: number; name: string }
   | { t: 'consign'; settlement: number; good: GoodId; amount: number }
@@ -235,6 +238,18 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
       if (a.rule === 'purpose') st.orders.purpose = a.value as Purpose | 'ask'
       if (a.rule === 'surplus') st.orders.surplus = a.value as { threshold: number; destination: SurplusDestination }
       if (a.rule === 'growth') st.orders.growth = a.value as GrowthRule
+      s.actionsThisTurn++
+      return s
+    }
+    case 'setGoodRule': {
+      const targets = a.settlement === -1 ? s.settlements.filter(x => x.owner === 0) : [settlementOf(s, a.settlement)]
+      if (!GOODS.includes(a.good)) throw new Error('no such good')
+      for (const st of targets) {
+        const goods = { ...(st.orders.goods ?? {}) }
+        if (a.rule === null) delete goods[a.good]
+        else goods[a.good] = { destination: a.rule.destination, ...(a.rule.threshold !== undefined ? { threshold: a.rule.threshold } : {}) }
+        st.orders = { ...st.orders, goods }
+      }
       s.actionsThisTurn++
       return s
     }

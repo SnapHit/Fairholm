@@ -3,7 +3,7 @@
 // settlement does not starve before this turn's harvest. Spoilage after everything that adds goods.
 
 import { C, difficultyOf } from './constants'
-import type { GameState, Settlement, Colonist, BuildingLine, BuildId, GoodId, TileGood, TurnContext, StandingOrders, Purpose, QueueItem } from './state'
+import type { GameState, Settlement, Colonist, BuildingLine, BuildId, GoodId, TileGood, TurnContext, StandingOrders, Purpose, QueueItem, SurplusDestination } from './state'
 import { GOODS, emptyStock, emptyBuildings } from './state'
 import type { System } from './turn'
 import { tileYield, tileOffers, workerOutput, workableTiles, clerksRequired, buildingWorkers, defaultJob, makeColonist, foodBalance } from './labour'
@@ -97,6 +97,14 @@ export function buildingName(id: BuildId): string {
 export function isCoastalSettlement(s: GameState, st: Settlement): boolean {
   for (const n of neighbours8(s.world.width, s.world.height, st.tile)) if (s.world.tiles[n].terrain === 'water') return true
   return false
+}
+
+/** The surplus rule that applies to one good at a settlement: the good's own, where the player set
+ *  one, else the settlement's. The threshold is the good's own where it has one. */
+export function surplusRuleFor(st: Settlement, g: GoodId): { threshold: number; destination: SurplusDestination; own: boolean } {
+  const own = st.orders.goods?.[g]
+  if (own) return { threshold: own.threshold ?? st.orders.surplus.threshold, destination: own.destination, own: true }
+  return { threshold: st.orders.surplus.threshold, destination: st.orders.surplus.destination, own: false }
 }
 
 /** Infer the four standing orders from the surrounding terrain, queue brief section 3. */

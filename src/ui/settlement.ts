@@ -173,7 +173,7 @@ export function settlementScreen(app: App, s: GameState, st: Settlement): HTMLEl
         onClick: () => app.open({ kind: 'goodActions', settlement: st.id, good: g.good }),
       },
         h('span', { class: 'n' }, goodWord(g.good)),
-        h('span', { class: 'v' }, `${fmt(g.stock)} held${g.spoiling ? ', spoiling' : ''}${g.made > 0 ? ` · ${signed(Math.round(g.made))} a turn` : ''}${g.price !== null ? ` · ${g.price} each` : ''}`),
+        h('span', { class: 'v' }, `${fmt(g.stock)} held${g.spoiling ? ', spoiling' : ''}${g.made > 0 ? ` · ${signed(Math.round(g.made))} a turn` : ''}${g.price !== null ? ` · ${g.price} each` : ''}${g.rule ? ` · ${g.rule}${g.ownRule ? ', its own rule' : ''}` : ''}`),
       )))
       : muted('Nothing in store yet.'),
   ))

@@ -2363,7 +2363,10 @@ competent policy's war.
 
 - A sacked settlement is sacked once and left alone for `C.military.sackCooldown` turns (twelve);
   before, every Company unit beside an undefended outpost sacked it again every turn, five lines a
-  turn for ten turns. Decision 20 stands: the Company marches on.
+  turn for ten turns. Decision 20 stands: the Company marches on. And it marches on the Landing from
+  wherever it can reach it, not only from within twelve tiles: a wave that came ashore far from the
+  Landing used to sit beside the nearest outpost and sack it every cooldown to the last turn, and
+  since the war is won by destroying the fleet, not by waiting, the war never ended.
 - Works are breached one tier every `breachThreshold` turns per settlement, however many siege
   trains batter them. The brief's section 11 says a train accumulates progress and at the threshold
   the fortification drops a tier; with six trains in a fleet of thirty, read per train, a bastion
@@ -2494,6 +2497,26 @@ noise; the tables carry two, and the pace test's windows are wide for that reaso
 still costs nothing (RISKS.md), so the policies leave the ledger's bodies idle by choice and a
 player need not; and the predecessors play no part in any policy's game, which phase 4 should
 change.
+
+### 159. A surplus rule for one good
+
+**What.** `StandingOrders.goods`, a per-good rule over the settlement's surplus rule: its own
+destination (consign, hold, send to a named settlement) and, when set, its own threshold. The market
+system's standing orders and the orders system's shipping read `surplusRuleFor(st, good)`, the good's
+own rule where there is one, else the settlement's. A hold holds whether or not there is a
+consignment office. Tooling, arms and instruments, which the settlement's rule never moves, ship
+under a rule of their own. The action is `setGoodRule`, with `settlement: -1` meaning every
+settlement of the player's, and `null` clearing the rule. In the interface the good panel, opened
+from the goods strip, carries the chips for that good alone and says whose rule is in force; the strip
+says what each good's rule does with it; the orders sheet lists the per-good rules and removes them.
+The dumping card's one choice is "Hold linen everywhere". The competent and strong policies hold a
+good that stands below `C.autopilot.holdBelow` of its baseline and sell it again at `sellAgainAt`.
+Saves from before this load with no per-good rules.
+
+**Why.** The prompt, and the settlement screen brief section 4: "tapping a good opens consign, hold,
+or send to a named settlement". Decision 150's card told the player a good was being dumped and
+could only offer the settlement's whole rule in answer; the panel said as much in its own copy. One
+good is the unit the player thinks in.
 
 ## Left out of version one
 
