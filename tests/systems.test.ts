@@ -62,6 +62,37 @@ describe('market', () => {
   })
 })
 
+describe('dumping by standing order is never silent', () => {
+  it('an automatic sale writes the price effect to the dispatch and a card appears when it has dumped a good', () => {
+    const s = landed('dumping-seed')
+    const st = s.settlements.find(x => x.owner === 0)!
+    // a surplus rule that consigns everything above a low threshold, and a pile of linen to sell
+    applyAction(s, { t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { threshold: 10, destination: { kind: 'consign' } } })
+    st.stock.linen = 300
+    const before = s.dispatch.length
+    applyAction(s, { t: 'endTurn' })
+    const line = s.dispatch.slice(before).find(d => /consigned \d+ linen by standing order/.test(d.text))
+    expect(line).toBeDefined()
+    expect(line!.text).toMatch(/falling to \d+/)
+    expect(line!.why ?? '').toMatch(/moved the price by \d+/)
+    expect(line!.why ?? '').toMatch(/linen now stands \d+ below/)
+    // the price table knows the fall was the player's own automation
+    const e = s.market.tables[0].linen
+    expect(e.autoPressure).toBeGreaterThan(0)
+    expect(e.autoPressure).toBeLessThanOrEqual(e.pressure)
+    // and the queue says so, at a type that never folds
+    const q = deriveQueue(s, SYSTEMS)
+    const card = q.shown.find(g => g.group === 'dumping')
+    expect(card).toBeDefined()
+    expect(card!.type).toBe(1)
+    expect(card!.title).toMatch(/dumping linen/)
+    // holding the good and leaving the market quiet lets the card go away as the price recovers
+    applyAction(s, { t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { threshold: 10, destination: { kind: 'hold' } } })
+    for (let i = 0; i < 80; i++) applyAction(s, { t: 'endTurn' })
+    expect(deriveQueue(s, SYSTEMS).shown.find(g => g.group === 'dumping')).toBeUndefined()
+  })
+})
+
 describe('determinism', () => {
   it('a turn resolves identically twice with the same play rng state', () => {
     const a = createGame('det', { size: 'small' }, 123)

@@ -17,7 +17,7 @@ export function initMarket(charters: number): Market {
     const t = {} as PriceTable
     for (const g of GOODS) {
       const p = C.market.goods[g]
-      t[g] = { price: p.open, baseline: p.open, pressure: 0, soldThisTurn: 0 }
+      t[g] = { price: p.open, baseline: p.open, pressure: 0, soldThisTurn: 0, autoPressure: 0 }
     }
     tables.push(t)
   }
@@ -71,15 +71,16 @@ export function isEmbargoed(s: GameState, g: GoodId): boolean {
   return s.company.embargoed.includes(g)
 }
 
-export interface SaleResult { units: number; gold: number; word: number; first: number; last: number }
+export interface SaleResult { units: number; gold: number; word: number; first: number; last: number; due: number }
 
 /** Consign goods from a settlement. Processed in lots; the price recalculates between lots. The
- * revenue is paid after the crossing, with Word. Smuggler's rate applies after the declaration. */
-export function consign(s: GameState, st: Settlement, g: GoodId, amount: number, ctx: TurnContext | null, viaOffice = false): SaleResult {
+ * revenue is paid after the crossing, with Word. Smuggler's rate applies after the declaration. A
+ * sale made by standing order (`automatic`) is remembered as such on the price, for the dumping card. */
+export function consign(s: GameState, st: Settlement, g: GoodId, amount: number, ctx: TurnContext | null, viaOffice = false, automatic = false): SaleResult {
   const table = s.market.tables[0]
   const e = table[g]
   const p = C.market.goods[g]
-  const result: SaleResult = { units: 0, gold: 0, word: 0, first: e.price, last: e.price }
+  const result: SaleResult = { units: 0, gold: 0, word: 0, first: e.price, last: e.price, due: s.turn }
   if (!p.traded) return result
   if (isEmbargoed(s, g) && !viaOffice) return result
   amount = Math.min(amount, st.stock[g])
@@ -93,6 +94,7 @@ export function consign(s: GameState, st: Settlement, g: GoodId, amount: number,
     result.gold += value * rate
     result.word += wordForValue(s, value)
     e.pressure += lot
+    if (automatic) e.autoPressure = (e.autoPressure ?? 0) + lot
     e.soldThisTurn += lot
     result.last = e.price
     recompute(e, g)
@@ -103,6 +105,7 @@ export function consign(s: GameState, st: Settlement, g: GoodId, amount: number,
   result.gold = Math.round(result.gold)
   result.word = Math.round(result.word * 10) / 10
   const due = s.turn + C.market.crossingTurns[s.settings.crossing]
+  result.due = due
   s.company.payments.push({ due, gold: result.gold, word: result.word })
   if (s.telemetry.firstConsignment === null) s.telemetry.firstConsignment = s.turn
   if (ctx) {
@@ -125,6 +128,27 @@ export function buyFromCompany(s: GameState, st: Settlement, g: GoodId, amount: 
   ch.gold -= affordable * price
   st.stock[g] += affordable
   return affordable
+}
+
+/** The goods the player's own standing orders have dumped: a fall below the baseline of at least
+ *  `dumpingAlertDrop` of it, of which at least `dumpingAlertShare` is automatic selling. For the
+ *  dumping card and for anyone else who needs to say so. */
+export function dumpedGoods(s: GameState): { good: GoodId; price: number; below: number; autoShare: string }[] {
+  const out: { good: GoodId; price: number; below: number; autoShare: string }[] = []
+  const table = s.market.tables[0]
+  for (const g of GOODS) {
+    const p = C.market.goods[g]
+    if (!p.traded) continue
+    const e = table[g]
+    const auto = e.autoPressure ?? 0
+    if (e.pressure <= 0 || auto <= 0) continue
+    const below = Math.round(e.baseline) - e.price
+    if (below < Math.max(1, Math.round(e.baseline * C.market.dumpingAlertDrop))) continue
+    const share = auto / e.pressure
+    if (share < C.market.dumpingAlertShare) continue
+    out.push({ good: g, price: e.price, below, autoShare: share >= 0.95 ? 'all' : share >= 0.75 ? 'most' : 'half' })
+  }
+  return out
 }
 
 /** The good most consigned recently, for the Company's next demand. Falls back to the best price. */
@@ -189,8 +213,20 @@ export const marketSystem: System = {
         const keep = isInput ? threshold * 2 : threshold
         const surplus = st.stock[g] - keep
         if (surplus >= C.market.lotSize) {
-          const r = consign(s, st, g, surplus, null, office)
-          if (r.units > 0) ctx.log({ kind: 'market', text: `${st.name} ${office ? 'sold' : 'consigned'} ${r.units} ${g} under standing orders, ${r.first} falling to ${r.last}.`, why: 'Surplus above the standing-order threshold is consigned automatically.', settlement: st.id })
+          const r = consign(s, st, g, surplus, null, office, true)
+          if (r.units > 0) {
+            // what the sale did to the price, and what it will pay: a machine that sells for the
+            // player says exactly what a player's own consignment says, so the lesson is never missed
+            const fell = r.first - r.last
+            const e = s.market.tables[0][g]
+            const below = Math.round(e.baseline) - e.price
+            ctx.log({
+              kind: 'market',
+              text: `${st.name} ${office ? 'sold' : 'consigned'} ${r.units} ${g} by standing order at ${r.first}${fell > 0 ? `, falling to ${r.last}` : ''}. ${r.gold} gold due in ${r.due - s.turn} turn${r.due - s.turn === 1 ? '' : 's'}.`,
+              why: `Surplus above the standing-order threshold is consigned automatically.${fell > 0 ? ` ${r.units} units moved the price by ${fell}.` : ''}${below > 0 ? ` ${g} now stands ${below} below where it would be with nothing sold.` : ''}`,
+              settlement: st.id,
+            })
+          }
         }
       }
     }
@@ -201,7 +237,12 @@ export const marketSystem: System = {
         const e = table[g]
         const p = C.market.goods[g]
         const quiet = e.soldThisTurn < p.recovery * 2
-        if (quiet && p.recovery > 0 && e.pressure > 0) e.pressure = Math.max(0, e.pressure - p.recovery * diff.recoveryRate)
+        if (quiet && p.recovery > 0 && e.pressure > 0) {
+          const before = e.pressure
+          e.pressure = Math.max(0, e.pressure - p.recovery * diff.recoveryRate)
+          // the automatic share recovers in step with the whole
+          e.autoPressure = before > 0 ? Math.min(e.pressure, (e.autoPressure ?? 0) * (e.pressure / before)) : 0
+        }
         if (p.drift > 0) e.baseline = Math.min(p.ceiling, e.baseline + p.drift)
         if (ci === 0 && chance(ctx.rngPlay, C.market.priceJitter)) e.baseline += int(ctx.rngPlay, -1, 1) * 0.5
         e.baseline = Math.max(p.floor, Math.min(p.ceiling, e.baseline))
@@ -231,6 +272,17 @@ export const marketSystem: System = {
   },
   queueItems(s: GameState): QueueItem[] {
     const out: QueueItem[] = []
+    // dumping by standing order: a price the player's own automation has walked well down
+    for (const d of dumpedGoods(s)) {
+      const sellers = s.settlements.filter(st => st.owner === 0 && (st.buildings.consignment > 0 || st.orders.surplus.destination.kind === 'consign'))
+      const worst = sellers.sort((a, b) => b.stock[d.good] - a.stock[d.good])[0]
+      out.push({
+        key: `dumping:${d.good}`, group: 'dumping', type: 1, title: `Your standing orders are dumping ${d.good}`,
+        body: `${d.good} stands at ${d.price}, ${d.below} below where it would be with nothing sold, and ${d.autoShare} of that fall is your own automatic selling. Each lot fetches less than the last.`,
+        settlement: worst?.id, magnitude: d.below, since: s.turn, choices: [], opens: 'orders',
+        explain: 'A standing order sells everything above its threshold every turn, and the Company pays less the more it is sent. Raise the threshold, hold the good, or sell it in smaller lots.',
+      })
+    }
     if (s.company.demand) {
       const d = s.company.demand
       const left = C.market.demandDeadline - (s.turn - d.turnOffered)

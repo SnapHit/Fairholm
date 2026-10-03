@@ -119,14 +119,19 @@ export const rivalsSystem: System = {
         if (st.abstractPop > 8 && st.buildings.linenWorks === 0 && chance(ctx.rngPlay, 0.015)) st.buildings.linenWorks = 1
       }
       ch.strength += C.rivals.strengthPerTurn * diff.rivalExpansion
-      // expansion slows as a charter grows, and the map caps how many settlements all rivals hold
+      // expansion: progress toward the next settlement runs against a drag that grows the way the
+      // player's own does, with settlements held, with people to administer and with how far the
+      // holdings have spread from the landing, so a rival with eight settlements feels what a player
+      // with eight feels. The map's cap is a backstop only; the drag is what sets the number
+      const pop = own.reduce((a, st) => a + st.abstractPop, 0)
+      const spread = own.reduce((a, st) => a + dist(w, st.tile, ch.landing), 0) / own.length
+      const drag = 1 + own.length * C.rivals.expansionPerSettlement + pop * C.rivals.expansionPerPop + spread * C.rivals.expansionPerTile
       const rivalTotal = s.settlements.filter(x => x.owner > 0).length
       const cap = C.rivals.settlementCap[s.settings.size]
-      ch.expansion += C.rivals.expansionBase / (1 + own.length * C.rivals.expansionPerSettlement) * diff.rivalExpansion * (0.7 + next(ctx.rngPlay) * 0.6)
+      ch.expansion += C.rivals.expansionBase * diff.rivalExpansion * (0.7 + next(ctx.rngPlay) * 0.6) / drag
       if (ch.expansion >= 1 && rivalTotal < cap) { ch.expansion = 0; expand(s, ch.id, ctx) }
       else if (ch.expansion >= 1) ch.expansion = 1
       // market footprint: they sell into their own table, and a fraction couples into the player's
-      const pop = own.reduce((a, st) => a + st.abstractPop, 0)
       const table = s.market.tables[ch.id]
       for (let k = 0; k < 2; k++) {
         const g = pick(ctx.rngPlay, RIVAL_GOODS)

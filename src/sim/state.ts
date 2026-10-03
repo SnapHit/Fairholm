@@ -292,6 +292,10 @@ export interface PriceEntry {
   baseline: number             // drift anchor
   pressure: number             // cumulative volume pressure; price = baseline - pressure / volumeToShift
   soldThisTurn: number
+  /** The part of the pressure the player's own standing orders put there: the consignment office
+   *  and the surplus rule selling by themselves. Recovers in step with the pressure. What the
+   *  dumping card reads, so a price the player's own automation walked down is never silent. */
+  autoPressure: number
 }
 
 export type PriceTable = Record<GoodId, PriceEntry>

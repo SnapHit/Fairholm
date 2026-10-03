@@ -18,6 +18,10 @@ play may overturn; **low**, a guess made to keep the build moving.
 
 ### 15. Rival expansion slows with size and is capped by map
 
+**Changed 3 October 2026.** The recommendation below is built: decision 149 replaces the cap with a
+drag in the shape of the player's own pressures and keeps the cap as a backstop. The table below is
+the one that pass measured against.
+
 **What.** Progress per turn toward a new rival settlement is
 `expansionBase / (1 + held * expansionPerSettlement) * rivalExpansion` and all rivals together hold
 at most 7, 11, 15 or 20 settlements by map size. The first number tried gave 34 rival settlements on
@@ -2204,6 +2208,80 @@ rule. A depth buffer trick was considered and rejected: the billboards write no 
 mesh is tested against. Pairing on the CPU costs one quad per covered unit and touches nothing else.
 Measured in `scripts/phase0.mjs`: a militia north of The Landing's hall, wholly behind it, shows as a
 faint bone figure through the wall and is chosen by a tap on it.
+
+### 149. Rivals expand against a drag; the cap is a backstop
+
+**What.** A rival's progress toward its next settlement each turn is
+`expansionBase * terms / drag`, where `drag = 1 + held * expansionPerSettlement + pop *
+expansionPerPop + spread * expansionPerTile`: one term for every settlement held, one for every
+person across them, one for how far on average the holdings lie from the rival's landing. These are
+the three soft pressures the player is under, the resolve fraction, administrative overhead and
+freight loss, in the shape decision 15 asked for. `expansionPerSettlement` rises from 0.7 to 1.0,
+`expansionPerPop` is 0.02 and `expansionPerTile` 0.05. `settlementCap` rises to 12, 16, 22 and 30
+by size and is a backstop only; `tests/rivals.test.ts` asserts that on standard terms the curve, not
+the cap, set the count at the end of every size's game. `src/sim/rivals.ts`, `C.rivals`.
+
+**Measured on this build** (`tests/rivals.test.ts`, play stream fixed, player passive, rival
+settlements held by all three rivals together; the end is each size's last turn, 300, 480 and 660):
+
+| Map | Terms | Before: turn 100 | turn 250 | end | cap | After: turn 100 | turn 250 | end | cap |
+|---|---|---|---|---|---|---|---|---|---|
+| small | generous | 6 | 7 | 7 | 7 | 3 | 6 | 9 | 12 |
+| small | standard | 6 | 7 | 7 | 7 | 6 | 9 | 9 | 12 |
+| small | hard | 6 | 7 | 7 | 7 | 6 | 9 | 12 | 12 |
+| small | punitive | 7 | 7 | 7 | 7 | 6 | 12 | 12 | 12 |
+| standard | generous | 6 | 9 | 11 | 11 | 3 | 6 | 9 | 16 |
+| standard | standard | 6 | 11 | 11 | 11 | 6 | 9 | 12 | 16 |
+| standard | hard | 6 | 11 | 11 | 11 | 6 | 9 | 15 | 16 |
+| standard | punitive | 9 | 11 | 11 | 11 | 6 | 12 | 15 | 16 |
+| large | generous | 6 | 9 | 12 | 15 | 3 | 6 | 12 | 22 |
+| large | standard | 6 | 12 | 15 | 15 | 6 | 9 | 15 | 22 |
+| large | hard | 6 | 12 | 15 | 15 | 6 | 9 | 17 | 22 |
+| large | punitive | 9 | 15 | 15 | 15 | 6 | 12 | 18 | 22 |
+
+Before, every row but one sat at the cap by turn 250 and the four charter terms could not be told
+apart. After, the count still climbs at the end of every game, generous and punitive are six
+settlements apart on standard and large, and the cap binds only at hard and punitive on the smallest
+map in the last turns, which is a backstop doing its job. Per rival on standard terms: three on
+small by turn 300, four on standard by 480, five on large by 660; the second settlement at about
+turn 75, the third at about 175, the fourth at about 310.
+
+**Why these numbers.** Decision 15 said to tune the curve against the player's own settlement count
+at turn 250 on standard terms. The competent policy that gives that count is built in the next
+phase, so these are provisional: chosen so that a rival on small holds three by the end, the number
+a careful player can plausibly hold there, and so that the terms stay distinguishable to the last
+turn. Re-tuned if the competent policy's count says otherwise; the per-size table in the next
+phase's decisions carries both. Decision 15's caution still stands: the player's own overhead
+pressure is not real in this build (the clerk rule costs nothing), so the drag the rivals feel is
+modelled on three pressures of which the player feels two.
+
+**Symptom if wrong.** A player on small boxed in by turn 250 with nowhere legal to found: the rivals
+find sites by the same spacing rule and avoid ground within four tiles of the player's settlements,
+so this would show as the player's own second and third settlements having to go inland or far up
+the coast. Lower `expansionBase`, or raise `expansionPerSettlement`, and rerun the test.
+
+### 150. Dumping by standing order is never silent
+
+**What.** Every automatic sale, by consignment office or by the `consign` surplus rule, writes a
+dispatch line in the same words a player's own consignment gets: the units sold, the opening price,
+the price it fell to, the gold due and when, and in the why, how far the good now stands below where
+it would be with nothing sold. The price table keeps `autoPressure`, the share of each good's
+pressure that automatic selling put there, recovering in step with the whole. When a good stands at
+least `dumpingAlertDrop` of its baseline below it and at least `dumpingAlertShare` of that fall is
+the player's own automation, a type one card, "Your standing orders are dumping linen", names the
+price, the fall, the share, and the settlement selling most of it, and opens the orders sheet.
+Type one, so it never folds. `dumpedGoods` in `src/sim/market.ts`, `C.market.dumpingAlertShare`
+and `dumpingAlertDrop`, `PriceEntry.autoPressure` in `src/sim/state.ts`. Saves from before this
+build load with the share at zero.
+
+**Why.** `RISKS.md` risk seven: the surplus rule and the office sold silently, so a player who set a
+low threshold on turn twenty would reach the war with every good at the floor and never have been
+told. The acceptance check that the price visibly falls when a lot is dumped was true only of the
+player's own tap. The card's thresholds are the first numbers tried: half the fall and a quarter of
+the baseline, so a good sold a little by a standing order does not nag, and a good walked well down
+does. Tested in `tests/systems.test.ts`: a surplus rule over a pile of linen writes the line, the
+share is positive and bounded by the pressure, the card is shown at type one, and holding the good
+for eighty quiet turns lets it go.
 
 ## Left out of version one
 

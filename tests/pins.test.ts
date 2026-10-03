@@ -60,10 +60,13 @@ describe('market pins', () => {
     // 2026 for the fast lander: old 0, new 0.1621 to four places. The rival landers now sail six
     // tiles a turn, keep clear of the other charters and found the turn they reach their coast, so
     // they are trading inside the sixty turns' window and the last of their coupled sales has not
-    // quite recovered. With the rivals switched off the pressure is still exactly 0, which is what
-    // this protects
+    // quite recovered. Re-recorded on 3 October 2026 for the rival expansion drag (DECISIONS.md
+    // 149): old 0.1621, new 0.7712. The rivals' second settlements now come later, so their people
+    // are spread across fewer places inside the window and the footprint of the last coupled sales
+    // falls differently. With the rivals switched off the pressure is still exactly 0, checked on
+    // each re-recording, which is what this protects
     for (let i = 0; i < 60; i++) applyAction(s, { t: 'endTurn' })
-    expect(s.market.tables[0].linen.pressure).toBeCloseTo(0.1621, 4)
+    expect(s.market.tables[0].linen.pressure).toBeCloseTo(0.7712, 4)
     expect(sellPrice(s, 'linen')).toBeGreaterThanOrEqual(C.market.goods.linen.open - 1)
   })
 

@@ -59,7 +59,9 @@ These are finished and might be wrong. Unfinished things are in the README and a
    `min(orders threshold, 60)`. A settlement producing a hundred linen a turn will crash its own
    price every turn, automatically, and the queue will not say so because automatic sales are logged
    as dispatch events, not as queue items. This is the dumping lesson taught by a machine the player
-   did not watch.
+   did not watch. **Addressed 3 October 2026**, decision 150: every automatic sale writes the price
+   effect to the dispatch, and a type one card names a good the player's own standing orders have
+   walked well down. What remains is tuning the card's two thresholds by play.
 
 8. **The queue rank formula makes persistence cosmetic.** `typeWeight` steps are at least 100 apart
    and `persistenceBoost` is 0.15 a turn, so a condition never climbs a type by persisting; it only

@@ -92,6 +92,12 @@ export const C = {
     demandDeadline: 4,         // turns to answer
     embargoGrievanceBurst: 40,
     consignmentOfficeThreshold: 60,   // surplus above this is sold automatically
+    /** Dumping by standing order is never silent. When the player's own automatic sales account for
+     *  at least this share of a good's fall below its baseline, and the fall is at least this share
+     *  of the baseline (never under one price point), a loss card says so until the price recovers or
+     *  the orders change. RISKS.md risk seven. */
+    dumpingAlertShare: 0.5,
+    dumpingAlertDrop: 0.25,
     smugglerRate: 0.5,         // consignment office after the declaration or under blockade
     freightLossPerTile: 0.004, // the third soft pressure: distance from the Landing
     freightLossMax: 0.25,
@@ -419,9 +425,19 @@ export const C = {
   // -------------------------------------------------------------------------------------------
   rivals: {
     count: 3,
-    expansionBase: 0.03,       // progress per turn toward the next settlement, divided by (1 + held * expansionPerSettlement)
-    expansionPerSettlement: 0.7,
-    settlementCap: { small: 7, standard: 11, large: 15, massive: 20 } as Record<MapSize, number>,   // all rivals together
+    /** Progress per turn toward a rival's next settlement, before the drag. The drag is the same
+     *  shape as the player's three soft pressures (DECISIONS.md 15 and 149): one for every
+     *  settlement held, as the resolve fraction; one for every person, as the overhead of
+     *  administering them; one for every tile a rival's settlements lie, on average, from its
+     *  landing, as freight loss. Progress each turn is expansionBase * terms / drag. */
+    expansionBase: 0.03,
+    expansionPerSettlement: 1.0,
+    expansionPerPop: 0.02,
+    expansionPerTile: 0.05,
+    /** A backstop only, all rivals together. The drag sets the number of settlements a rival holds;
+     *  the cap is set above where the curve reaches by the end of a game on standard terms, and
+     *  tests/rivals.test.ts checks that it did not bind. */
+    settlementCap: { small: 12, standard: 16, large: 22, massive: 30 } as Record<MapSize, number>,
     popGrowthPerTurn: 0.06,
     strengthPerTurn: 0.08,
     marketFootprintPerPop: 0.8,   // units of a good sold per population point per turn
