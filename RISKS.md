@@ -119,9 +119,10 @@ These are finished and might be wrong. Unfinished things are in the README and a
 - **The sheets.** Every sheet exists and is reachable, but none of them was designed. The settlement
   sheet is a long scroll of sections; the workers sheet sorts by yield with a regex on its own text
   (`workersSheet` in `src/ui/sheets.ts`, see the `sort` on `textContent`), which is fragile and
-  slow. There is no sheet for authoring a haul circuit or a patrol, no "offer to a predecessor people"
-  surplus destination, no way to choose which good a predecessor is offered beyond the active unit's
-  cargo. With room: one more day on the settlement sheet alone.
+  slow. **3 October 2026:** the haul circuit and patrol are authored in a mode from the unit's
+  detail (decision 161), the offer destination works (160), and a good aboard can be offered for
+  gold or for each good the people have (160). What is still missing: one more day on the
+  settlement sheet alone.
 - **Rival behaviour.** Rivals grow numbers, found settlements, sell into the market, and at war spawn
   single militia. They have no ships, no improvers, no roads, no response to being attacked except
   more militia. Observable depth was the brief's instruction; this is shallower than observable.

@@ -1,0 +1,559 @@
+Fairholm, a small map, standard terms, seed fairholm-playthrough, played by the competent policy (src/sim/policy.ts).
+264 turns of 300. The charter is torn up and the fleet is spent: won.
+
+Milestones
+  founded                 turn 2
+  first consignment       turn 27 (25 after founding)
+  first new colonist      turn 29 (27 after founding)
+  first visible price fall turn 40 (38 after founding)
+  second settlement       turn 47 (45 after founding)
+  tier two building       turn 86 (29% of the game)
+  tier three building     never
+  twenty-five people      turn 159 (53% of the game)
+  first Company demand    turn 42 (14% of the game)
+  a rival left peace      turn 63 (21% of the game)
+  declaration available   turn 230 (77% of the game)
+  declared                turn 239 (80% of the game)
+  war over                turn 260 (87% of the game), won
+  waves 3, fleet 13, people 49, settlements 5, rival settlements 9, signatories 5
+
+Every twenty-five turns
+  turn 25: 1 settlements, 3 people, 40 gold, resolve 0%, fleet 4, charge 5%, rivals peace/peace/peace, 3 rival settlements
+  turn 50: 3 settlements, 6 people, 184 gold, resolve 19%, fleet 4.4, charge 8%, rivals peace/peace/peace, 3 rival settlements
+  turn 75: 5 settlements, 9 people, 255 gold, resolve 13%, fleet 4.5, charge 8%, rivals peace/tense/peace, 6 rival settlements
+  turn 100: 5 settlements, 13 people, 483 gold, resolve 13%, fleet 4.7, charge 11%, rivals peace/tense/peace, 6 rival settlements
+  turn 125: 5 settlements, 20 people, 1011 gold, resolve 13%, fleet 5.1, charge 14%, rivals peace/tense/peace, 6 rival settlements
+  turn 150: 5 settlements, 22 people, 144 gold, resolve 19%, fleet 5.6, charge 17%, rivals peace/tense/peace, 6 rival settlements
+  turn 175: 5 settlements, 25 people, 352 gold, resolve 28%, fleet 6.7, charge 20%, rivals tense/tense/tense, 6 rival settlements
+  turn 200: 5 settlements, 30 people, 235 gold, resolve 41%, fleet 8.7, charge 23%, rivals tense/tense/tense, 9 rival settlements
+  turn 225: 5 settlements, 34 people, 175 gold, resolve 54%, fleet 11, charge 26%, rivals tense/tense/tense, 9 rival settlements
+  turn 250: 5 settlements, 38 people, 255 gold, resolve 68%, fleet 13.9, charge 26%, rivals tense/tense/tense, 9 rival settlements, war: 1 waves, 8 still to come
+
+The dispatch
+  1  event       The lander is down and steaming in open sea. Land is near, just out of sight. Sail and look, and go ashore where you choose.  (The Company sent you on what cores it had left. No one is waiting.)
+  2  event       The lander beached and The Landing was founded from what came out of it. The boat it carried is yours. The Company has written the lander off against your passage.  (The first metal in the colony is the thing that brought you.)
+ 17  build       The Landing finished its Press.
+ 27  market      The Landing consigned 25 flax at 3. 71 gold due in 3 turns.  (Sold below the volume that moves the price.)
+ 29  growth      The Landing: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+ 30  company     Payment landed: 71 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 32  build       The Landing finished its Agent's office.
+ 40  market      The Landing consigned 25 dye at 14 falling to 13. 333 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+ 42  company     The Company demands a higher charge on consignments: 3 points more.  (Demands arrive on a schedule set by the charter and accelerate as they are accepted.)
+ 42  company     You accepted the Company's demand. Its charge on consignments is now 8 per cent.  (Accepting a demand raises the charge permanently.)
+ 43  company     Payment landed: 333 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 43  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+ 43  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+ 43  growth      You paid 90 gold for a passage. A settler came ashore at The Landing, owing the Company for the trip.
+ 44  market      The Landing bought 17 tooling from the Company at 10.
+ 47  event       Fairholm was founded. Its standing orders were inferred from the ground around it.
+ 49  event       Brightwater was founded. Its standing orders were inferred from the ground around it.
+ 51  growth      The Landing: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+ 52  market      The Landing consigned 25 flax at 3. 69 gold due in 3 turns.  (Sold below the volume that moves the price.)
+ 52  event       Carrick was founded. Its standing orders were inferred from the ground around it.
+ 55  company     Payment landed: 69 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 56  market      Brightwater bought 12 timber from the Company at 3.
+ 57  market      Brightwater bought 12 timber from the Company at 3.
+ 57  event       Dunhaven was founded. Its standing orders were inferred from the ground around it.
+ 58  market      Brightwater bought 6 timber from the Company at 3.
+ 60  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 61  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 62  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 63  rival       Vane and Marlow are now tense toward you.  (Settlements within a few tiles of each other crowd, and crowding wears on relations.)
+ 63  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 64  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 65  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 66  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 67  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 68  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 69  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 70  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 71  growth      The Landing: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+ 71  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 72  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 72  market      Fairholm consigned 25 flax at 4 falling to 3. 92 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+ 73  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 74  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 75  company     Payment landed: 92 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 75  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 76  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 77  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 77  market      The Landing consigned 25 flax at 3. 69 gold due in 3 turns.  (Sold below the volume that moves the price.)
+ 78  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 79  company     The Company demands a higher charge on consignments: 3 points more.  (Demands arrive on a schedule set by the charter and accelerate as they are accepted.)
+ 79  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 79  company     You accepted the Company's demand. Its charge on consignments is now 11 per cent.  (Accepting a demand raises the charge permanently.)
+ 80  company     Payment landed: 69 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 80  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+ 80  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 81  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 82  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 83  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 84  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 85  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+ 85  market      Fairholm consigned 25 dye at 13 falling to 12. 289 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+ 86  build       The Landing finished its Dye works.
+ 86  build       Brightwater finished its Granary.
+ 88  company     Payment landed: 289 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 88  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+ 88  growth      You paid 135 gold for a passage. A settler came ashore at The Landing, owing the Company for the trip.
+ 89  market      The Landing bought 25 tooling from the Company at 11.
+ 90  market      Brightwater consigned 25 hemp by standing order at 4. 89 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+ 93  company     Payment landed: 89 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 95  market      Brightwater consigned 30 hemp by standing order at 4, falling to 3. 102 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. 30 units moved the price by 1. hemp now stands 1 below where it would be with nothing sold.)
+ 97  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+ 97  market      Fairholm consigned 25 flax at 4 falling to 3. 89 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+ 98  build       Carrick finished its Granary.
+ 98  company     Payment landed: 102 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+ 99  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+100  market      Brightwater consigned 30 hemp by standing order at 3. 80 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. hemp now stands 1 below where it would be with nothing sold.)
+100  company     Payment landed: 89 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+100  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+101  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+102  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+102  market      The Landing consigned 25 flax at 3. 67 gold due in 3 turns.  (Sold below the volume that moves the price.)
+103  company     Payment landed: 80 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+103  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+103  market      The Landing consigned 25 dye at 13. 289 gold due in 3 turns.  (Sold below the volume that moves the price.)
+104  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+105  market      Brightwater consigned 30 hemp by standing order at 3, falling to 2. 76 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. 30 units moved the price by 1. hemp now stands 2 below where it would be with nothing sold.)
+105  company     Payment landed: 67 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+105  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+105  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+106  company     Payment landed: 289 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+106  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+106  growth      You paid 165 gold for a passage. A settler came ashore at The Landing, owing the Company for the trip.
+107  growth      Dunhaven: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+107  loss        Dunhaven lost 1 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+107  growth      You paid 180 gold for a passage. A settler came ashore at The Landing, owing the Company for the trip.
+108  company     Payment landed: 76 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+108  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+109  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+110  growth      The Landing: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+111  event       Wren Calloway put their name to the cause: the bulletin can be printed.  (Signatories are bought with grievance. The next costs 550.)
+111  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+111  market      Carrick consigned 25 timber at 2. 45 gold due in 3 turns.  (Sold below the volume that moves the price.)
+112  loss        Brightwater lost 2 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+112  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+113  company     The Company demands a higher charge on consignments: 3 points more.  (Demands arrive on a schedule set by the charter and accelerate as they are accepted.)
+113  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+113  company     You accepted the Company's demand. Its charge on consignments is now 14 per cent.  (Accepting a demand raises the charge permanently.)
+114  company     Payment landed: 45 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+114  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+114  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+114  market      Fairholm consigned 25 dye at 14 falling to 13. 301 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+115  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+115  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+116  market      Carrick consigned 25 timber by standing order at 2. 43 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+116  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+117  company     Payment landed: 301 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+117  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+117  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+117  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+118  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+118  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+119  company     Payment landed: 43 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+119  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+120  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+120  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+120  market      Brightwater consigned 40 hemp at 3 falling to 2. 90 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 40 units moved the price by 1.)
+121  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+121  market      Fairholm bought 12 timber from the Company at 4.
+121  market      Brightwater bought 12 timber from the Company at 4.
+122  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+122  market      Fairholm bought 12 timber from the Company at 3.
+122  market      Fairholm consigned 25 flax at 4 falling to 3. 86 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+122  market      Brightwater bought 12 timber from the Company at 3.
+123  company     Payment landed: 90 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+123  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+123  market      Fairholm bought 6 timber from the Company at 3.
+123  market      Brightwater bought 6 timber from the Company at 3.
+124  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+125  company     Payment landed: 86 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+126  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+126  market      The Landing consigned 25 dye at 14 falling to 13. 301 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+127  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+129  company     Payment landed: 301 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+129  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+129  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+130  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+131  build       Fairholm finished its Palisade.
+132  growth      Dunhaven: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+132  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+132  market      Fairholm bought 12 timber from the Company at 3.
+133  market      Fairholm bought 12 timber from the Company at 3.
+134  market      Fairholm bought 6 timber from the Company at 3.
+135  market      The Landing bought 10 arms from the Company at 12.
+136  market      The Landing bought 10 arms from the Company at 12.
+137  market      The Landing bought 10 arms from the Company at 12.
+138  market      The Landing bought 10 arms from the Company at 12.
+139  market      The Landing bought 10 arms from the Company at 12.
+140  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+140  market      Fairholm consigned 26 dye at 14 falling to 13. 312 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 26 units moved the price by 1.)
+140  market      The Landing bought 10 arms from the Company at 13.
+141  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+141  market      The Landing bought 10 arms from the Company at 13.
+142  build       Fairholm finished its Press.
+142  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+142  market      The Landing bought 10 arms from the Company at 13.
+143  company     Payment landed: 312 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+143  loss        The Landing lost 10 arms, 1 flax to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+143  market      The Landing bought 10 arms from the Company at 13.
+144  company     The Company demands a higher charge on consignments: 3 points more.  (Demands arrive on a schedule set by the charter and accelerate as they are accepted.)
+144  loss        The Landing lost 10 arms, 1 flax to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+144  company     You accepted the Company's demand. Its charge on consignments is now 17 per cent.  (Accepting a demand raises the charge permanently.)
+144  market      The Landing consigned 40 flax at 4 falling to 3. 120 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 40 units moved the price by 1.)
+144  market      The Landing bought 10 arms from the Company at 13.
+145  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+145  market      The Landing bought 10 arms from the Company at 13.
+146  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+147  build       Dunhaven finished its Granary.
+147  company     Payment landed: 120 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+147  market      The Landing bought 10 arms from the Company at 13.
+148  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+150  build       Carrick finished its Palisade.
+151  build       Brightwater finished its Palisade.
+151  market      Carrick consigned 25 timber by standing order at 2. 42 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. timber now stands 1 below where it would be with nothing sold.)
+151  market      The Landing consigned 25 dye at 14 falling to 13. 291 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+152  loss        Brightwater lost 2 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+152  market      Fairholm bought 12 timber from the Company at 3.
+152  market      Fairholm consigned 30 flax at 4 falling to 3. 95 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 30 units moved the price by 1.)
+153  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+154  company     Payment landed: 333 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+154  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+154  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+154  market      Fairholm bought 12 timber from the Company at 3.
+154  market      The Landing bought 10 arms from the Company at 13.
+155  company     Payment landed: 95 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+155  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+155  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+155  market      Fairholm bought 6 timber from the Company at 3.
+155  market      The Landing bought 10 arms from the Company at 13.
+156  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+156  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+156  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+156  market      Fairholm consigned 26 dye at 14 falling to 13. 301 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 26 units moved the price by 1.)
+157  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+158  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+159  company     Payment landed: 301 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+159  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+159  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+159  market      The Landing bought 10 arms from the Company at 13.
+160  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+160  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+160  market      The Landing bought 10 arms from the Company at 13.
+161  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+161  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+161  market      The Landing bought 10 arms from the Company at 13.
+162  build       Fairholm finished its Granary.
+162  build       Dunhaven finished its Press.
+162  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+162  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+163  build       The Landing finished its Sawmill.
+163  rival       Harrow Charter are now tense toward you.  (Your consignments have been undercutting their trade: hemp stand well below what the Company paid before you came.)
+163  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+164  market      Carrick consigned 25 timber by standing order at 2. 42 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. timber now stands 1 below where it would be with nothing sold.)
+164  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+165  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+166  growth      Dunhaven: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+166  event       Tobias Hale put their name to the cause: grievance gathers half again as fast.  (Signatories are bought with grievance. The next costs 800.)
+166  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+167  company     Payment landed: 42 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+167  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+168  growth      Carrick: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+168  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+169  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+170  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+171  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+172  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+172  market      The Landing consigned 28 flax at 4 falling to 3. 90 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 28 units moved the price by 1.)
+172  market      Brightwater consigned 40 hemp at 3 falling to 2. 87 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 40 units moved the price by 1.)
+173  company     The Company demands a higher charge on consignments: 3 points more.  (Demands arrive on a schedule set by the charter and accelerate as they are accepted.)
+173  company     You accepted the Company's demand. Its charge on consignments is now 20 per cent.  (Accepting a demand raises the charge permanently.)
+175  loss        The Landing lost a colonist to hunger.  (Food eaten exceeded food grown for three turns and nothing was banked.)
+175  company     Payment landed: 177 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+175  rival       The Sable Company are now tense toward you.  (Your consignments have been undercutting their trade: flax stand well below what the Company paid before you came.)
+175  market      The Landing bought 10 arms from the Company at 13.
+176  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+176  market      Carrick consigned 28 timber by standing order at 2, falling to 1. 42 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. 28 units moved the price by 1. timber now stands 1 below where it would be with nothing sold.)
+176  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+177  build       Dunhaven finished its Palisade.
+179  company     Payment landed: 42 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+179  loss        Brightwater lost 2 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+179  market      The Landing bought 10 arms from the Company at 13.
+180  loss        The Landing lost 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+180  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+181  build       The Landing finished its Palisade.
+181  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+181  market      The Landing consigned 25 dye at 14 falling to 13. 280 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+182  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+183  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+184  company     Payment landed: 280 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+184  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+184  market      The Landing bought 10 arms from the Company at 13.
+185  loss        The Landing lost 4 horses, 10 arms to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+185  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+185  market      Fairholm bought 12 timber from the Company at 3.
+186  growth      Dunhaven: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+186  loss        The Landing lost 4 horses to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+186  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+186  market      Fairholm bought 12 timber from the Company at 3.
+187  loss        The Landing lost 4 horses to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+187  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+187  market      Fairholm bought 12 timber from the Company at 3.
+188  loss        The Landing lost 4 horses to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+188  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+188  market      Fairholm bought 12 timber from the Company at 3.
+189  loss        The Landing lost 4 horses to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+189  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+190  loss        The Landing lost 4 horses to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+190  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+191  market      The Landing consigned 5 horses by standing order at 6. 24 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+191  market      Carrick consigned 27 timber by standing order at 2, falling to 1. 42 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. 27 units moved the price by 1. timber now stands 1 below where it would be with nothing sold.)
+191  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+191  market      Fairholm bought 12 timber from the Company at 3.
+192  growth      Carrick: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+192  market      The Landing consigned 5 horses by standing order at 6. 24 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+192  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+193  market      The Landing consigned 6 horses by standing order at 6. 29 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+193  event       Caleb Thorne put their name to the cause: batteries cost less.  (Signatories are bought with grievance. The next costs 1050.)
+193  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+194  market      The Landing consigned 5 horses by standing order at 6. 24 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+194  company     Payment landed: 66 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+194  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+194  market      Fairholm bought 12 timber from the Company at 3.
+195  market      The Landing consigned 5 horses by standing order at 6. 24 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+195  company     Payment landed: 24 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+195  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+195  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+195  market      Fairholm bought 8 timber from the Company at 3.
+196  company     Payment landed: 29 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+196  loss        The Landing lost 4 horses to spoilage.  (Storage holds 40 of each good. Build storage or ship the surplus.)
+196  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+197  market      The Landing consigned 5 horses by standing order at 6. 24 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+197  company     Payment landed: 24 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+197  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+198  market      The Landing consigned 5 horses by standing order at 6. 24 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+198  company     Payment landed: 24 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+198  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+199  build       The Landing finished its Granary.
+199  company     The Company demands a higher charge on consignments: 3 points more.  (Demands arrive on a schedule set by the charter and accelerate as they are accepted.)
+199  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+199  company     You accepted the Company's demand. Its charge on consignments is now 23 per cent.  (Accepting a demand raises the charge permanently.)
+199  market      The Landing consigned 26 dye at 14. 280 gold due in 3 turns.  (Sold below the volume that moves the price.)
+200  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+200  company     Payment landed: 24 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+200  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+200  loss        Dunhaven lost 2 linen to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+201  company     Payment landed: 24 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+201  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+201  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+202  build       Carrick finished its Press.
+202  company     Payment landed: 280 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+202  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+202  loss        Dunhaven lost 3 linen to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+202  market      The Landing bought 10 arms from the Company at 14.
+203  market      The Landing consigned 28 horses by standing order at 6, falling to 5. 127 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. 28 units moved the price by 1. horses now stands 1 below where it would be with nothing sold.)
+203  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+203  market      The Landing bought 10 arms from the Company at 14.
+204  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+205  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+206  build       The Landing finished its School.
+206  company     Payment landed: 127 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+206  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+206  market      The Landing bought 10 arms from the Company at 14.
+207  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+207  market      Fairholm consigned 26 dye at 14 falling to 13. 280 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 26 units moved the price by 1.)
+208  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+209  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+210  market      The Landing consigned 25 horses by standing order at 6. 116 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. horses now stands 1 below where it would be with nothing sold.)
+210  company     Payment landed: 280 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+210  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+210  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+210  market      The Landing bought 25 tooling from the Company at 11.
+211  growth      Carrick: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+211  growth      Dunhaven: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+211  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+212  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+213  company     Payment landed: 116 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+213  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+213  market      The Landing consigned 25 dye at 14 falling to 13. 270 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+213  market      The Landing bought 10 arms from the Company at 14.
+214  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+215  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+216  company     Payment landed: 270 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+216  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+216  market      Fairholm consigned 27 dye at 13. 270 gold due in 3 turns.  (Sold below the volume that moves the price.)
+216  market      The Landing bought 10 arms from the Company at 13.
+217  loss        The Landing lost 10 arms to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+217  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+217  market      The Landing bought 10 arms from the Company at 13.
+218  growth      The Landing: a child came of age and set out for Brightwater.
+218  loss        The Landing lost 10 arms to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+218  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+219  company     Payment landed: 270 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+219  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+219  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+219  market      The Landing bought 10 arms from the Company at 13.
+220  loss        The Landing lost 10 arms to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+220  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+220  market      The Landing bought 10 arms from the Company at 13.
+221  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+222  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+222  loss        Brightwater lost 12 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+223  company     The Company demands a higher charge on consignments: 3 points more.  (Demands arrive on a schedule set by the charter and accelerate as they are accepted.)
+223  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+223  company     You accepted the Company's demand. Its charge on consignments is now 26 per cent.  (Accepting a demand raises the charge permanently.)
+223  market      Brightwater bought 12 timber from the Company at 3.
+224  market      The Landing consigned 26 horses by standing order at 6, falling to 5. 115 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. 26 units moved the price by 1. horses now stands 1 below where it would be with nothing sold.)
+224  event       Maud Ferrier put their name to the cause: faster promotion, militia sworn in.  (Signatories are bought with grievance. The next costs 1300.)
+224  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+224  market      Brightwater bought 12 timber from the Company at 3.
+225  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+225  market      Fairholm consigned 27 dye at 12 falling to 11. 238 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 27 units moved the price by 1.)
+225  market      Brightwater bought 6 timber from the Company at 3.
+226  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+227  company     Payment landed: 115 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+227  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+227  market      The Landing consigned 27 dye at 12 falling to 11. 238 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 27 units moved the price by 1.)
+227  market      The Landing bought 10 arms from the Company at 14.
+228  company     Payment landed: 238 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+228  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+228  market      The Landing bought 10 arms from the Company at 14.
+229  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+229  market      Brightwater consigned 40 hemp at 3 falling to 2. 78 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 40 units moved the price by 1.)
+230  growth      The Landing: a child came of age and set out for Brightwater.
+230  build       The Landing finished its Redoubt.
+230  company     Payment landed: 238 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+230  market      The Landing bought 10 arms from the Company at 14.
+231  market      The Landing bought 10 arms from the Company at 14.
+232  company     Payment landed: 78 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+232  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+232  market      The Landing bought 10 arms from the Company at 14.
+233  build       Brightwater finished its Press.
+233  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+234  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+234  market      Fairholm consigned 27 dye at 11. 220 gold due in 3 turns.  (Sold below the volume that moves the price.)
+235  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+235  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+236  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+236  market      The Landing consigned 27 dye at 11 falling to 10. 218 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 27 units moved the price by 1.)
+237  company     Payment landed: 220 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+237  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+237  market      The Landing bought 10 arms from the Company at 14.
+238  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+239  company     Payment landed: 218 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+239  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+239  market      The Landing bought 10 arms from the Company at 14.
+239  war         The charter is torn up. 13 Company units will come in waves. You have 6 turns to muster.  (The fleet was sized by everything the Company has been told you did. It cannot grow now.)
+240  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+240  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+240  market      Brightwater bought 12 timber from the Company at 3.
+241  growth      Carrick: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+241  growth      Dunhaven: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+241  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+241  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+241  market      Brightwater bought 12 timber from the Company at 3.
+242  growth      The Landing: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+242  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+242  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+242  market      Brightwater bought 12 timber from the Company at 3.
+243  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+243  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+243  market      The Landing consigned 25 dye at 11 falling to 10. 102 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 25 units moved the price by 1.)
+243  market      Fairholm consigned 27 dye at 10. 100 gold due in 3 turns.  (Sold below the volume that moves the price.)
+243  market      Brightwater bought 12 timber from the Company at 3.
+244  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+244  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+244  market      Brightwater bought 12 timber from the Company at 3.
+245  war         A wave of 5 came down offshore. It will come ashore in 3 turns, somewhere on 11 tiles of coast near your settlements.  (Where a wave lands is not decided until it lands. Each turn rules some coast out.)
+245  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+245  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+246  market      Carrick consigned 25 timber by standing order at 1. 9 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically.)
+246  company     Payment landed: 202 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+246  growth      A settler took passage and came ashore at The Landing.  (Word of the colony travelled home with the freight.)
+246  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+246  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+246  market      Brightwater bought 12 timber from the Company at 3.
+247  loss        Fairholm lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+247  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+247  market      Brightwater bought 8 timber from the Company at 3.
+248  market      The Landing consigned 27 horses by standing order at 6. 60 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. horses now stands 1 below where it would be with nothing sold.)
+248  war         The Company landed 5 units on the coast.
+248  war         The Company sacked Fairholm: the works are thrown down and half the store is gone.  (A settlement with no garrison left cannot keep the Company out.)
+248  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+249  growth      Fairholm: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+249  company     Payment landed: 9 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+249  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+250  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+251  company     Payment landed: 60 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+251  war         A wave of 5 came down offshore. It will come ashore in 3 turns, somewhere on 11 tiles of coast near your settlements.  (Where a wave lands is not decided until it lands. Each turn rules some coast out.)
+251  war         The Company's Company horse attacked your battery at The Landing: 0 exchanges to 3. The Company horse was broken and its survivors taken off.  (Each exchange is won with chance 36 per cent, attack 10 against defence 18.)
+251  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+252  event       Jory Lask put their name to the cause: coastal batteries count double.  (Signatories are bought with grievance. The next costs 1550.)
+252  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+252  market      The Landing consigned 27 dye at 10 falling to 9. 99 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 27 units moved the price by 1.)
+253  war         A A battery is now hardened.
+253  war         The Company's Company regulars attacked your battery at The Landing: 0 exchanges to 3. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 18 per cent, attack 8 against defence 36.)
+253  war         A A battery is now sworn.
+253  war         The Company's Company regulars attacked your battery at The Landing: 1 exchanges to 2. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 18 per cent, attack 8 against defence 36.)
+253  war         The Company's Company regulars attacked your battery at The Landing: 0 exchanges to 3. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 18 per cent, attack 8 against defence 36.)
+253  war         A siege train is battering the works at The Landing, 4 turns from a breach.
+253  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+253  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+253  war         A An outrider is now sworn.
+253  war         Your outrider attacked the Company's Company siege train: 3 exchanges to 0. The Company siege train was damaged.  (Each exchange is won with chance 70 per cent, attack 7 against defence 3.)
+253  war         Your outrider attacked the Company's damaged siege train: 2 exchanges to 1. The damaged siege train was destroyed.  (Each exchange is won with chance 83 per cent, attack 5 against defence 1.)
+254  growth      Carrick: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+254  war         The Company landed 5 units on the coast.
+254  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+254  loss        Brightwater lost 1 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+255  growth      Dunhaven: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+255  company     Payment landed: 99 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+255  war         A wave of 3 came down offshore. It will come ashore in 3 turns, somewhere on 11 tiles of coast near your settlements.  (Where a wave lands is not decided until it lands. Each turn rules some coast out.)
+255  war         The batteries at The Landing fired on the Company's a company landing craft: 3 hits. It lies damaged off the shore.  (Batteries on a settlement fire on hostile ships beside it every turn. A ship with no speed left founders.)
+255  war         The Company sacked Carrick: the works are thrown down and half the store is gone.  (A settlement with no garrison left cannot keep the Company out.)
+255  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+255  loss        Brightwater lost 6 hemp to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+255  market      Brightwater bought 25 tooling from the Company at 11.
+256  build       Brightwater finished its Warehouse.
+256  war         The batteries at The Landing fired on the Company's a company landing craft: 2 hits. It was driven off.  (Batteries on a settlement fire on hostile ships beside it every turn. A ship with no speed left founders.)
+256  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+257  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+258  growth      The Landing: a child came of age and set out for Brightwater.
+258  war         The Company landed 3 units on the coast.
+258  war         The Company's Company regulars attacked your battery at The Landing: 0 exchanges to 3. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 18 per cent, attack 8 against defence 36.)
+258  war         The Company's Company regulars attacked your battery at The Landing: 0 exchanges to 3. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 18 per cent, attack 8 against defence 36.)
+258  war         The Company's Company horse attacked your battery at The Landing: 0 exchanges to 3. The Company horse was broken and its survivors taken off.  (Each exchange is won with chance 22 per cent, attack 10 against defence 36.)
+258  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+258  market      Fairholm consigned 37 dye at 10 falling to 9. 132 gold due in 3 turns.  (The Company pays less the more of a good it has been sent. 37 units moved the price by 1.)
+258  war         Your outrider attacked the Company's Company regulars: 3 exchanges to 0. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 62 per cent, attack 12.9 against defence 8.)
+258  war         Your outrider attacked the Company's Company regulars: 1 exchanges to 2. The outrider lost its horses and fights on as militia.  (Each exchange is won with chance 47 per cent, attack 7.2 against defence 8.)
+258  war         Your outrider attacked the Company's Company regulars: 2 exchanges to 1. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 47 per cent, attack 7.2 against defence 8.)
+258  war         A An outrider is now hardened.
+258  war         Your outrider attacked the Company's Company siege train: 3 exchanges to 0. The Company siege train was damaged.  (Each exchange is won with chance 70 per cent, attack 7.2 against defence 3.)
+259  market      The Landing consigned 28 horses by standing order at 6. 62 gold due in 3 turns.  (Surplus above the standing-order threshold is consigned automatically. horses now stands 1 below where it would be with nothing sold.)
+259  war         A siege train is battering the works at The Landing, 4 turns from a breach.
+259  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+259  war         Your outrider attacked the Company's Company regulars: 2 exchanges to 1. The Company regulars was broken and its survivors taken off.  (Each exchange is won with chance 62 per cent, attack 12.9 against defence 8.)
+259  war         A Militia is now sworn.
+259  war         Your militia attacked the Company's Company siege train: 3 exchanges to 0. The Company siege train was damaged.  (Each exchange is won with chance 70 per cent, attack 7.2 against defence 3.)
+259  war         Your outrider attacked the Company's damaged siege train: 2 exchanges to 1. The damaged siege train was destroyed.  (Each exchange is won with chance 88 per cent, attack 7.2 against defence 1.)
+259  war         A An outrider is now sworn.
+259  war         Your outrider attacked the Company's damaged siege train: 3 exchanges to 0. The damaged siege train was destroyed.  (Each exchange is won with chance 91 per cent, attack 10 against defence 1.)
+260  war         The last of the recall fleet is spent. The Company has no more to send.  (The fleet was finite from the day it was sized.)
+260  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+260  loss        Dunhaven lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+261  company     Payment landed: 132 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+261  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+261  loss        Dunhaven lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+261  market      The Landing consigned 27 dye at 9. 180 gold due in 3 turns.  (Sold below the volume that moves the price.)
+262  company     Payment landed: 62 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+262  loss        The Landing lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+262  loss        Dunhaven lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+262  market      The Landing bought 25 tooling from the Company at 11.
+263  build       The Landing finished its Warehouse.
+263  build       Carrick finished its Palisade.
+263  loss        Dunhaven lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)
+264  growth      Brightwater: a child came of age and joined the roster, owing nothing.  (Banked food reached the granary threshold.)
+264  company     Payment landed: 180 gold for consigned freight.  (Consignments are paid when the crossing completes.)
+264  loss        Dunhaven lost 1 flax to spoilage.  (Storage holds 80 of each good. Build storage or ship the surplus.)

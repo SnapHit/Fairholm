@@ -2573,6 +2573,47 @@ the Landing and a settlement three tiles off; the circuit draws with two numbere
 linen to load at the first and the posture to run; Save sets the order, and two turns later the
 hauler has loaded and left.
 
+### 162. The matrix after every phase, the stress tests, and the playthrough
+
+**What.** `tests/pace.test.ts` run again after phases 3 to 5, two seeds a cell, standard terms
+(turns after founding for the early columns, share of the game for the rest):
+
+| Policy | Size | Consign | Colonist | Price fall | 2nd | Tier 2 | Pop 25 | Rival | Open | Declared | Over | Won | Waves | Fleet | Pop | Settlements |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lazy | small | 6, 3 | 13, 16 | never | 41, 70 | never | never | 23%, 34% | never | never | | | | | 19, 23 | 2 |
+| lazy | standard | 4, 9 | 16, 14 | never | 80, 72 | never | never | 16%, 15% | 75%, 62% | 75%, 62% | 78%, 64% | no, no | 1, 1 | 8, 9 | 20, 23 | 2 |
+| lazy | large | 6, 5 | 13, 11 | never | 46, 53 | never | never, 69% | 10%, 11% | 55%, 98% | 55%, 98% | 57%, 99% | no, no | 1, 1 | 9, 10 | 23, 26 | 2 |
+| competent | small | 15, 15 | 18, 18 | 15, 15 | 27, 28 | 30%, 25% | 46%, 38% | 71%, 11% | 63%, 66% | 85%, 85% | 96%, 96% | yes, yes | 5, 4 | 21, 20 | 89, 92 | 5 |
+| competent | standard | 17, 9 | 20, 27 | 17, 74 | 23, 44 | 17%, 24% | 29%, 28% | 40%, 20% | 80%, 63% | 80%, 63% | 86%, 70% | yes, yes | 4, 4 | 24, 23 | 102, 102 | 9 |
+| competent | large | 25, 35 | 27, 44 | 50, 41 | 52, 47 | 19%, 12% | 23%, 20% | 42%, 12% | 81%, 57% | 81%, 57% | 89%, 65% | yes, yes | 6, 5 | 42, 37 | 180, 173 | 14 |
+| strong | small | 37, 12 | 27, 20 | 61, 51 | 29, 22 | 31%, 22% | 40%, 40% | 29%, 38% | 66%, 50% | 80%, 80% | 92%, 91% | yes, no | 5, 5 | 21, 22 | 93, 87 | 5 |
+| strong | standard | 12, 25 | 21, 27 | 65, 75 | 23, 29 | 17%, 27% | 29%, 34% | 9%, 34% | 42%, 53% | 52%, 53% | 57%, 59% | yes, yes | 3, 3 | 18, 13 | 74, 52 | 8 |
+| strong | large | 73, 12 | 73, 16 | 133, 41 | 76, 18 | 40%, 13% | 36%, 15% | 31%, 29% | 12%, 65% | 91%, 65% | not over, 72% | , yes | 7, 7 | 50, 55 | 225, 252 | 12 |
+
+Against the table in 158, two things moved. The competent policy on small now declares at 85 per
+cent, the overdue clause, rather than at 73 to 79: since phase 3 it holds a good whose price it has
+walked down (159), which is good play and less gold, so the arms it wants for the muster come later,
+and the war still ends inside the game, won. And a rival leaves peace later on the seeds where
+undercutting was the cause, for the same reason. The strong policy on large, seed one, opened the
+declaration at 12 per cent on the strength of one small early settlement, was not ready until 91,
+and the war did not end in the 660 turns; that is the overdue clause and a sprawling colony, and a
+person would not play it so.
+
+**The forty settlement queue stress** (`tests/systems.test.ts`): forty settlements with empty build
+orders, idle people and spare units derive a queue of 146 items into six shown groups in 0.2
+milliseconds, and a turn resolves in 9 milliseconds, under the new pacing. **The adversarial late
+state** (`tests/pins.test.ts`): twenty-five settlements at war, in famine, spoiling, every unit stuck,
+fold correctly and derive fast. Both pass unchanged.
+
+**The playthrough** (`reports/playthrough-small.txt`, written by `scripts/playthrough.ts`): seed
+fairholm-playthrough, small, standard terms, the competent policy. Founded on turn 2; the first
+consignment 25 turns after founding; the first new colonist at 27; the first visible price fall at
+38; the second settlement at 45; a tier two building at 29 per cent; a rival left peace at 21 per
+cent; twenty-five people at 53 per cent; the declaration open at 77 per cent, declared at 80, and the
+fleet of thirteen spent in three waves by 87 per cent, won, with 49 people in five settlements.
+That seed's coast had no linen to refine early, so its first consignment and price fall came later
+than the pace seed's; the eras came where the design wants them.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

@@ -65,14 +65,17 @@ overview zoom, because it commits nothing.
 ```
 /src
   /sim      state, constants, rng, worldgen, actions, turn, market, settlement, labour,
-            grievance, military, fleet, rivals, predecessors, naval, orders, queue, systems
+            grievance, military, fleet, rivals, predecessors, naval, orders, queue, systems,
+            autopilot (the voyage), policy (three machine players for whole games)
   /render   scene, terrain (with water), props, settlements, units, ribbons, camera, picking, palette
   /ui       app (store, hud, queue, landing, undo), sheets, input, audio, glossary, dom, style.css
   /io       save (with export and import), telemetry
   main.ts   wiring only
 /public/audio   the four tracks, streamed, never in the initial payload
 /tests          vitest, sim only
-/scripts        smoke.mjs, a headless-browser run of the acceptance checks
+/scripts        smoke.mjs, a headless-browser run of the acceptance checks; the shot rigs;
+                playthrough.ts, a whole game by the competent policy written to /reports
+/reports        playthrough-small.txt, the dispatch of a whole small game, for reading
 /docs           the seventeen design briefs (see docs/README.md)
 ```
 
@@ -96,10 +99,12 @@ naming brief's corrections win. If a brief is wrong, say so rather than working 
 
 ## Tuning
 
-Nothing has been tuned by play. Every value in `C` is a starting point. Tune at the table, in
-`constants.ts`, one group at a time, and never settle in design what can only be found by playing.
-When the economy feels wrong, check the turn order in `src/sim/systems.ts` against build
-specification section 6 before touching a constant.
+Nothing has been tuned by a person at the table. Every value in `C` is a starting point, tuned
+once against three machine players (`src/sim/policy.ts`, `tests/pace.test.ts`, `DECISIONS.md` 158
+and 162) so that every era of the game is reachable. Tune at the table, in `constants.ts`, one group
+at a time, rerun the pace table before and after, and never settle in design what can only be
+found by playing. When the economy feels wrong, check the turn order in `src/sim/systems.ts`
+against build specification section 6 before touching a constant.
 
 ## Acceptance checks (build specification section 15)
 
