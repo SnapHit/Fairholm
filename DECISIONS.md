@@ -2518,6 +2518,29 @@ or send to a named settlement". Decision 150's card told the player a good was b
 could only offer the settlement's whole rule in answer; the panel said as much in its own copy. One
 good is the unit the player thinks in.
 
+### 160. The predecessors trade in kind, and a surplus rule can offer to them
+
+**What.** Each people keeps a store: the crop it teaches comes in at `C.predecessors.storePerTurn`
+a turn to `storeCap`, and what it takes in trade goes into it. An offer may name a good wanted in
+kind: it is paid in that good at the Company's buy price over `barterBonus` (1.25), as far as their
+store and the carrier's room allow, and the rest in gold. Goods in kind need something that carries,
+a hauler or a hull. `offerTerms` in `src/sim/predecessors.ts` is one function the action and the
+sheet both read, so what the sheet shows is what happens; the predecessor sheet lists what they have
+and, for every good aboard, the gold it would fetch and each good it could fetch instead. The
+surplus destination "offer to a people", in the type since the first build and never handled, now
+works: a settlement's surplus of a manufactured good above its threshold goes to a known people
+within `offerReach` tiles for gold on their terms, one good a turn, the anti-repetition rule
+included; alarm or closure blocks it and the order conditions say so. The good panel and the orders
+sheet offer the chip for every known people within reach. Saves from before this have empty stores.
+
+**Why.** The proposal, section 5: "they trade in kind as well as coin ... a way to obtain goods
+without gold, which is a genuinely different proposition from the Company market and it matters
+early". Decision 160 is that proposition. The bonus is what makes it one: without it barter is a
+roundabout way to spend gold. It is the first number tried.
+
+**Symptom if wrong.** Every lot of linen going to the predecessors for flax and nothing to the
+Company: lower the bonus. Nobody bothering: raise it, or the store's rate.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

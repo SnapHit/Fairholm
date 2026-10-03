@@ -150,6 +150,9 @@ has been sent. The player should feel it on the first big sale.
 | The crops are not on the map near the landing | Worldgen | `C.worldgen.minPredecessorsReachable`, `predecessorsPerThousandTiles` | Raise | Landing-site validation requires bloom to be reachable |
 | Alarm closes them before trade starts | Alarm rates | `C.predecessors.alarmPerTileTaken`, `alarmDecay`, `alarmRefuse`, `alarmClose`, `C.difficulty.*.alarmSensitivity` | Lower the first, raise the decay | An agent halves the rise |
 | Gifts never come | | `C.predecessors.giftChance`, `giftAmount` | Raise | |
+| Barter is always better than gold, or never worth it | The bonus | `C.predecessors.barterBonus` | Lower or raise | Decision 160 |
+| They never have anything to give | The store | `C.predecessors.storePerTurn`, `storeCap` | Raise | |
+| A surplus rule cannot reach them | Reach | `C.predecessors.offerReach` | Raise | The chips offered in the orders sheet |
 | Haggling is free | No limit on haggles | `C.predecessors.haggleSuccess`, `haggleGain`; one-haggle memory is a code change | | |
 
 ## The recall fleet is trivial, or impossible

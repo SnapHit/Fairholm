@@ -3,13 +3,14 @@ import { createGame, applyAction } from '../src/sim/actions'
 import { deriveQueue } from '../src/sim/queue'
 import { SYSTEMS } from '../src/sim/systems'
 import { C } from '../src/sim/constants'
-import { consign, sellPrice } from '../src/sim/market'
+import { consign, sellPrice, buyPrice } from '../src/sim/market'
 import { makeContext } from '../src/sim/turn'
 import { foundSettlement, foundingProblem } from '../src/sim/settlement'
 import { makeColonist, workableTiles } from '../src/sim/labour'
 import { makeUnit, findPath } from '../src/sim/units'
 import { isLand, neighbours8, dist } from '../src/sim/worldgen'
 import { nationalResolve } from '../src/sim/grievance'
+import { predecessorStore, offerTerms } from '../src/sim/predecessors'
 import type { GameState } from '../src/sim/state'
 import { arrived, playOpening } from './helpers'
 
@@ -130,6 +131,53 @@ describe('a surplus rule for one good', () => {
     st.stock.dye = 150
     applyAction(s, { t: 'endTurn' })
     expect(st.stock.dye).toBe(150)
+  })
+})
+
+describe('the predecessors trade in kind', () => {
+  it('a hauler beside a people takes their crop for linen, the rest in gold, and a surplus rule offers to them', () => {
+    const s = landed('barter-seed')
+    const st = s.settlements.find(x => x.owner === 0)!
+    const p = s.predecessors[0]
+    // their store fills with the crop they grow, turn by turn, to the cap
+    for (let i = 0; i < 20; i++) applyAction(s, { t: 'endTurn' })
+    const crop = p.teaches
+    expect(predecessorStore(p)[crop]).toBeGreaterThanOrEqual(C.predecessors.storePerTurn * 20)
+    // a hauler beside them with linen aboard
+    const w = s.world.width
+    const beside = neighbours8(w, s.world.height, p.tile).find(n => isLand(s.world.tiles[n]) && s.world.tiles[n].terrain !== 'mountain')!
+    const hauler = makeUnit(s, 0, 'hauler', beside, makeColonist(s, 'free'))
+    hauler.cargo.linen = 40
+    s.units.push(hauler)
+    p.alarm = 0; p.closed = false; p.lastBought = null
+    const gold0 = s.charters[0].gold
+    const terms = offerTerms(s, p, hauler, 'linen', 40, crop)
+    expect(terms.inKind).toBeGreaterThan(0)
+    applyAction(s, { t: 'offer', unit: hauler.id, predecessor: p.id, good: 'linen', amount: 40, haggle: false, want: crop })
+    // what came in kind, and perhaps a gift of the same crop on top
+    expect(hauler.cargo[crop]).toBeGreaterThanOrEqual(terms.inKind)
+    expect(hauler.cargo[crop]).toBeLessThanOrEqual(terms.inKind + C.predecessors.giftAmount)
+    expect(hauler.cargo.linen ?? 0).toBe(40 - terms.amount)
+    expect(s.charters[0].gold - gold0).toBe(terms.gold)
+    expect(predecessorStore(p).linen).toBe(terms.amount)
+    // goods for goods beats buying them: what came in kind would have cost more than the gold forgone
+    expect(terms.inKind * buyPrice(s, crop)).toBeGreaterThanOrEqual(terms.value - terms.gold)
+    // the same good twice running is refused
+    hauler.cargo.linen = 40
+    expect(() => applyAction(s, { t: 'offer', unit: hauler.id, predecessor: p.id, good: 'linen', amount: 40, haggle: false })).toThrow()
+    // a surplus rule that offers to them: the settlement's cordage goes to the people within reach
+    const near = s.predecessors.find(pp => dist(w, st.tile, pp.tile) <= C.predecessors.offerReach)
+    if (near) {
+      near.alarm = 0; near.closed = false; near.lastBought = null
+      applyAction(s, { t: 'setGoodRule', settlement: st.id, good: 'cordage', rule: { destination: { kind: 'offer', predecessor: near.id }, threshold: 20 } })
+      st.buildings.storage = 2
+      st.stock.cordage = 80
+      const g1 = s.charters[0].gold
+      applyAction(s, { t: 'endTurn' })
+      expect(st.stock.cordage).toBeLessThan(80)
+      expect(s.charters[0].gold).toBeGreaterThan(g1)
+      expect(s.dispatch.some(d => /offered \d+ cordage to .* under standing orders/.test(d.text))).toBe(true)
+    }
   })
 })
 

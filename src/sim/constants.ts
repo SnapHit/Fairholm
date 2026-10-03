@@ -513,6 +513,15 @@ export const C = {
     haggleGain: 0.15,
     giftChance: 0.25,
     giftAmount: 20,
+    /** Barter, remaining systems proposal section 5: they trade in kind as well as coin. Their crop
+     *  accrues to their store each turn up to a cap; a good taken in kind is reckoned at the
+     *  Company's buy price over this bonus, so goods for goods beats buying them with the gold. The
+     *  rest of an offer's value, when their store runs short, is paid in gold (DECISIONS.md 160). */
+    storePerTurn: 3,
+    storeCap: 150,
+    barterBonus: 1.25,
+    /** The surplus rule's offer destination reaches a people this many tiles from the settlement. */
+    offerReach: 6,
   },
 
   // -------------------------------------------------------------------------------------------

@@ -292,6 +292,9 @@ export interface PredecessorSettlement {
   closed: boolean
   haggled: boolean             // one haggle per visit
   gifts: number
+  /** What they have to give in kind: the crop they grow, which accrues each turn to a cap, and
+   *  what they have taken in trade. Absent in saves from before barter (DECISIONS.md 160). */
+  store?: Partial<Record<GoodId, number>>
 }
 
 // ---------------------------------------------------------------------------------------------

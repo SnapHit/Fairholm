@@ -58,7 +58,8 @@ export type Action =
   | { t: 'unload'; unit: number; good: GoodId; amount: number }
   | { t: 'improve'; unit: number; task: 'road' | 'clear' | 'plough' }
   | { t: 'buildHull'; settlement: number; hull: HullKind }
-  | { t: 'offer'; unit: number; predecessor: number; good: GoodId; amount: number; haggle: boolean }
+  /** Offer a good to a people beside the unit; `want` asks for a good of theirs in kind, the rest in gold. */
+  | { t: 'offer'; unit: number; predecessor: number; good: GoodId; amount: number; haggle: boolean; want?: GoodId }
   | { t: 'learn'; unit: number; predecessor: number }
   | { t: 'stationAgent'; unit: number; predecessor: number }
   | { t: 'answerDemand'; accept: boolean }
@@ -509,7 +510,7 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
     }
     case 'offer': {
       const u = unitOf(s, a.unit)
-      offerToPredecessor(s, u, a.predecessor, a.good, a.amount, a.haggle, ctx)
+      offerToPredecessor(s, u, a.predecessor, a.good, a.amount, a.haggle, ctx, a.want ?? null)
       s.actionsThisTurn++
       return s
     }

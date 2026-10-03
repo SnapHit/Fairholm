@@ -7,12 +7,13 @@ import { C } from '../sim/constants'
 import { unitLabel } from '../sim/queue'
 import { workableTiles, tileOffers, tileYield, passageCost, goldPassageCost, buildingWorkers, foodBalance, workerOutput, landingSettlement, clerksRequired } from '../sim/labour'
 import { previewProduction, buildable, buildingName, storageCapacity, isCoastalSettlement, canStart, foundingProblem, surplusRuleFor } from '../sim/settlement'
-import { neighbours8, isLand } from '../sim/worldgen'
+import { neighbours8, isLand, dist } from '../sim/worldgen'
 import { turnsToCoast } from '../sim/autopilot'
 import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, recompute } from '../sim/market'
 import { maxMoves, cargoCapacity, equipCost, isHull, unitAttack, unitDefence } from '../sim/units'
 import { sightMask } from '../sim/fog'
 import { signatoryList } from '../sim/grievance'
+import { predecessorStore, offerTerms } from '../sim/predecessors'
 import { term, TERMS } from './glossary'
 import { h, button, row, muted, fmt, signed, plural } from './dom'
 import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS, tileLook, tileWords } from '../render/tiles'
@@ -305,6 +306,7 @@ function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HT
       h('button', { class: on(rule.destination.kind === 'hold'), type: 'button', onClick: () => setRule(keep({ kind: 'hold' }), `Hold ${word}`) }, 'hold it'),
       h('button', { class: on(rule.destination.kind === 'consign'), type: 'button', onClick: () => setRule(keep({ kind: 'consign' }), `Consign ${word}`) }, 'consign it'),
       others.map(x => h('button', { class: on(rule.destination.kind === 'ship' && rule.destination.settlement === x.id), type: 'button', onClick: () => setRule(keep({ kind: 'ship', settlement: x.id }), `Send ${word} to ${x.name}`) }, `send to ${x.name}`)),
+      peoplesInReach(s, st).map(pp => h('button', { class: on(rule.destination.kind === 'offer' && rule.destination.predecessor === pp.id), type: 'button', onClick: () => setRule(keep({ kind: 'offer', predecessor: pp.id }), `Offer ${word} to ${pp.name}`) }, `offer to ${pp.name}`)),
     ),
     h('div', { class: 'chips' }, SURPLUS_THRESHOLDS.map(th => h('button', { class: on(rule.own && rule.threshold === th), type: 'button', onClick: () => setRule({ destination: rule.destination, threshold: th }, `${GOOD_NAMES[g]} above ${th}`) }, `above ${th}`))),
     rule.own ? button(`Use the settlement's rule for ${word}`, () => setRule(null, `${GOOD_NAMES[g]}: the settlement's rule`), 'small ghost') : '',
@@ -315,6 +317,11 @@ function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HT
 
 /** The surplus threshold chips, shared by the orders sheet and the good panel. */
 const SURPLUS_THRESHOLDS = [20, 40, 60, 100, 150]
+
+/** The predecessor peoples a settlement's surplus rule could offer to: within reach, and known. */
+function peoplesInReach(s: GameState, st: Settlement) {
+  return s.predecessors.filter(pp => pp.scouted && dist(s.world.width, st.tile, pp.tile) <= C.predecessors.offerReach)
+}
 
 /** A surplus destination in the player's words. */
 export function destinationWords(s: GameState, d: SurplusDestination): string {
@@ -417,6 +424,7 @@ function ordersSheet(app: App, s: GameState, st: Settlement): HTMLElement {
       h('button', { class: 'chip' + (o.surplus.destination.kind === 'consign' ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'consign' } }, 'Surplus: consign') }, 'consign'),
       h('button', { class: 'chip' + (o.surplus.destination.kind === 'hold' ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'hold' } }, 'Surplus: hold') }, 'hold'),
       others.map(x => h('button', { class: 'chip' + (o.surplus.destination.kind === 'ship' && o.surplus.destination.settlement === x.id ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'ship', settlement: x.id } }, `Surplus: ship to ${x.name}`) }, `ship to ${x.name}`)),
+      peoplesInReach(s, st).map(pp => h('button', { class: 'chip' + (o.surplus.destination.kind === 'offer' && o.surplus.destination.predecessor === pp.id ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'offer', predecessor: pp.id } }, `Surplus: offer to ${pp.name}`) }, `offer to ${pp.name}`)),
     ),
     goodRules.length ? h('p', { class: 'muted' }, 'Rules for one good, set from the goods strip:') : '',
     ...goodRules.map(([g, r]) => line([GOOD_NAMES[g], muted(` · ${destinationWords(s, r.destination)} above ${r.threshold ?? o.surplus.threshold}`)], 'remove', () => app.dispatch({ t: 'setGoodRule', settlement: st.id, good: g, rule: null }, `${GOOD_NAMES[g]}: the settlement's rule`))),
@@ -849,14 +857,31 @@ function predecessorSheet(app: App, s: GameState, id: number): HTMLElement {
   panel.append(line([T(app, 'alarm')], p.alarm > 0.66 ? 'high' : p.alarm > 0.33 ? 'rising' : 'low'))
   if (p.agent) panel.append(muted('An agent of yours is stationed here.'))
   if (!C.flags.predecessors) panel.append(notYet(app, 'Trading and learning with predecessor peoples'))
+  // what they have to give in kind, and what the unit beside them could offer, for gold or for goods
+  const store = (Object.entries(predecessorStore(p)) as [GoodId, number][]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])
+  if (store.length) panel.append(section('They have', h('div', { class: 'chips' }, store.map(([g, n]) => h('span', { class: 'chip' }, `${n} ${GOOD_NAMES[g].toLowerCase()}`)))))
   if (u && adjacent) {
-    const goods = Object.entries(u.cargo).filter(([, n]) => n) as [GoodId, number][]
+    const goods = (Object.entries(u.cargo).filter(([, n]) => n) as [GoodId, number][]).filter(([g]) => C.market.goods[g].predecessor || g === 'metal' || g === 'tooling' || g === 'arms' || g === 'horses')
+    const carries = cargoCapacity(u) > 0
+    const rows: HTMLElement[] = []
+    for (const [g, n] of goods) {
+      const forGold = offerTerms(s, p, u, g, n, null)
+      const same = p.lastBought === g
+      rows.push(line([`Offer ${n} ${GOOD_NAMES[g]}`, same ? h('span', { class: 'warn' }, ' they took that last time') : ''], same ? '' : `${forGold.gold} gold`, same ? undefined : () => app.dispatch({ t: 'offer', unit: u.id, predecessor: p.id, good: g, amount: n, haggle: false }, 'Offered')))
+      if (!same && carries) for (const [want] of store) {
+        if (want === g) continue
+        const terms = offerTerms(s, p, u, g, n, want)
+        if (terms.inKind <= 0) continue
+        rows.push(line([muted('  for '), `${terms.inKind} ${GOOD_NAMES[want].toLowerCase()}`, terms.gold > 0 ? muted(` and ${terms.gold} gold`) : ''], 'barter', () => app.dispatch({ t: 'offer', unit: u.id, predecessor: p.id, good: g, amount: n, haggle: false, want }, `Offered for ${GOOD_NAMES[want].toLowerCase()}`)))
+      }
+    }
     panel.append(section(`With your ${unitLabel(u.kind)}`,
-      ...goods.map(([g, n]) => line([`Offer ${n} ${GOOD_NAMES[g]}`], 'offer', () => app.dispatch({ t: 'offer', unit: u.id, predecessor: p.id, good: g, amount: n, haggle: false }, 'Offered'))),
+      ...rows,
+      goods.length && !carries ? muted('Goods in kind need something that carries: a hauler or a hull.') : '',
       u.kind === 'colonist' && !p.taught ? button(`Learn ${p.teaches}`, () => app.dispatch({ t: 'learn', unit: u.id, predecessor: p.id }, 'Learning'), 'small') : null,
       u.kind === 'colonist' && !p.agent ? button('Station as agent', () => app.dispatch({ t: 'stationAgent', unit: u.id, predecessor: p.id }, 'Stationed'), 'small ghost') : null,
     ))
-  } else panel.append(muted('Bring a unit next to them to trade, learn or station an agent.'))
+  } else panel.append(muted('Bring a unit next to them to trade, learn or station an agent. A hauler or a hull can take goods in kind.'))
   return panel
 }
 
