@@ -47,9 +47,10 @@ await page.waitForTimeout(1200)
 // loaded machine can hold up, so the check reads the state and not the timer
 const tapped = await page.evaluate(() => ({ showing: window.fairholm.opening ? window.fairholm.opening.showing : false, fading: !!document.querySelector('#opening.gone'), gone: !document.querySelector('#opening'), music: window.fairholm.music.position > 0 || window.fairholm.music.playing }))
 check('2 the first tap dismisses the lines', !tapped.showing && (tapped.gone || tapped.fading), JSON.stringify(tapped))
-// one move, by the player's own gestures: a tap on the lander, a tap and hold on the water toward
-// the coast, as far along the way as is on the screen above the sheet, which plots a course and
-// moves nothing, then a tap on the course's end, which sails it. The heading is the
+// one move, by the player's own gestures: a tap on the lander, which brings its card up in the
+// queue bar's place, a tap and hold on the water toward the coast, as far along the way as is on
+// the map above the card, which plots a course and moves nothing, then a tap on the course's end,
+// which sails it. The heading is the
 // one toward the nearest coast, which is what a player who guessed right would sail. The hold is
 // held well past its length, because a software renderer draws few frames and the hold completes
 // on a frame
@@ -58,14 +59,15 @@ const landerAt = () => page.evaluate(() => {
   const l = s.units.find(u => u.owner === 0 && u.kind === 'lander')
   return l ? a.scene.cam.worldToScreen((l.tile % w) + 0.5, Math.floor(l.tile / w) + 0.5) : null
 })
-// a sheet left open by the first tap is dismissed by the next tap away from it, so a player taps
-// the lander again; up to three taps
+// a tap anywhere on the lander's picture chooses it; up to three taps, in case one lands while the
+// camera is still settling
+const landerChosen = () => page.evaluate(() => { const a = window.fairholm; return a.scene.cam.view.activeUnit === a.state.units.find(u => u.owner === 0 && u.kind === 'lander')?.id })
 let lp = null
 for (let k = 0; k < 3; k++) {
-  if (await page.evaluate(() => window.fairholm.sheet.kind === 'unit')) break
+  if (await landerChosen()) break
   lp = await landerAt()
   await page.touchscreen.tap(lp[0], lp[1])
-  await page.waitForFunction(() => window.fairholm.sheet.kind === 'unit', null, { timeout: 2000 }).catch(() => {})
+  await page.waitForFunction(() => document.getElementById('queuebar').classList.contains('carded'), null, { timeout: 2000 }).catch(() => {})
 }
 await page.waitForFunction(() => !window.fairholm.scene.cam.glideTarget && !window.fairholm.scene.moving, null, { timeout: 10000 }).catch(() => {})
 await page.waitForTimeout(400)
@@ -75,14 +77,16 @@ const aim = await page.evaluate(async () => {
   const act = auto.openingAction(s)
   if (!act || act.t !== 'moveUnit') return { skipped: act ? act.t : 'none' }
   const top = a.hud.getBoundingClientRect().height + 24
-  const bottom = a.root.clientHeight - a.sheetEl.offsetHeight - 24
+  const bottom = a.root.clientHeight - a.queuebar.offsetHeight - 24
+  // within one turn's sailing, so the tap on the end sails it all the way
+  const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
   let best = null
-  for (const t of act.path) {
+  for (const t of act.path.slice(0, lander.moves)) {
     const [sx, sy] = a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5)
     if (sx < 24 || sx > a.root.clientWidth - 24 || sy < top || sy > bottom) break
     best = { sx, sy, k: act.path.indexOf(t) + 1 }
   }
-  return { best, sheet: a.sheet.kind, active: a.scene.cam.view.activeUnit, lp: null, land: s.world.tiles.filter(t => t.explored && t.terrain !== 'water').length }
+  return { best, card: document.getElementById('queuebar').classList.contains('carded'), active: a.scene.cam.view.activeUnit, lp: null, land: s.world.tiles.filter(t => t.explored && t.terrain !== 'water').length }
 })
 let sailed = { skipped: aim.skipped }
 if (!aim.skipped && aim.best) {
@@ -101,10 +105,10 @@ if (!aim.skipped && aim.best) {
   await page.touchscreen.tap(aim.best.sx, aim.best.sy)
   await page.waitForFunction(() => window.__sawMoving, null, { timeout: 10000 }).catch(() => {})
   await page.waitForFunction(() => !window.fairholm.scene.moving, null, { timeout: 20000 }).catch(() => {})
-  sailed = await page.evaluate((k) => ({ travelling: window.__sawMoving, tilesOut: k, landBefore: 0, landAfter: window.fairholm.state.world.tiles.filter(t => t.explored && t.terrain !== 'water').length, tileAfter: window.fairholm.state.units.find(u => u.owner === 0 && u.kind === 'lander')?.tile, sheetAfter: window.fairholm.sheet.kind, toast: document.querySelector('#toast')?.textContent }), aim.best.k)
+  sailed = await page.evaluate((k) => ({ travelling: window.__sawMoving, tilesOut: k, landBefore: 0, landAfter: window.fairholm.state.world.tiles.filter(t => t.explored && t.terrain !== 'water').length, tileAfter: window.fairholm.state.units.find(u => u.owner === 0 && u.kind === 'lander')?.tile, cardAfter: document.getElementById('queuebar').classList.contains('carded'), toast: document.querySelector('#toast')?.textContent }), aim.best.k)
   sailed.plotted = { ...plotted, stillAt: plotted.tile === before }
   sailed.landBefore = aim.land
-} else if (!aim.skipped) sailed = { error: 'no tile of the way on the screen', sheet: aim.sheet }
+} else if (!aim.skipped) sailed = { error: 'no tile of the way on the screen', card: aim.card }
 check('2 a hold plots a course without moving, and a tap on its end sails it, drawn travelling, sighting land', !!sailed.skipped || (sailed.plotted.ok && sailed.plotted.stillAt && !sailed.plotted.moved && sailed.travelling && sailed.tileAfter === sailed.plotted.end && sailed.landBefore === 0 && sailed.landAfter > 0), JSON.stringify(sailed))
 // the rest of the voyage: the machine sails the lander to the coast and founds, through the game's own actions
 const foundedOn = await page.evaluate(() => window.fairholm.autoplayOpening())
@@ -116,19 +120,31 @@ await page.evaluate(() => window.fairholm.closeSheet())
 // 3: tiles tappable at working zoom, not at overview
 const tapTest = await page.evaluate(async () => {
   const a = window.fairholm
+  const picking = await import('/src/render/picking.ts')
   a.scene.cam.view.zoom = 44; a.scene.cam.apply()
+  a.scene.draw(false)
   const st = a.state.settlements.find(x => x.owner === 0)
   const w = a.state.world.width
-  const [sx, sy] = a.scene.cam.worldToScreen((st.tile % w) + 1.5, Math.floor(st.tile / w) + 0.5)
+  // a tile near the settlement with nothing drawn over its middle: a tap on a picture is a tap on
+  // what is drawn, feel brief section 3, so the tile is tested where only the tile is
+  const pics = { units: a.scene.unitPictures, settlements: a.scene.settlementPictures, shown: a.scene.drawnClose, cover: a.scene.pictureCover.bind(a.scene) }
+  let target = null, sx = 0, sy = 0
+  for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, 2], [2, -2], [-2, -2], [3, 0], [0, 3]]) {
+    const t = st.tile + dz * w + dx
+    ;[sx, sy] = a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5)
+    const p = picking.pick(a.state, a.scene.cam, sx, sy, a.scene.unitPositions, pics, 44)
+    if (p.unit === null && p.settlement === null && p.predecessor === null && p.tile === t && !a.state.units.some(u => u.tile === t && u.owner === 0)) { target = t; break }
+  }
   a.tap(sx, sy)
-  const working = a.scene.cam.view.selectedTile === st.tile + 1
+  const working = target !== null && a.scene.cam.view.selectedTile === target
   a.scene.cam.view.zoom = 16; a.scene.cam.apply()
   a.scene.cam.view.selectedTile = null
   const [ox, oy] = a.scene.cam.worldToScreen((st.tile % w) + 3.5, Math.floor(st.tile / w) + 3.5)
   a.tap(ox, oy)
   const overview = a.scene.cam.view.selectedTile === null
   a.scene.cam.view.zoom = 44; a.scene.cam.apply()
-  return { working, overview }
+  a.deselect()
+  return { working, overview, target }
 })
 check('3 tiles tappable at working zoom, not at overview', tapTest.working && tapTest.overview, JSON.stringify(tapTest))
 // 4: assign a worker, output next turn

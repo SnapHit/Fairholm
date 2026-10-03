@@ -37,6 +37,9 @@ export function makeLightUniforms(): LightUniforms {
     uCloudTime: { value: 0 },
     /** Seconds, for the few things that move while a frame is being drawn: a hull's bob, steam. */
     uTime: { value: 0 },
+    /** How much of the steam is left, one to nothing: it blows away a while after the turn begins,
+     *  so the frame loop can go idle again. */
+    uSteam: { value: 1 },
     uShadowMap: { value: null as THREE.Texture | null },
     uMapSize: { value: new THREE.Vector2(1, 1) },
     uSunLift: { value: 1 },

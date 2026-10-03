@@ -36,7 +36,8 @@ import { seedNumber } from './seed'
 import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
 import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
-import { spriteSheet, buildBillboards, setBillboardFade, placeBillboard, manifestFrom, type AtlasManifest, type BillboardTag } from './billboards'
+import { spriteSheet, buildBillboards, setBillboardFade, placeBillboard, manifestFrom, pictureBox, pictureCover, type AtlasManifest, type BillboardTag, type Billboard } from './billboards'
+import { SelectionMark } from './selection'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
 import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL, WAVE_COAST, MOVE } from './look'
@@ -110,8 +111,11 @@ export class Scene {
   unitPositions = new Map<number, [number, number]>()
   /** What is on the water that is not a unit: steam, and the Company's landers while a wave is at sea. */
   arrival: THREE.Group | null = null
-  /** How many plumes are rising. While any is, the loop runs so the steam moves. */
+  /** How many plumes are rising. While any is, the loop runs so the steam moves, for as long as
+   *  ARRIVAL.steamSeconds from the turn's first picture of it, and then the steam thins away. */
   private steamCount = 0
+  private steamTurn = -1
+  private steamSince = 0
   /** The fog's texture, one texel a tile, and the sight mask it was last written from. */
   private vis: THREE.DataTexture | null = null
   private visMask: Uint8Array | null = null
@@ -127,8 +131,17 @@ export class Scene {
   /** Which way each unit of the player's last went, true for right, so a unit that stops keeps
    *  facing the way it was going. View state only; nothing here is saved. */
   private lastRight = new Map<number, boolean>()
+  /** The tile looked at when no unit is selected: a ring on it. */
   selRing: THREE.Mesh
-  unitRing: THREE.Mesh
+  /** The selected unit: a ring in its owner's colour under it and an outline round its picture. */
+  private selMark: SelectionMark
+  /** Every unit's picture as it was last built: its box as offsets from where the unit stands, so a
+   *  picture drawn travelling is found where it is, and the billboard it came from. What a tap is
+   *  measured against, and what the selection outlines. */
+  unitPictures = new Map<number, { box: [number, number, number, number]; bill: Billboard }>()
+  /** Every settlement picture, where it stands: a tap on a building in front of a unit is a tap on
+   *  the settlement. */
+  settlementPictures: { id: number; box: [number, number, number, number]; foot: number; bill: Billboard }[] = []
   /** One set of light uniforms, shared by every material on the map. */
   light: LightUniforms = makeLightUniforms()
   detail: DetailTextures
@@ -185,8 +198,8 @@ export class Scene {
     this.sheets = this.sheetManifests.map(m => spriteSheet(m, () => this.requestDraw()))
     applyLook(this.light, seasonLook(1))
     this.selRing = makeRing(0xf4efe2, 0.52)
-    this.unitRing = makeRing(0xffffff, 0.3)
-    this.scene.add(this.selRing, this.unitRing)
+    this.selMark = new SelectionMark(this.sheets[SHEET_UNITS], this.light.uTime)
+    this.scene.add(this.selRing, this.selMark.ring, this.selMark.outline)
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; this.finishMove() }, false)
     canvas.addEventListener('webglcontextrestored', () => { this.contextLost = false; if (this.lastState) { this.lastWorldKey = ''; this.rebuild(this.lastState, 'full') } }, false)
   }
@@ -385,6 +398,12 @@ export class Scene {
     this.unitClose = ub.close
     this.unitFar = ub.far
     this.unitPositions = ub.positions
+    this.unitPictures = new Map()
+    for (const b of ub.billboards) if (b.tag?.kind === 'unit') this.unitPictures.set(b.tag.id, { box: pictureBox(b), bill: b })
+    this.settlementPictures = sb.billboards.filter(b => b.tag?.kind === 'settlement').map(b => {
+      const [l, t, r, d] = pictureBox(b)
+      return { id: b.tag!.id, box: [b.x + l, b.z + t, b.x + r, b.z + d] as [number, number, number, number], foot: b.z, bill: b }
+    })
     // a unit being drawn travelling can still be tapped where it stopped
     if (this.move) for (const id of this.move.ids) {
       const u = s.units.find(x => x.id === id)
@@ -449,6 +468,7 @@ export class Scene {
     const ab = buildArrival(s, this.light, this.sheetManifests[SHEET_UNITS], SHEET_UNITS, this.sheets, this.sheetManifests.map(m => m.size), positions)
     this.arrival = ab.group
     this.steamCount = ab.steaming
+    if (ab.steaming && this.steamTurn !== s.turn) { this.steamTurn = s.turn; this.steamSince = performance.now() }
     if (this.arrival) this.scene.add(this.arrival)
     if (this.steaming()) this.startLoop()
   }
@@ -725,18 +745,26 @@ export class Scene {
   updateRings(s: GameState) {
     const v = this.cam.view
     const w = s.world.width
-    if (v.selectedTile !== null && this.terrain) {
+    // a tile looked at has its ring; a selected unit has its own mark instead, not both
+    if (v.selectedTile !== null && v.activeUnit === null && this.terrain) {
       const x = (v.selectedTile % w) + 0.5, z = Math.floor(v.selectedTile / w) + 0.5
       this.selRing.position.set(x, this.terrain.heightAt(x, z) + 0.02, z)
       this.selRing.visible = true
     } else this.selRing.visible = false
-    if (v.activeUnit !== null) {
-      const p = this.ghostAt(v.activeUnit) ?? this.unitPositions.get(v.activeUnit)
-      if (p && this.terrain) {
-        this.unitRing.position.set(p[0], this.terrain.heightAt(p[0], p[1]) + 0.06, p[1])
-        this.unitRing.visible = true
-      } else this.unitRing.visible = false
-    } else this.unitRing.visible = false
+    const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit) : undefined
+    const p = u ? this.ghostAt(u.id) ?? this.unitPositions.get(u.id) ?? null : null
+    if (u && p) {
+      const pic = this.unitPictures.get(u.id)
+      const colour = u.owner === 0 ? s.charters[0].colour : s.charters[u.owner]?.colour ?? s.charters[0].colour
+      // the outline goes round the picture where it is drawn; a picture being drawn travelling is a
+      // ghost of it, and the ring alone follows that
+      const outlined = pic && this.propsVisible && !this.move?.ids.has(u.id) ? {
+        box: [p[0] + pic.box[0], p[1] + pic.box[1], p[0] + pic.box[2], p[1] + pic.box[3]] as [number, number, number, number],
+        piece: pic.bill.piece, sheetSize: this.sheetManifests[SHEET_UNITS].size, flip: pic.bill.flip,
+        share: pic.bill.cut > 0 ? 1 - pic.bill.cut : 1, foot: p, bob: pic.bill.bob,
+      } : null
+      this.selMark.show(p, colour, outlined, v.zoom, pic && this.propsVisible ? pic.box[2] - pic.box[0] : 0)
+    } else this.selMark.hide()
     // the selection grid: light lines on the selected tile only, via the overlay alpha
     if (this.terrain) {
       this.terrain.material.uniforms.selected.value = v.selectedTile ?? -1
@@ -918,6 +946,7 @@ export class Scene {
     this.cloudTime += dt * 0.02
     this.light.uCloudTime.value = this.cloudTime
     this.light.uTime.value = (now / 1000) % 3600
+    this.light.uSteam.value = this.steamLeft(now)
     if (this.terrain) {
       this.terrain.material.uniforms.gridMix.value = this.cam.view.zoom >= C.feel.tileTapFloor ? 1 : 0
     }
@@ -933,9 +962,21 @@ export class Scene {
     }
   }
 
+  /** How much of a picture is drawn at a point on the ground, with its foot at (fx, fz): nought
+   *  where it is clear, one where it is solid, null while its sheet cannot be read. For a tap. */
+  pictureCover(b: Billboard, fx: number, fz: number, wx: number, wz: number): number | null {
+    return pictureCover(b, this.sheets[b.sheet], this.sheetManifests[b.sheet].size, fx, fz, wx, wz)
+  }
+
   /** True while a plume is rising off a lander just down. */
   private steaming(): boolean {
-    return this.steamCount > 0 && !this.contextLost
+    return this.steamCount > 0 && !this.contextLost && this.steamLeft(performance.now()) > 0
+  }
+
+  /** How much of this turn's steam is left, one to nothing. */
+  private steamLeft(now: number): number {
+    const end = this.steamSince + (ARRIVAL.steamSeconds + ARRIVAL.steamFadeSeconds) * 1000
+    return Math.max(0, Math.min(1, (end - now) / (ARRIVAL.steamFadeSeconds * 1000)))
   }
 
   /** Nudge the clouds a little between turns so a quiet turn still moves. */

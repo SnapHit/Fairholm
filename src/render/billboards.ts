@@ -264,6 +264,65 @@ void main() {
 }
 `
 
+/** Where a picture lies on the ground, as offsets in tiles from its foot: its left, top, right and
+ *  bottom edges, the top being the far side, up the screen. The same arithmetic that places its
+ *  quad, so a tap and the drawing agree. A hull below its waterline is faded into the water and does
+ *  not count. */
+export function pictureBox(b: Billboard): [number, number, number, number] {
+  const pc = b.piece
+  const anchorX = b.flip ? pc.w - pc.anchorX : pc.anchorX
+  const ax = (anchorX / pc.w) * b.width
+  const az = (pc.anchorY / pc.h) * b.height
+  const below = b.cut > 0 ? 0 : b.height - az
+  return [-ax, -az, b.width - ax, below]
+}
+
+/** Each sheet's alpha, read once from its image the first time a tap needs it. Null for a sheet
+ *  that has not arrived yet or cannot be read. */
+const alphaMasks = new WeakMap<object, { w: number; h: number; data: Uint8Array } | null>()
+function alphaMask(tex: THREE.Texture | null | undefined): { w: number; h: number; data: Uint8Array } | null {
+  const img = tex?.image as unknown
+  const drawable = (typeof HTMLImageElement !== 'undefined' && img instanceof HTMLImageElement) || (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap)
+  if (!tex || !drawable || typeof document === 'undefined') return null
+  if (alphaMasks.has(tex)) return alphaMasks.get(tex)!
+  let mask: { w: number; h: number; data: Uint8Array } | null = null
+  try {
+    const im = img as HTMLImageElement | ImageBitmap
+    const w = im.width, h = im.height
+    const c = document.createElement('canvas')
+    c.width = w; c.height = h
+    const g = c.getContext('2d', { willReadFrequently: true })!
+    g.drawImage(im, 0, 0)
+    const rgba = g.getImageData(0, 0, w, h).data
+    const data = new Uint8Array(w * h)
+    for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4 + 3]
+    mask = { w, h, data }
+  } catch { mask = null }
+  alphaMasks.set(tex, mask)
+  return mask
+}
+
+/** How much of a picture is drawn at a point on the ground, nought where it is clear to one where it
+ *  is solid, with its foot at (fx, fz): what a tap on that point lands on. Null while the sheet
+ *  cannot be read, when only the picture's rectangle can be told. A hull below its waterline is
+ *  water. */
+export function pictureCover(b: Billboard, sheet: THREE.IUniform, sheetSize: [number, number], fx: number, fz: number, wx: number, wz: number): number | null {
+  const mask = alphaMask(sheet.value as THREE.Texture)
+  if (!mask) return null
+  const pc = b.piece
+  const box = pictureBox(b)
+  const u = (wx - (fx + box[0])) / b.width
+  const v = (wz - (fz + box[1])) / b.height
+  if (u < 0 || u >= 1 || v < 0 || v >= 1) return 0
+  if (b.cut > 0 && wz > fz) return 0
+  // the sheet's image may be stored smaller or larger than the size its pieces are measured in
+  const sx = mask.w / sheetSize[0], sy = mask.h / sheetSize[1]
+  const ix = Math.floor((pc.x + (b.flip ? 1 - u : u) * pc.w) * sx)
+  const iy = Math.floor((pc.y + v * pc.h) * sy)
+  if (ix < 0 || iy < 0 || ix >= mask.w || iy >= mask.h) return 0
+  return mask.data[iy * mask.w + ix] / 255
+}
+
 /** Everything drawn rather than built, in one mesh, back to front. Two sheets at most, by index. */
 export function buildBillboards(list: Billboard[], light: LightUniforms, sheets: THREE.IUniform[], sizes: [number, number][]): THREE.InstancedMesh | null {
   if (!list.length) return null

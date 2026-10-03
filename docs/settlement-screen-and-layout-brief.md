@@ -1,5 +1,8 @@
 # Settlement screen and screen layout
 
+**Changed 3 October 2026.** The map is the hero: section 1 now says every panel opens at the smallest
+size that answers the question and grows only when the player asks.
+
 **Changed 1 October 2026.** Water tiles no longer need a wharf to be worked, so the ring's list of
 reasons a tile is unavailable drops that one. The opening is being replaced by the one the original
 game is loved for: you begin at sea in fog with no knowledge of the world, sail until you find land
@@ -24,6 +27,9 @@ screen this is descended from.**
 **Correction to a misreading of the architecture brief.** "Everything reachable lives in the bottom
 third" meant controls must fall within thumb reach. It did not mean a third of the display is
 permanently spent on furniture.
+
+**The map is the hero. Every panel opens at the smallest size that answers the question and grows
+only when the player asks.**
 
 - **The map fills the viewport, edge to edge, at all times**
 - **Nothing is permanently parked over it.** Every panel either collapses to a bar or slides away

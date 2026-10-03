@@ -1,5 +1,9 @@
 # Feel: input, gesture and audio
 
+**Changed 3 October 2026, for choosing a unit.** A tap anywhere on a unit's drawn picture chooses it,
+never on a target under 44 points, and the chosen unit wears a ring and an outline that do not move.
+Section 3 says so.
+
 **Changed 2 October 2026, for movement.** All movement is one gesture: tap and hold the tile to go to.
 The hold plots the route and moves nothing; a tap on the route's end, or the Go control in the bottom
 third, commits it. A tap on the map never commits anything, except on the end of a route the player
@@ -80,6 +84,25 @@ tile, crossing that threshold makes them flicker on and off.
 - **Tapping a unit activates it.** It becomes the active unit and its actions appear in the bottom third
 - **Tapping a settlement opens its sheet.** One tap, not two
 - **Tapping empty ground deselects**
+
+### Hit areas
+
+- **A tap anywhere on a unit's drawn picture selects it**, for every unit and every hull, including
+  the parts that overhang neighbouring tiles: masts, the lander's length, a rider's head
+- Taps are tested against each visible picture's screen rectangle, **front-most first** in the order
+  the pictures are drawn, before falling back to the tile. Where a picture is clear the tap goes
+  through it to what is drawn behind, and a unit beats a building wherever the unit itself is drawn.
+  A tap on a tile with one of the player's units on it is a tap on that unit
+- **Every unit's target is at least 44 points** in each direction, even when its picture is smaller
+- Tapping a stacked tile opens the chooser below
+- **Tapping the selected unit again, or empty map, deselects**
+
+### The highlight
+
+- The selected unit has **a bright ring in its owner's colour under it and a clean outline around its
+  picture**, readable on every terrain, on water and in fog
+- **Static once shown.** At most a brief flash on selection. The frame loop goes idle while a unit
+  sits selected; there is no continuous pulse
 
 ### Stacked units
 

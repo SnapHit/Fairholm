@@ -508,6 +508,11 @@ export const ARRIVAL = {
   /** The steam: how many puffs, how long one lives in seconds, how far it rises and drifts in tiles
    *  (up the screen and to the right, off the wind), how large it starts and ends, and its colour. */
   plume: { count: 7, life: 3.2, rise: 0.75, drift: 0.55, sizeFrom: 0.1, sizeTo: 0.36, colour: '#f2ece0', opacity: 0.72, stacks: [0.3, 0.72] as [number, number] },
+  /** How long the steam rises on a turn it is shown, in seconds from the turn's first picture of it,
+   *  and how long it then takes to thin to nothing. The frame loop runs only while it does: steam
+   *  that never stopped would keep the loop going under a unit sitting chosen. */
+  steamSeconds: 14,
+  steamFadeSeconds: 2.5,
   /** Where a wave's lander splashes down: offshore of the middle of the coast it might still land
    *  on, this far out, so that it tells you no more than the heading does. Waves after the first
    *  stand a little apart so they are not drawn on top of one another. */
@@ -543,6 +548,36 @@ export const FOG = {
   rememberedDim: 0.8,
   /** Beyond the map's edge nothing is known; the known fades out over this many tiles. */
   edgeFade: 1.5,
+}
+
+/** The selected unit, feel brief section 3: a ring in its owner's colour on the ground under it,
+ *  on a dark halo, and an outline round its picture, bright inside and dark outside, so it reads on
+ *  grass, sand, water and fog alike. Static: nothing here moves, so a unit sitting selected costs no
+ *  frames. The ring's radius is this share of the picture's width, held between these, and this
+ *  wide, with the halo this much wider either side, in tiles. The outline's bands are in pixels on
+ *  the screen, so they read the same at every zoom. */
+export const SELECTION = {
+  ringShare: 0.42,
+  ringMin: 0.26,
+  ringMax: 0.75,
+  ringWidth: 0.055,
+  haloWidth: 0.03,
+  halo: '#141518',
+  haloAlpha: 0.75,
+  outlinePx: 2.5,
+  outlineHaloPx: 4.5,
+  outlineHaloAlpha: 0.8,
+  /** The ring's radius is never less than this on the screen, in pixels, so a unit drawn as a mark at
+   *  a far zoom is still plainly the chosen one. */
+  ringMinPx: 13,
+}
+
+/** A tap on the pictures, feel brief section 3: below this much cover, nought to one, a point of a
+ *  picture is clear and the tap goes through it to what is behind; and a unit with no picture, or
+ *  one drawn as a mark, answers across this box about where it stands, in tiles. */
+export const TAP = {
+  solid: 0.25,
+  markBox: [-0.25, -0.25, 0.25, 0.25] as [number, number, number, number],
 }
 
 /** A move drawn on the map: a unit's picture travels the tiles it went through while the fog lifts

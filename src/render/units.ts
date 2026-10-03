@@ -572,12 +572,13 @@ void main() {
 const PLUME_FS = /* glsl */ `
 precision highp float;
 uniform vec3 uColour;
+uniform float uSteam;
 varying vec2 vLocal;
 varying float vLife;
 void main() {
   float d = length(vLocal - 0.5) * 2.0;
   float soft = smoothstep(1.0, 0.25, d);
-  float a = soft * (1.0 - vLife) * smoothstep(0.0, 0.12, vLife) * ${ARRIVAL.plume.opacity.toFixed(2)};
+  float a = soft * (1.0 - vLife) * smoothstep(0.0, 0.12, vLife) * uSteam * ${ARRIVAL.plume.opacity.toFixed(2)};
   if (a < 0.01) discard;
   gl_FragColor = vec4(uColour, a);
 }
@@ -594,7 +595,7 @@ export function buildPlume(at: [number, number][], light: LightUniforms): THREE.
   const material = new THREE.ShaderMaterial({
     vertexShader: PLUME_VS,
     fragmentShader: PLUME_FS,
-    uniforms: { uTime: light.uTime, uColour: { value: new THREE.Color(...hexRgb(ARRIVAL.plume.colour)) } },
+    uniforms: { uTime: light.uTime, uSteam: light.uSteam, uColour: { value: new THREE.Color(...hexRgb(ARRIVAL.plume.colour)) } },
     transparent: true,
     depthTest: false,
     depthWrite: false,

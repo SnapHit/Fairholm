@@ -527,7 +527,7 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   const panel = h('div', { class: 'panel' }, header(app, [T(app, u.kind, unitLabel(u.kind))], sub))
   if (!mine) { panel.append(muted(`Attack ${unitAttack(u, 'open')}, defence ${unitDefence(u, !!here)}.`)); return panel }
   // the route plotted for it, or why there is none; otherwise how to plot one. Feel brief section 4
-  const r = app.route && app.route.unit === u.id ? app.route : null
+  const r = app.route && app.route.unit === u.id && !('ashore' in app.route) ? app.route : null
   if (r) panel.append(routeBlock(app, s, u, r))
   else if (!lander) panel.append(h('p', { class: 'muted' }, u.kind === 'colonist' && s.units.some(x => x.owner === 0 && x.kind === 'lander' && neighbours8(w, s.world.height, x.tile).includes(u.tile))
     ? 'Tap and hold a tile to plot a course there, or hold the lander to go back aboard.'
@@ -545,6 +545,8 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
     // the lander's whole business is the shore beside it: where it can go ashore, what the ground
     // there would give, and the one control that founds. Interaction brief section 8
     panel.append(landerControls(app, s, u))
+    const aboard = aboardSection(app, s, u)
+    if (aboard) panel.append(aboard)
   }
   const actions: HTMLElement[] = []
   if (u.kind === 'colonist' && !here) {
@@ -575,8 +577,7 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   if (u.order && u.order.kind !== 'garrison') actions.push(button(STOP_LABELS[u.order.kind] ?? 'Stop', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: null }, 'Order cleared'), 'small ghost'))
   if (u.kind === 'colonist' && !u.order) actions.push(button('Explore by itself', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: { kind: 'explore' } }, 'Exploring'), 'small ghost'))
   const carrying = Object.keys(u.cargo).length ? 'Carrying ' + Object.entries(u.cargo).map(([g, n]) => `${n} ${g}`).join(', ') + '.' : null
-  // the lander's sheet is the one open while the map is being sailed, so it keeps to what sailing
-  // needs and leaves the map as much of the screen as it can
+  // the lander's detail keeps to what sailing and founding need
   if (lander && carrying) panel.append(h('p', { class: 'muted small' }, carrying))
   else if (carrying) actions.push(muted(carrying))
   if (actions.length) panel.append(section('Do', ...actions))
@@ -663,11 +664,22 @@ function landerControls(app: App, s: GameState, u: Unit): HTMLElement {
   }
   const problem = foundingProblem(s, target)
   box.append(foundPreview(app, s, target, problem, () => app.found(u.id, target), first ? `Beach the lander and found ${C.lander.firstName}` : 'Beach the lander and found a settlement'))
-  if (u.aboard.length && s.world.tiles[target].terrain !== 'mountain') {
-    box.append(row(button('Send one ashore to scout', () => app.dispatch({ t: 'disembark', unit: u.id, tile: target }, 'Went ashore'), 'small ghost'),
-      u.aboard.length === 1 ? muted('The last one aboard. The lander cannot found with no one in it.') : null))
-  }
   return box
+}
+
+/** Who is aboard the lander, in the order they would step off. The next one off can be chosen, and
+ *  a hold on the shore beside the lander then sends them ashore, the way a colonist beside it is
+ *  sent aboard by holding the lander. Feel brief section 3. */
+function aboardSection(app: App, s: GameState, u: Unit): HTMLElement | null {
+  if (!u.aboard.length) return null
+  const w = s.world.width, h2 = s.world.height
+  const shore = neighbours8(w, h2, u.tile).some(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored && s.world.tiles[n].terrain !== 'mountain')
+  const order = [...u.aboard].reverse()
+  return section(`Aboard, ${u.aboard.length}`,
+    ...order.map((c, i) => line([h('b', {}, standingWords(c)), i === 0 && u.aboard.length > 1 ? muted(' · next off') : null],
+      i === 0 && shore ? button('Choose', () => app.choosePassenger(u.id), 'tiny') : undefined)),
+    muted(shore ? 'Choose the next one off, then hold the shore beside the lander to send them ashore.' : 'Beside a shore, the next one off can be sent ashore to look about.'),
+  )
 }
 
 /** The ring a settlement founded at `tile` would work, and the control that founds it, or the reason
@@ -701,7 +713,7 @@ function stackSheet(app: App, s: GameState, tile: number): HTMLElement {
   return h('div', { class: 'panel' }, header(app, here ? `At ${here.name}` : 'On this tile', plural(units.length, 'unit')),
     ...units.map(u => line([h('b', {}, unitLabel(u.kind)), muted(` · ${u.quality}${u.colonist ? ', ' + colonistLabel(u.colonist) : ''}`)],
       u.order ? u.order.kind : `${u.moves}/${maxMoves(u)} moves`,
-      () => { app.scene.cam.view.activeUnit = u.id; app.clearRoute(false); app.sheetHistory = []; app.open({ kind: 'unit', id: u.id }); app.scene.updateRings(s); app.scene.requestDraw() })))
+      () => app.select(u.id))))
 }
 
 function cargoSheet(app: App, s: GameState, u: Unit): HTMLElement {
@@ -724,7 +736,7 @@ function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
     // nothing is known of it but where it is and whatever of yours stands on it
     const panel = h('div', { class: 'panel' }, header(app, 'Unexplored', `${x}, ${z}`), h('p', { class: 'muted' }, 'Nothing is known of this ground yet. Sail or walk toward it and it will show itself.'))
     const own = s.units.filter(u => u.tile === tile && u.owner === 0)
-    if (own.length) panel.append(section('Here', ...own.map(u => line([unitLabel(u.kind)], 'select', () => { app.scene.cam.view.activeUnit = u.id; app.open({ kind: 'unit', id: u.id }); app.scene.updateRings(s); app.scene.requestDraw() }))))
+    if (own.length) panel.append(section('Here', ...own.map(u => line([unitLabel(u.kind)], 'select', () => app.select(u.id)))))
     return panel
   }
   const title = t.forest ? `${TERRAIN_NAMES[t.terrain]}, ${FOREST_NAMES[t.forest]}` : TERRAIN_NAMES[t.terrain]
@@ -744,7 +756,7 @@ function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
   const st = s.settlements.find(x => x.tile === tile)
   if (st) panel.append(line([st.owner === 0 ? st.name : `${st.name} (${s.charters[st.owner]?.name})`], st.owner === 0 ? 'open' : `${st.abstractPop} people`, st.owner === 0 ? () => app.open({ kind: 'settlement', id: st.id }) : undefined))
   const units = s.units.filter(u => u.tile === tile && app.scene.unitPositions.has(u.id))
-  if (units.length) panel.append(section('Here', ...units.map(u => line([unitLabel(u.kind), muted(` · ${u.owner === 0 ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name}`)], u.owner === 0 ? 'select' : `${unitAttack(u, 'open')}/${unitDefence(u, !!st)}`, u.owner === 0 ? () => { app.scene.cam.view.activeUnit = u.id; app.open({ kind: 'unit', id: u.id }); app.scene.updateRings(s); app.scene.requestDraw() } : undefined))))
+  if (units.length) panel.append(section('Here', ...units.map(u => line([unitLabel(u.kind), muted(` · ${u.owner === 0 ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name}`)], u.owner === 0 ? 'select' : `${unitAttack(u, 'open')}/${unitDefence(u, !!st)}`, u.owner === 0 ? () => app.select(u.id) : undefined))))
   // assign a worker from a settlement in reach
   const reach = s.settlements.filter(x => x.owner === 0 && workableTiles(s, x).includes(tile))
   for (const r of reach) {

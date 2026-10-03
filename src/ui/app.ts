@@ -15,22 +15,29 @@ import { C } from '../sim/constants'
 import { findPath } from '../sim/units'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
-import { openingAction } from '../sim/autopilot'
-import { planRoute, type RoutePlan } from '../sim/route'
+import { openingAction, siteScore } from '../sim/autopilot'
+import { planRoute, type RoutePlan, type Route } from '../sim/route'
 import { Scene } from '../render/scene'
 import { pick, tileUnderPoint } from '../render/picking'
 import { Input } from './input'
 import { MusicPlayer } from './audio'
 import { mountStackCounts, type StackCounts } from './stacks'
 import { mountRouteLayer, type RouteLayer } from './route'
-import { h, clear, button, row, muted, fmt, plural } from './dom'
+import { unitCard, passengerCard, tileCard, type Card } from './card'
+import { h, clear, append, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
-import { SHEET_DISMISS_PX, installTheme, shouldReflow } from './theme'
+import { SHEET_DISMISS_PX, TAP_MIN_PX, installTheme, shouldReflow } from './theme'
 import { mountOpening, type Opening } from './opening'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
 import { term } from './glossary'
+
+/** A passenger's step from the lander onto the shore beside it, plotted as a route is and drawn as a
+ *  boarding is, the other way: the disembark action, which puts the next one off on that tile. */
+export type AshoreRoute = Route & { ashore: true }
+/** What a hold has plotted: a route the simulation planned, or a passenger's step ashore. */
+export type UiRoute = RoutePlan | AshoreRoute
 
 /** Sheets that take the whole display rather than sliding up over part of it. */
 function isFullScreenSheet(spec: SheetSpec): boolean {
@@ -48,7 +55,12 @@ export class App {
   undoStack: { snapshot: GameState; label: string }[] = []
   /** The route the player has plotted for the active unit with a hold, or the reason there is none:
    *  nothing has moved, and a tap on its end or the Go control commits it. Feel brief section 4. */
-  route: RoutePlan | null = null
+  route: UiRoute | null = null
+  /** The tile looked at with a tap when no unit is selected: its card shows in the queue bar's place. */
+  focusTile: number | null = null
+  /** A passenger chosen from the lander's detail to go ashore: the next one off, the one the lander
+   *  puts on the shore. A hold on the shore beside the lander then plots their step ashore. */
+  passenger: { lander: number } | null = null
   /** The colonist being placed, while the player is choosing where they should work. */
   pick: { settlement: number; colonist: number } | null = null
   /** The tile the founding control is looking at: the shore the lander would beach on, or the
@@ -93,6 +105,9 @@ export class App {
     this.audioStrip = h('div', { id: 'audio' })
     root.append(this.canvas, this.hud, this.audioStrip, this.scrim, this.sheetEl, this.queuebar, this.ring, this.toastEl, this.overlayEl)
     this.attachSheetSwipe()
+    // the shell never scrolls: it hides its overflow, but a browser bringing a control into view, or
+    // a focused field, can still scroll it, and then every tap lands a little off the map it meant
+    root.addEventListener('scroll', () => { if (root.scrollTop || root.scrollLeft) { root.scrollTop = 0; root.scrollLeft = 0 } })
     this.scene = new Scene(this.canvas)
     this.stacks = mountStackCounts(root, this.scene)
     this.routeLayer = mountRouteLayer(root, this.scene)
@@ -242,15 +257,6 @@ export class App {
         resolve(true)
       })
     })
-  }
-
-  /** Whether a tap with this unit active is a look at founding there: the lander beside land, or a
-   *  colonist on the ground it stands on. */
-  private foundingLook(u: import('../sim/state').Unit, tile: number): boolean {
-    const s = this.state
-    if (u.kind === 'lander') return neighbours8(s.world.width, s.world.height, u.tile).includes(tile) && isLand(s.world.tiles[tile])
-    if (u.kind === 'colonist') return tile === u.tile && s.settlements.some(x => x.owner === 0) && !s.settlements.some(x => x.tile === tile)
-    return false
   }
 
   // ---- state changes -----------------------------------------------------------------------------
@@ -403,70 +409,157 @@ export class App {
     const v = this.scene.cam.view
     // the end of a route the player has just plotted: the one tap on the map that commits anything
     if (this.route?.ok && this.onRouteEnd(px, py)) { void this.commitRoute(); return }
-    const p = pick(s, this.scene.cam, px, py, this.scene.unitPositions)
+    const p = pick(s, this.scene.cam, px, py, this.scene.unitPositions, this.picturesForPicking(), TAP_MIN_PX)
     // any other tap puts a plotted route away first
     const hadRoute = this.route !== null
     if (hadRoute) this.clearRoute(false)
+    const selected = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit) : undefined
     if (p.unit !== null) {
       const u = s.units.find(x => x.id === p.unit)!
-      if (u.owner === 0) {
-        v.selectedTile = u.tile
-        const stack = s.units.filter(x => x.tile === u.tile && x.owner === 0)
-        if (stack.length > 1 && v.activeUnit === null) this.open({ kind: 'stack', tile: u.tile })
-        else { v.activeUnit = u.id; this.open({ kind: 'unit', id: u.id }) }
-        this.afterSelect()
-        // the sheet that opens must not cover what was tapped
-        this.showAboveSheet(u.tile)
-        return
-      }
-      v.selectedTile = u.tile
-      this.open({ kind: 'tile', tile: u.tile })
-      this.afterSelect()
+      if (u.owner === 0) { this.tapOwnUnit(u, selected); return }
+      // another's unit: a look at its tile
+      this.lookAt(u.tile)
       return
     }
     if (p.settlement !== null) {
-      const st = s.settlements[p.settlement]
+      const st = s.settlements.find(x => x.id === p.settlement)!
+      if (st.owner !== 0) { this.lookAt(st.tile); return }
+      this.deselect(false)
       v.selectedTile = st.tile
-      v.activeUnit = null
-      this.open(st.owner === 0 ? { kind: 'settlement', id: st.id } : { kind: 'tile', tile: st.tile })
+      this.open({ kind: 'settlement', id: st.id })
       this.afterSelect()
       return
     }
     if (p.predecessor !== null) {
+      // their sheet is short, and a unit chosen beside them stays chosen, so it can trade or learn
       const pr = s.predecessors[p.predecessor]
-      v.selectedTile = pr.tile
-      v.activeUnit = null
+      if (!selected) { this.deselect(false); v.selectedTile = pr.tile }
       this.open({ kind: 'predecessor', id: pr.id })
       this.afterSelect()
       return
     }
-    // a tap away from a route only puts it away: the unit stays chosen, ready for another hold
-    if (hadRoute && v.activeUnit !== null && s.units.some(u => u.id === v.activeUnit)) {
-      v.selectedTile = s.units.find(u => u.id === v.activeUnit)!.tile
-      this.open({ kind: 'unit', id: v.activeUnit })
-      this.afterSelect()
-      return
-    }
-    if (p.tile !== null) {
-      v.selectedTile = p.tile
-      if (v.activeUnit !== null) {
-        const au = s.units.find(x => x.id === v.activeUnit)
-        // the lander beside the shore, or a colonist on its own ground: the tap looks at founding
-        // there, and the founding control in the sheet is what founds
-        if (au && au.owner === 0 && this.foundingLook(au, p.tile)) { this.setFoundTarget(p.tile); this.open({ kind: 'unit', id: au.id }); this.afterSelect(); return }
-        v.activeUnit = null
-      }
-      if (this.foundTarget !== null) this.setFoundTarget(null)
-      this.open({ kind: 'tile', tile: p.tile })
-      this.afterSelect()
-      return
-    }
-    // a tap below working zoom on nothing: deselect and let the map be the whole screen again
-    v.selectedTile = null
-    v.activeUnit = null
-    if (this.foundTarget !== null) this.setFoundTarget(null)
+    // no picture under the finger, and no mark: the tile. A unit of the player's standing on it is
+    // tapped as if on its picture, so the water under the lander's hull is the lander too
+    const standing = p.tile !== null ? s.units.find(x => x.tile === p.tile && x.owner === 0 && this.scene.unitPositions.has(x.id)) : undefined
+    if (standing) { this.tapOwnUnit(standing, selected); return }
+    // empty map. With a route showing, the tap only puts it away and the unit stays chosen, ready
+    // for another hold; with a unit or a passenger chosen, it lets go
+    if (hadRoute && selected) { this.renderQueueBar(); this.renderSheet(); this.afterSelect(); return }
+    if (selected || this.passenger) { this.deselect(); return }
+    // a tile: its card, or, tapped again, away with it
+    if (p.tile !== null) { this.lookAt(this.focusTile === p.tile ? null : p.tile); return }
+    // a tap below working zoom on nothing: everything away, the map the whole screen again
+    this.deselect(false)
     this.closeSheet()
     this.afterSelect()
+  }
+
+  /** A tap on a unit of the player's: the chosen unit again, or the stack it stands in, lets it
+   *  go; a stack with nothing chosen opens the chooser, feel brief section 3; anything else is
+   *  chosen. */
+  private tapOwnUnit(u: Unit, selected: Unit | undefined) {
+    const v = this.scene.cam.view
+    const stack = this.state.units.filter(x => x.tile === u.tile && x.owner === 0)
+    if (selected && (selected.id === u.id || (stack.length > 1 && selected.tile === u.tile))) { this.deselect(); return }
+    if (stack.length > 1 && !selected) {
+      this.passenger = null
+      this.focusTile = null
+      v.selectedTile = u.tile
+      this.open({ kind: 'stack', tile: u.tile })
+      this.renderQueueBar()
+      this.afterSelect()
+      return
+    }
+    this.select(u.id)
+  }
+
+  /** The pictures as the scene last drew them, for a tap to be measured against. */
+  private picturesForPicking() {
+    const scene = this.scene
+    return { units: scene.unitPictures, settlements: scene.settlementPictures, shown: scene.drawnClose, cover: scene.pictureCover.bind(scene) }
+  }
+
+  /** Choose a unit of the player's: its card takes the queue bar's place, its ring and outline go
+   *  on the map, and the camera moves only if the unit would be covered. Any sheet slides away. */
+  select(id: number) {
+    const u = this.state.units.find(x => x.id === id)
+    if (!u) return
+    const v = this.scene.cam.view
+    this.route = null
+    this.passenger = null
+    this.focusTile = null
+    v.activeUnit = id
+    v.selectedTile = u.tile
+    if (this.sheetShowing() && !isFullScreenSheet(this.sheet)) this.closeSheet()
+    this.aimFounding()
+    this.renderQueueBar()
+    this.afterSelect()
+    this.keepInView(u.tile)
+  }
+
+  /** More, from the card: the full detail, with what it is about kept on the map above it. */
+  openMore(spec: SheetSpec, tile: number) {
+    this.open(spec)
+    this.keepInView(tile)
+  }
+
+  /** Choose the lander's next one off, from its detail: the sheet goes away, the passenger's card
+   *  comes up, and a hold on the shore beside the lander plots their step ashore. */
+  choosePassenger(landerId: number) {
+    const lander = this.state.units.find(x => x.id === landerId && x.kind === 'lander')
+    if (!lander || !lander.aboard.length) return
+    this.closeSheet()
+    this.select(landerId)
+    this.passenger = { lander: landerId }
+    this.renderQueueBar()
+    this.afterSelect()
+  }
+
+  /** Let the chosen unit, passenger or tile go, and give the queue bar back. */
+  deselect(render = true) {
+    const v = this.scene.cam.view
+    v.activeUnit = null
+    v.selectedTile = null
+    this.route = null
+    this.passenger = null
+    this.focusTile = null
+    if (this.foundTarget !== null) { this.foundTarget = null; this.scene.foundPreview = null; this.scene.updateOverlay(this.state) }
+    if (render) {
+      if (this.sheet.kind === 'unit' || this.sheet.kind === 'tile' || this.sheet.kind === 'stack') this.closeSheet()
+      this.renderQueueBar()
+      this.afterSelect()
+    }
+  }
+
+  /** Look at a tile: a small card, not a sheet, in the queue bar's place. Null puts it away. */
+  lookAt(tile: number | null) {
+    this.deselect(false)
+    this.focusTile = tile
+    this.scene.cam.view.selectedTile = tile
+    if (this.sheetShowing() && !isFullScreenSheet(this.sheet)) this.closeSheet()
+    this.renderQueueBar()
+    this.afterSelect()
+    if (tile !== null) this.keepInView(tile)
+  }
+
+  /** The lander beside land looks at the best shore it could found on, so the card can offer to
+   *  found there; a hold on another shore beside it moves the look there. */
+  private aimFounding() {
+    const s = this.state
+    const v = this.scene.cam.view
+    const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit) : undefined
+    const w = s.world.width, h = s.world.height
+    // anything but the lander keeps only a look at founding where it stands, asked for from its detail
+    if (!u || u.kind !== 'lander') { if (this.foundTarget !== null && this.foundTarget !== u?.tile) { this.foundTarget = null; this.scene.foundPreview = null; this.scene.updateOverlay(s) } return }
+    const shore = neighbours8(w, h, u.tile).filter(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored)
+    if (this.foundTarget !== null && shore.includes(this.foundTarget)) return
+    const legal = shore.filter(n => foundingProblem(s, n) === null).sort((a, b) => siteScore(s, b) - siteScore(s, a))
+    const t = legal[0] ?? null
+    if (t === this.foundTarget) return
+    this.foundTarget = t
+    this.scene.foundPreview = t === null ? null : { tile: t, legal: true }
+    this.scene.updateOverlay(s)
+    this.scene.requestDraw()
   }
 
   /** Whether a point on the screen is on the end of the plotted route: the tile itself, and never
@@ -496,7 +589,7 @@ export class App {
   }
 
   /** Plot where a unit of the player's would go if sent to a tile, and show it: the route on the map
-   *  with where each turn ends, or why it cannot go. Nothing moves. */
+   *  with where each turn ends, and a line on the card, or why it cannot go. Nothing moves. */
   plot(u: Unit, tile: number) {
     this.scene.endRunningMove()
     const r = planRoute(this.state, u, tile)
@@ -504,22 +597,49 @@ export class App {
     // the selection stays on the unit; the route's own end marks the tile held
     this.scene.cam.view.selectedTile = u.tile
     this.scene.cam.view.activeUnit = u.id
-    // the lander holding the shore beside it: the founding control looks at that shore
-    if (!r.ok && r.shore !== null) this.setFoundTarget(r.shore)
-    else if (this.foundTarget !== null) this.setFoundTarget(null)
-    this.open({ kind: 'unit', id: u.id })
+    // the lander holding the shore beside it: the founding control looks at that shore instead
+    if (!r.ok && r.shore !== null) this.aimAt(r.shore)
+    this.renderQueueBar()
+    this.renderSheet()
     this.afterSelect()
-    this.keepInView(tile)
+    this.keepRouteInView()
+  }
+
+  /** The founding look on one shore, without moving the camera: it is beside the lander, which is in
+   *  view. */
+  private aimAt(tile: number) {
+    this.foundTarget = tile
+    this.scene.foundPreview = { tile, legal: foundingProblem(this.state, tile) === null }
+    this.scene.updateOverlay(this.state)
+  }
+
+  /** A passenger's step ashore, plotted: only onto known ground beside the lander that is not a
+   *  mountain, which is where the disembark action will put them. The last one aboard may go too,
+   *  and the card says what that costs: the lander cannot found until someone is back aboard. */
+  private plotAshore(tile: number) {
+    const s = this.state, w = s.world.width, h = s.world.height
+    const p = this.passenger
+    const lander = p ? s.units.find(x => x.id === p.lander && x.kind === 'lander') : undefined
+    if (!lander) { this.passenger = null; this.renderQueueBar(); return }
+    const t = s.world.tiles[tile]
+    const no = (words: string): UiRoute => ({ ok: false, unit: lander.id, end: tile, problem: 'noWay', words, shore: null })
+    this.route = tile === lander.tile ? no('Hold the shore beside the lander to send them ashore.')
+      : !neighbours8(w, h, lander.tile).includes(tile) ? no('From the lander they can step only onto the shore beside it.')
+      : t.terrain === 'water' || !t.explored ? no('Hold the shore beside the lander: there is no ground there to stand on.')
+      : t.terrain === 'mountain' ? no('Not onto a mountain. Hold other ground beside the lander.')
+      : { ok: true, ashore: true, unit: lander.id, end: tile, kind: 'board', path: [], unseen: [], turnEnds: [], arrives: 1, odds: null, declares: null, target: null }
+    this.renderQueueBar()
+    this.afterSelect()
   }
 
   /** Put the plotted route away. */
   clearRoute(render = true) {
     const r = this.route
     this.route = null
-    // a shore the route pointed the founding control at goes with it
-    if (r && !r.ok && r.shore !== null && this.foundTarget === r.shore) { this.foundTarget = null; this.scene.foundPreview = null; this.scene.updateOverlay(this.state) }
+    // a shore the route pointed the founding control at goes back to the lander's own choice
+    if (r && !r.ok && r.shore !== null) this.aimFounding()
     this.paintRoute()
-    if (render) { this.renderSheet(); this.scene.requestDraw() }
+    if (render) { this.renderQueueBar(); this.renderSheet(); this.scene.requestDraw() }
   }
 
   /** Go: the plotted route, as the move, the attack or the boarding it shows. A walk that ends
@@ -531,6 +651,15 @@ export class App {
     const u = this.state.units.find(x => x.id === r.unit)
     if (!u) { this.clearRoute(); return false }
     this.route = null
+    // a passenger's step ashore: the next one off stands on that shore, and is the one chosen now
+    if ('ashore' in r) {
+      const before = new Set(this.state.units.map(x => x.id))
+      this.passenger = null
+      if (!this.dispatch({ t: 'disembark', unit: u.id, tile: r.end }, 'Went ashore')) { this.renderQueueBar(); return false }
+      const off = this.state.units.find(x => !before.has(x.id) && x.tile === r.end)
+      if (off) this.select(off.id)
+      return true
+    }
     if (r.kind === 'move') return this.moveTo(u.id, r.end)
     if (r.path.length && !(await this.moveTo(u.id, r.path[r.path.length - 1]))) return false
     const w = this.state.world.width, h = this.state.world.height
@@ -547,16 +676,47 @@ export class App {
     return true
   }
 
-  /** Keep a tile on the map rather than under the sheet, moving the camera only if it must. */
+  /** The map left free between the top strip and whatever covers the bottom (the card, the queue
+   *  bar or a sheet), or beside a sheet on a phone held sideways, in pixels. */
+  private freeArea(): { left: number; top: number; right: number; bottom: number } {
+    const W = this.root.clientWidth, H = this.root.clientHeight
+    const top = this.hud.getBoundingClientRect().height
+    const sheet = this.sheetShowing() && !isFullScreenSheet(this.sheet)
+    if (this.root.classList.contains('landscape') && sheet) return { left: 0, top, right: W - this.sheetEl.offsetWidth, bottom: H - this.queuebar.offsetHeight }
+    const cover = Math.max(this.queuebar.offsetHeight, sheet ? this.sheetEl.offsetHeight : 0)
+    return { left: 0, top, right: W, bottom: H - cover }
+  }
+
+  /** Keep a tile on the map rather than under the card or a sheet, moving the camera only if it must. */
   private keepInView(tile: number) {
     const w = this.state.world.width
     const [sx, sy] = this.scene.cam.worldToScreen((tile % w) + 0.5, Math.floor(tile / w) + 0.5)
-    const hud = this.hud.getBoundingClientRect().height
-    const landscape = this.root.classList.contains('landscape')
-    const right = landscape && this.sheetShowing() ? this.root.clientWidth - this.sheetEl.offsetWidth : this.root.clientWidth
-    const bottom = !landscape && this.sheetShowing() ? this.root.clientHeight - this.sheetEl.offsetHeight : this.root.clientHeight - this.queuebar.offsetHeight
+    const f = this.freeArea()
     const m = C.feel.routeEndHitPx
-    if (sx < m || sx > right - m || sy < hud + m || sy > bottom - m) this.showAboveSheet(tile)
+    if (sx < f.left + m || sx > f.right - m || sy < f.top + m || sy > f.bottom - m) this.showAboveSheet(tile)
+  }
+
+  /** Keep the selected unit and the whole of a plotted route on the free map: nothing moves if it is
+   *  all there already; otherwise the camera centres it, or, where it is too long for the screen,
+   *  brings its end into view. */
+  private keepRouteInView() {
+    const r = this.route
+    const u = r ? this.state.units.find(x => x.id === r.unit) : undefined
+    if (!r || !u) return
+    const w = this.state.world.width
+    const tiles = [u.tile, ...(r.ok ? r.path : []), r.end]
+    const pts = tiles.map(t => this.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5))
+    const f = this.freeArea()
+    const m = C.feel.routeEndHitPx
+    const x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0]))
+    const y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]))
+    if (x0 >= f.left + m && x1 <= f.right - m && y0 >= f.top + m && y1 <= f.bottom - m) return
+    const zoom = this.scene.cam.view.zoom
+    if (x1 - x0 > f.right - f.left - 2 * m || y1 - y0 > f.bottom - f.top - 2 * m) { this.keepInView(r.end); return }
+    // the route's middle to the free map's middle
+    const [mx, mz] = this.scene.cam.screenToWorld((x0 + x1) / 2, (y0 + y1) / 2)
+    const cx = (f.left + f.right) / 2, cy = (f.top + f.bottom) / 2
+    this.scene.glideToPoint(mx + (this.canvas.clientWidth / 2 - cx) / zoom, mz + (this.canvas.clientHeight / 2 - cy) / zoom, zoom)
   }
 
   doubleTap(px: number, py: number) {
@@ -575,10 +735,19 @@ export class App {
   hold(px: number, py: number) {
     const s = this.state
     const v = this.scene.cam.view
-    const t = tileUnderPoint(s, this.scene.cam, px, py)
-    if (t === null) return
     const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit) : undefined
-    if (u && u.owner === 0 && v.zoom >= C.feel.routeHoldFloor) { this.plot(u, t); return }
+    // a hold on another unit's picture is a hold on the tile it stands on, as a tap on it is: the
+    // lander held by a colonist is boarding even where its hull hangs over the next tile
+    const held = u ? pick(s, this.scene.cam, px, py, this.scene.unitPositions, this.picturesForPicking(), 0, false).unit : null
+    const other = held !== null && held !== u?.id ? s.units.find(x => x.id === held) : undefined
+    const t = other ? other.tile : tileUnderPoint(s, this.scene.cam, px, py)
+    if (t === null) return
+    if (u && u.owner === 0 && v.zoom >= C.feel.routeHoldFloor) {
+      // a passenger chosen: the hold plots their step ashore rather than the lander's course
+      if (this.passenger && this.passenger.lander === u.id) { this.plotAshore(t); return }
+      this.plot(u, t)
+      return
+    }
     this.tap(px, py)
   }
 
@@ -598,20 +767,18 @@ export class App {
     // a unit with no moves left is given the way to go next turn, and the toast says so
     const ok = this.dispatch({ t: 'moveUnit', unit: unitId, path: planned }, u.moves > 0 ? `${unitLabel(u.kind)} moved` : `${unitLabel(u.kind)} will go next turn`)
     const nu = this.state.units.find(x => x.id === unitId)
-    if (!ok || !nu || nu.tile === start) { this.scene.cancelMove(); this.releaseUi(); if (ok && nu) { this.open({ kind: 'unit', id: unitId }); this.afterSelect() } return Promise.resolve(ok) }
+    // the unit stays chosen through its move, and its card catches up when the drawing is done
+    if (!ok || !nu || nu.tile === start) { this.scene.cancelMove(); this.releaseUi(); if (ok && nu) { this.scene.cam.view.activeUnit = unitId; this.renderQueueBar(); this.afterSelect() } return Promise.resolve(ok) }
     this.scene.cam.view.selectedTile = nu.tile
     this.scene.cam.view.activeUnit = unitId
-    this.open({ kind: 'unit', id: unitId })
     this.afterSelect()
     const trail = trailOf(this.state, start, planned, nu.tile, nu)
     return new Promise(resolve => {
       this.scene.animateMoves(this.state, [{ id: unitId, trail }], unitId, this.holdPoint(), () => {
         this.releaseUi()
         this.afterSelect()
-        // the sheet may have grown with what the move found, a shore to beach on: keep the unit in
-        // the map left above it
         const at = this.state.units.find(x => x.id === unitId)
-        if (at && this.sheet.kind === 'unit' && this.sheet.id === unitId) this.showAboveSheet(at.tile)
+        if (at && this.scene.cam.view.activeUnit === unitId) this.keepInView(at.tile)
         resolve(true)
       })
     })
@@ -622,16 +789,10 @@ export class App {
    *  the screen's middle when the sheet is put away. Measured where the sheet will be once it has
    *  slid in, not where it is part way through sliding. */
   holdPoint(): [number, number] | null {
-    if (!this.sheetShowing() || isFullScreenSheet(this.sheet)) return null
-    const W = this.root.clientWidth, H = this.root.clientHeight
-    const hud = this.hud.getBoundingClientRect().height
-    if (this.root.classList.contains('landscape')) {
-      const left = W - this.sheetEl.offsetWidth
-      return left > 80 ? [left / 2, hud + (H - hud) / 2] : null
-    }
-    const top = H - this.sheetEl.offsetHeight
-    if (!(top > hud + 40)) return null
-    return [W / 2, hud + (top - hud) / 2]
+    if (isFullScreenSheet(this.sheet) && this.sheetShowing()) return null
+    const f = this.freeArea()
+    if (f.right - f.left < 80 || f.bottom - f.top < 40) return null
+    return [(f.left + f.right) / 2, (f.top + f.bottom) / 2]
   }
 
   /** Tell the camera how much of the screen the sheet and the queue bar cover, so it can carry the
@@ -642,6 +803,7 @@ export class App {
     // the map's edge; after it, the map covers the screen as always
     cam.overhang = this.state.settlements.some(x => x.owner === 0) ? 0 : C.feel.openingOverhang
     const bar = this.queuebar.offsetHeight
+    this.root.style.setProperty('--bar-cover', bar + 'px')
     const showing = this.sheetShowing() && !isFullScreenSheet(this.sheet)
     if (!showing) { cam.inset = { right: 0, bottom: bar }; return }
     if (this.root.classList.contains('landscape')) cam.inset = { right: this.sheetEl.offsetWidth, bottom: 0 }
@@ -679,23 +841,27 @@ export class App {
     this.renderSheet()
   }
 
+  /** The sheet's back arrow: the sheet it was opened from, or, with none, the queue's list if that
+   *  is where it came from, else the map again with whatever is chosen still chosen. */
   back() {
     const prev = this.sheetHistory.pop()
+    if (!prev && !this.queueExpanded) { this.closeSheet(); return }
     this.sheet = prev ?? { kind: 'queue' }
-    if (this.sheet.kind === 'queue') { this.queueExpanded = true; this.scene.cam.view.activeUnit = null; this.route = null; this.afterSelect() }
-    if (this.sheet.kind !== 'unit' && this.foundTarget !== null) this.setFoundTarget(null)
     this.renderSheet()
   }
 
-  /** Put everything away and give the map the whole screen back. */
+  /** Put every sheet away and give the map the whole screen back. What is chosen stays chosen, and
+   *  its card comes back; the founding look stays on the lander's shore while the lander is chosen. */
   closeSheet() {
     this.sheet = { kind: 'queue' }
     this.sheetHistory = []
     this.queueExpanded = false
     this.pick = null
-    if (this.foundTarget !== null) { this.foundTarget = null; this.scene.foundPreview = null; this.scene.updateOverlay(this.state); this.scene.requestDraw() }
+    const v = this.scene.cam.view
+    const lander = v.activeUnit !== null && this.state.units.some(u => u.id === v.activeUnit && u.kind === 'lander')
+    if (lander) { this.aimFounding(); this.scene.requestDraw() }
+    else if (this.foundTarget !== null) { this.foundTarget = null; this.scene.foundPreview = null; this.scene.updateOverlay(this.state); this.scene.requestDraw() }
     this.renderSheet()
-    this.renderQueueBar()
   }
 
   /** Whether the sheet is showing at all. At rest it is not, and the map is the whole screen. */
@@ -712,10 +878,11 @@ export class App {
 
   /** Open the thing a queue item points at. */
   openItem(it: QueueItem) {
+    // a unit's item chooses the unit: the queue goes away, its card comes up, the camera goes to it
+    const unit = it.unit !== undefined ? this.state.units.find(u => u.id === it.unit && u.owner === 0) : undefined
+    if (unit) { this.closeSheet(); this.select(unit.id); this.focus(unit.tile); return }
     if (it.tile !== undefined) this.focus(it.tile)
     else if (it.settlement !== undefined) this.focus(this.state.settlements[it.settlement].tile)
-    else if (it.unit !== undefined) { const u = this.state.units.find(x => x.id === it.unit); if (u) this.focus(u.tile) }
-    if (it.unit !== undefined && this.state.units.some(u => u.id === it.unit)) { this.scene.cam.view.activeUnit = it.unit; this.afterSelect(); this.open({ kind: 'unit', id: it.unit }); return }
     switch (it.opens) {
       case 'settlement': if (it.settlement !== undefined) this.open({ kind: 'settlement', id: it.settlement }); return
       case 'market': this.open({ kind: 'market', settlement: it.settlement ?? 0 }); return
@@ -824,6 +991,11 @@ export class App {
   refresh() {
     // a route belongs to the state it was plotted on; a state that has moved on has dropped it
     if (this.route && !this.state.units.some(u => u.id === this.route!.unit)) this.route = null
+    // a unit that is gone, founded or lost, is no longer chosen; nor is a passenger with no one aboard
+    const v = this.scene.cam.view
+    if (v.activeUnit !== null && !this.state.units.some(u => u.id === v.activeUnit && u.owner === 0)) { v.activeUnit = null; this.passenger = null; this.scene.updateRings(this.state) }
+    if (this.passenger && !this.state.units.some(u => u.id === this.passenger!.lander && u.aboard.length > 0)) this.passenger = null
+    if (this.heldFor === null) this.aimFounding()
     this.paintRoute()
     this.queue = deriveQueue(this.state, SYSTEMS)
     this.stacks.rebuild(this.state)
@@ -852,26 +1024,60 @@ export class App {
     )
   }
 
-  /** The queue at rest: one line carrying its top item and a count, and the turn. */
+  /** The bar along the bottom. At rest it is the queue: one line carrying its top item and a count,
+   *  and the turn. While a unit, a passenger or a tile is chosen and no sheet is up, the slim card
+   *  takes its place, with End turn where it always is. Layout brief section 1. */
   renderQueueBar() {
     if (this.heldFor !== null) return
     const s = this.state
     clear(this.queuebar)
     const q = this.queue
-    const total = q.shown.reduce((a, g) => a + g.items.length, 0) + q.folded.reduce((a, g) => a + g.items.length, 0)
-    const top = q.shown[0]
-    const typeClass = top ? ['', 'loss', 'company', 'stuck', 'idle', 'chance'][top.type] : ''
     const idle = q.shown.concat(q.folded).filter(g => g.type === 3 || g.type === 4).reduce((a, g) => a + g.items.length, 0)
     const label = idle > 0 ? `End turn, ${idle} will idle` : 'End turn'
     const ended = s.declaration?.won || s.declaration?.lost || s.turn >= s.settings.turns
-    this.queuebar.append(
-      h('button', { class: 'top', type: 'button', onClick: () => { if (this.queueExpanded && this.sheet.kind === 'queue') this.closeSheet(); else this.open({ kind: 'queue' }) } },
-        h('span', { class: 'mark ' + typeClass }),
-        h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? top.title : 'A quiet turn'),
-        total > 1 ? h('span', { class: 'count' }, String(total)) : null,
-      ),
-      ended ? button('Over', () => this.showEnd(s.declaration?.won ? true : s.declaration?.lost ? false : null), 'primary') : button(label, () => this.endTurn(), 'primary'),
-    )
+    const turn = ended ? button('Over', () => this.showEnd(s.declaration?.won ? true : s.declaration?.lost ? false : null), 'primary end') : button(label, () => this.endTurn(), 'primary end')
+    const card = this.sheetShowing() ? null : this.currentCard()
+    this.queuebar.classList.toggle('carded', card !== null)
+    if (card) {
+      // one row when there is nothing to do but look, a second for the actions when there is; End
+      // turn is at the bottom right either way, where it is in the queue bar
+      const one = card.actions.length === 0
+      append(this.queuebar, [
+        h('div', { class: 'uc-head' },
+          h('div', { class: 'uc-text' },
+            h('div', { class: 'uc-title' }, h('span', { class: 't' }, card.title), card.tag ? h('span', { class: 'tag' }, card.tag) : null),
+            h('div', { class: 'uc-line' + (card.warn ? ' warn' : '') }, card.line),
+          ),
+          card.more ? button('More', card.more, 'small ghost more') : null,
+          one ? turn : null,
+        ),
+        one ? null : h('div', { class: 'uc-actions' }, ...card.actions, h('span', { class: 'spacer' }), turn),
+      ])
+    } else {
+      const total = q.shown.reduce((a, g) => a + g.items.length, 0) + q.folded.reduce((a, g) => a + g.items.length, 0)
+      const top = q.shown[0]
+      const typeClass = top ? ['', 'loss', 'company', 'stuck', 'idle', 'chance'][top.type] : ''
+      this.queuebar.append(
+        h('button', { class: 'top', type: 'button', onClick: () => { if (this.queueExpanded && this.sheet.kind === 'queue') this.closeSheet(); else this.open({ kind: 'queue' }) } },
+          h('span', { class: 'mark ' + typeClass }),
+          h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? top.title : 'A quiet turn'),
+          total > 1 ? h('span', { class: 'count' }, String(total)) : null,
+        ),
+        turn,
+      )
+    }
+    this.updateInset()
+  }
+
+  /** The card for what is chosen, or null for the queue bar. */
+  private currentCard(): Card | null {
+    const s = this.state
+    const v = this.scene.cam.view
+    const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit && x.owner === 0) : undefined
+    if (u && this.passenger && this.passenger.lander === u.id && u.aboard.length) return passengerCard(this, s, u)
+    if (u) return unitCard(this, s, u)
+    if (this.focusTile !== null) return tileCard(this, s, this.focusTile)
+    return null
   }
 
   /** The unit whose move is being drawn, or minus one for a turn's moves with none in particular:
@@ -881,6 +1087,8 @@ export class App {
 
   private holdUi(unit: number | null) {
     this.heldFor = unit ?? -1
+    // the card's own controls wait for the drawing too; End turn does not
+    this.queuebar.classList.add('held')
   }
 
   /** The move has been drawn: the sheet and the queue catch up with it. */
@@ -888,7 +1096,10 @@ export class App {
     if (this.heldFor === null) return
     this.heldFor = null
     this.sheetEl.classList.remove('held')
-    this.renderQueueBar()
+    this.queuebar.classList.remove('held')
+    // the lander may have come in beside a shore: the founding look goes to it now, not before the
+    // picture of the lander gets there
+    this.aimFounding()
     this.renderSheet()
   }
 
@@ -905,17 +1116,18 @@ export class App {
     const full = showing && isFullScreenSheet(this.sheet)
     this.sheetEl.classList.toggle('open', showing)
     this.sheetEl.classList.toggle('full', full)
-    // a unit of the player's open in the sheet makes the map its target: a hold there plots a
-    // route and the route's end commits it, so nothing covers it. Any other sheet is dismissed by a
-    // tap away from it
-    const live = this.sheet.kind === 'unit' && this.state.units.some(u => u.id === (this.sheet as { id: number }).id && u.owner === 0)
-    this.scrim.classList.toggle('show', showing && !full && !live)
+    // every sheet over the map, a unit's full detail included, goes away with a tap on the map: the
+    // map is reached again with that one tap, and the card the detail grew from comes back
+    this.scrim.classList.toggle('show', showing && !full)
     clear(this.sheetBody)
     this.sheetBody.scrollTop = 0
     this.sheetEl.style.transform = ''
-    if (!showing) { this.updateInset(); return }
-    if (this.sheet.kind === 'queue') this.sheetBody.append(this.renderQueue())
-    else this.sheetBody.append(renderSheet(this, this.sheet))
+    if (showing) {
+      if (this.sheet.kind === 'queue') this.sheetBody.append(this.renderQueue())
+      else this.sheetBody.append(renderSheet(this, this.sheet))
+    }
+    // the bar is the card when nothing is up and the queue bar when a sheet is
+    this.renderQueueBar()
     this.updateInset()
   }
 

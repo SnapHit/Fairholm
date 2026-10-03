@@ -2012,6 +2012,147 @@ another.
 - **A short move can be over before a software renderer draws two frames,** so the smoke test now
   catches the drawn move as it starts rather than watching frames for it.
 
+## Choosing a unit, session of 3 October 2026
+
+Tested on a real phone: the lander was hard to choose because taps were resolved by tile and its
+picture runs over the tiles beside it; nothing showed which unit was chosen; and a chosen unit's
+sheet covered the lower half of the map. Section 1 of the layout brief now says the map is the hero
+and every panel opens at the smallest size that answers the question; section 3 of the feel brief
+now carries the hit-area and highlight rules. Each has a dated line at its top. Nothing in
+`/src/sim` changed.
+
+### 135. A tap is measured against the pictures, front-most first, then the tile
+
+**What.** `pick` in `src/render/picking.ts` tries each unit's picture as the scene last drew it, the
+box `pictureBox` in `src/render/billboards.ts` works out with the same arithmetic that places the
+quad, front-most first (the larger foot is drawn later, in front). Inside a box, the sheet's own
+alpha decides: `pictureCover` reads each sheet's image once, the first time a tap needs it, and
+below `TAP.solid` the tap goes through to what is drawn behind. A unit beats a settlement's building
+wherever the unit itself is drawn, even behind one. A unit's clear corners, and a margin that makes
+its target at least `TAP_MIN_PX` (44) points each way, count where no unit is drawn and no building
+is drawn in front of it. Then the settlement and predecessor marks, then the tile, and a tile with
+one of the player's units on it is a tap on that unit, so the water just under the lander's hull is
+the lander too. At far zoom, where a unit is a mark, its box is `TAP.markBox`, grown the same way.
+
+**Why.** The prompt asked for rectangles front-most first. Rectangles alone were wrong twice in the
+rig: a tap on a militia whose figure showed through the clear corner of a building's rectangle
+opened the settlement; and the lander's foot sits off its tile's middle, so a tap on its own tile
+under the hull fell through to a tile card. The old picking's rule, that units beat settlements when
+the tap is clearly on the unit, is kept: a settlement has its whole picture and its mark besides.
+
+### 136. A hold aims at a unit's picture too
+
+**What.** A hold on another unit's drawn pixels is a hold on that unit's tile; its margins do not
+count, so a hold aims at a tile unless it is plainly on a unit. A colonist holding the lander where
+its hull hangs over the next tile plots going aboard; a militia holding an enemy's picture plots the
+attack. `App.hold`.
+
+**Why.** Found by the rig: holding the lander's picture plotted a walk to the tile under the finger.
+
+### 137. The chosen unit: a ring under it, an outline over it, and nothing moving
+
+**What.** `SelectionMark` in `src/render/selection.ts`. A flat ring in the owner's colour, the bone
+of `C.art.palette.player` for the player, on a dark halo, drawn under the pictures and sized from the
+picture's width; and an outline drawn over everything, found from the sheet's alpha in sixteen
+directions at a fixed width in pixels, bone inside a dark band, so it reads the same at every zoom
+and on grass, sand, water and haze. The tile ring shows only for a tile looked at. There is no flash
+at all. A unit hidden behind a building still shows its outline. The look is `SELECTION` in
+`src/render/look.ts`.
+
+**Why.** The prompt allowed a brief flash; nothing needed it, and a flash is frames.
+
+### 138. The steam blows away, so the frame loop can go idle
+
+**What.** The lander's steam rises for `ARRIVAL.steamSeconds` (14) from the turn's first picture of
+it and thins over `steamFadeSeconds` (2.5), through a `uSteam` uniform; then `Scene.steaming` is
+false and the loop stops. Measured in the rig: no frames drawn in three seconds with the lander
+sitting chosen.
+
+**Why.** Steam kept the loop running through the whole of turns one and two, which is when the
+lander is chosen most. The opening's five lines are read in about ten seconds, under the steam.
+
+### 139. A slim card takes the queue bar's place
+
+**What.** `src/ui/card.ts`, drawn by `App.renderQueueBar`. A title with the moves left beside it; one
+line, which is what is aboard, its standing, quality, order or cargo, or the plotted route ("4 tiles,
+1 turn", "Attack Company regulars, 2 in 10") or why there is none; up to three actions by context,
+Found here, Go, Go aboard, Go ashore, Attack and Clear; then More and End turn, which are not counted
+among the three. End turn is always at the bottom right, where it is in the queue bar; with nothing
+to do but look the card is one row. A tapped tile gets the same card: its ground and yields, or
+another's unit with its attack and defence, or another's settlement, with More for the tile sheet.
+While a sheet is up the bar is the queue bar as before. Measured at 390 by 844: with a unit chosen
+the top strip (59 points) and the card (56) cover 13.6 per cent of the screen; with a route plotted
+or Found here offered, 18.6; with a tile looked at, 15.2.
+
+**Why.** The prompt. It replaces decision 121: with a unit chosen no sheet sits over the map, so
+every sheet has its scrim again and a tap on the map puts it away. The undo toast now sits above
+whatever runs along the bottom.
+
+### 140. More is the full detail, and one tap or a swipe puts it away
+
+**What.** More opens the unit's sheet, or the tile's, over the scrim, and the camera keeps the unit
+in the strip of map above it. A tap on the map, a swipe down on the grip, or the back arrow puts it
+away; the card comes back with any route still plotted, and the unit still chosen. A tap on the map
+with nothing up then lets the unit go. Opening a unit from the queue, the stack chooser or a tile's
+list chooses it and brings up its card rather than its sheet.
+
+### 141. Founding from the card
+
+**What.** The lander chosen beside known land looks at the best shore it could found on, by
+`siteScore`, when it is chosen and when a move that brought it there has been drawn; the map paints
+the ring that shore would work and the card says which way it is and what it is, with Found here. A
+hold on another shore beside it moves the look there, as decision 132 had it. A colonist outside a
+settlement offers Found here when founding there is allowed, once the first settlement stands; the
+preview with its ring is in More. A tap on the shore no longer looks at it: the shore is empty map,
+and a tap there lets the lander go.
+
+### 142. A passenger goes ashore by a hold, and the scout control is gone
+
+**What.** The lander's detail lists who is aboard in the order they step off, under "Aboard". The
+disembark action puts off the last one aboard, and the simulation was not to change, so the next one
+off is the one with Choose. Choosing brings up the passenger's card; a hold on known ground beside
+the lander that is not a mountain plots their step ashore, drawn as a boarding is, the other way;
+Go ashore puts them off and chooses them. The last one aboard may go, and the card says the lander
+cannot found until someone is back, as the old control warned. Back aboard is a hold on the lander
+with the colonist chosen (136). "Send one ashore to scout" is gone.
+
+**Why.** The prompt. It did not work before: nothing let a passenger be chosen.
+
+### 143. The shell never scrolls
+
+**What.** Any scroll of the app's root is put straight back to nothing. `App` constructor.
+
+**Why.** Found by the rig: a browser bringing a control in a sheet into view scrolled the root by
+about a hundred points, though it hides its overflow, and every tap after that landed two tiles off.
+A focused field on a phone can do the same.
+
+### 144. The Company's regulars are drawn with the soldier, and always were
+
+**What.** `UNIT_SPRITE.pieces` in `src/render/look.ts` maps `regulars` and `horse` to
+`company-regular`, and the live game draws them with it; the rig reads the piece back from the
+picture the scene drew. Nothing in the mapping needed fixing.
+
+**Why.** The report came from decision 134's last session, which said they had no drawing. They were
+standing in deep tree shade at a small zoom in that session's pictures and read as a dark form. That
+line was wrong.
+
+### 145. What did not work the way the prompt assumed
+
+- **"Company regulars have no drawing"**: they have, with the soldier (144).
+- **"Test taps against each visible picture's screen rectangle"**: rectangles alone hand a tap on a
+  unit to the clear corner of a building in front of it; the sheets' alpha decides within the
+  rectangle (135).
+- **"Front-most first"** would leave a figure standing just north of a settlement, wholly behind a
+  building, impossible to choose; a unit's own pixels beat a building's (135). Such a figure is still
+  hidden in the picture, and only its outline shows when it is chosen. Art debt.
+- **Looking at founding by tapping the shore** met "a tap on empty map deselects"; the look is now a
+  hold (141).
+- **"At most three actions"** leaves More and End turn uncounted; both are always there.
+- **"All interface together covers no more than about a fifth"**: the top strip counts. At rest it is
+  13.6 per cent, at most 18.6 with a second row of actions. More, when asked for, covers 79.
+- **The frame loop** was not idle with the lander chosen on turns one and two, because of the steam,
+  not the choice (138).
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

@@ -34,7 +34,7 @@ const problems = []
 page.on('pageerror', e => problems.push('PAGEERROR ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 3).join('\n')))
 page.on('console', m => { if (m.type() === 'error') problems.push('console.error: ' + m.text()) })
 const notes = []
-const note = (k, v) => { notes.push(`${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`) }
+const note = (k, v) => { const l = `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`; notes.push(l); if (process.env.VERBOSE) console.log(l) }
 const answers = {}
 
 await page.goto('http://localhost:5194/')
@@ -63,7 +63,7 @@ const tapAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.do
 const holdAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(HOLD_MS); await page.mouse.up(); await page.waitForTimeout(300); await settle(300) }
 const unitTile = (id) => page.evaluate((id) => window.fairholm.state.units.find(u => u.id === id)?.tile ?? null, id)
 const route = () => page.evaluate(() => window.fairholm.route)
-const sheetWords = () => page.evaluate(() => document.querySelector('#sheet .preview')?.textContent?.replace(/\s+/g, ' ').slice(0, 260) ?? '')
+const sheetWords = () => page.evaluate(() => document.querySelector('#queuebar .uc-line')?.textContent?.replace(/\s+/g, ' ').slice(0, 260) ?? '')
 const landerId = await page.evaluate(() => window.fairholm.state.units.find(u => u.owner === 0 && u.kind === 'lander').id)
 const freeArea = () => page.evaluate(() => {
   const a = window.fairholm
@@ -77,11 +77,18 @@ const waitDrawn = async () => {
 }
 const armMoveWait = () => page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
 
-/** Tap a unit of the player's until its sheet is open. */
+/** Tap a unit of the player's until it is chosen and its card is up. */
 const select = async (id) => {
   for (let k = 0; k < 3; k++) {
-    if (await page.evaluate((id) => window.fairholm.sheet.kind === 'unit' && window.fairholm.sheet.id === id && window.fairholm.scene.cam.view.activeUnit === id, id)) break
-    const p = await screenOf(await unitTile(id))
+    if (await page.evaluate((id) => window.fairholm.scene.cam.view.activeUnit === id && document.getElementById('queuebar').classList.contains('carded'), id)) break
+    // a tap on the middle of its picture, as a player taps a figure, or on its tile where it has none
+    const p = await page.evaluate((id) => {
+      const a = window.fairholm, sc = a.scene, z = sc.cam.view.zoom, w = a.state.world.width
+      const pic = sc.drawnClose ? sc.unitPictures.get(id) : null, at = sc.unitPositions.get(id)
+      if (pic && at) { const [sx, sy] = sc.cam.worldToScreen(at[0], at[1]); return [sx + (pic.box[0] + pic.box[2]) / 2 * z, sy + (pic.box[1] + pic.box[3]) / 2 * z] }
+      const t = a.state.units.find(u => u.id === id).tile
+      return sc.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5)
+    }, id)
     await tapAt(p[0], p[1])
   }
   await settle(400)
@@ -164,7 +171,7 @@ note('route into the fog, six out at the wider zoom', { tilesOut: fogTile.k, ...
 await shot('03-route-into-fog')
 const beforeGo = await unitTile(landerId)
 await armMoveWait()
-await page.locator('#sheet .preview .btn.primary').click()
+await page.locator('#queuebar .btn.go').click()
 await waitDrawn()
 const afterGo = await unitTile(landerId)
 note('Go', { from: beforeGo, to: afterGo, committed: afterGo !== beforeGo })
@@ -204,7 +211,7 @@ for (let k = 0; k < 4; k++) {
   for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + dx * i / 12, cy + dy * i / 12); await page.waitForTimeout(30) }
   await page.waitForTimeout(200); await page.mouse.up(); await settle(300)
 }
-const stillChosen = await page.evaluate((id) => window.fairholm.scene.cam.view.activeUnit === id && window.fairholm.sheet.kind === 'unit', landerId)
+const stillChosen = await page.evaluate((id) => window.fairholm.scene.cam.view.activeUnit === id, landerId)
 const r4 = await holdTile(landerId, sixOut)
 note('a far destination after panning', { offScreenAtFirst: offScreen, stillChosenAfterPan: stillChosen, zoom: await page.evaluate(() => window.fairholm.scene.cam.view.zoom), ...r4 })
 await shot('04-far-destination-after-panning')
@@ -225,7 +232,7 @@ const land = await page.evaluate((id) => {
   // known land the lander is not beside, on the screen
   const a = window.fairholm, s = a.state, w = s.world.width, h = s.world.height
   const u = s.units.find(x => x.id === id)
-  const top = a.hud.getBoundingClientRect().height + 30, bottom = a.root.clientHeight - a.sheetEl.offsetHeight - 30
+  const top = a.hud.getBoundingClientRect().height + 30, bottom = a.root.clientHeight - a.queuebar.offsetHeight - 30
   let best = null
   for (let i = 0; i < s.world.tiles.length; i++) {
     const t = s.world.tiles[i]
@@ -250,7 +257,7 @@ const shoreBeside = await page.evaluate(async (id) => {
 }, landerId)
 if (shoreBeside !== null) {
   const r5b = await holdTile(landerId, shoreBeside)
-  const focus = await page.evaluate(() => ({ foundTarget: window.fairholm.foundTarget, control: !!document.querySelector('#sheet .found .btn.primary'), settlements: window.fairholm.state.settlements.filter(x => x.owner === 0).length }))
+  const focus = await page.evaluate(() => ({ foundTarget: window.fairholm.foundTarget, control: [...document.querySelectorAll('#queuebar .btn')].some(b => b.textContent === 'Found here'), settlements: window.fairholm.state.settlements.filter(x => x.owner === 0).length }))
   note('the lander holding the shore beside it', { ...r5b, ...focus, pointsAtFounding: focus.foundTarget === shoreBeside && focus.control, foundedNothing: focus.settlements === 0 })
   await shot('05b-shore-beside-points-at-founding')
 }
@@ -311,7 +318,7 @@ await select(setup.militia)
 await holdTile(setup.militia, setup.foe)
 const warsBefore = await page.evaluate(() => window.fairholm.state.dispatch.filter(d => d.kind === 'war').length)
 await armMoveWait()
-await page.locator('#sheet .preview .btn.danger').click()
+await page.locator('#queuebar .btn.danger').click()
 await waitDrawn()
 await page.waitForTimeout(600)
 const attacked = await page.evaluate(({ id, before }) => ({ wars: window.fairholm.state.dispatch.filter(d => d.kind === 'war').slice(before).map(d => d.text) }), { id: setup.foeId, before: warsBefore })
@@ -321,7 +328,8 @@ note('attack, on purpose with the Attack control', attacked)
 answers['every hold plots without moving anything'] = [r1, r2, r3, r4, r5, r6, self].every(r => r && !r.moved)
 answers['a tap on the end commits'] = afterTap === one.tile && toSix !== fromSix
 answers['the Go control commits'] = afterGo !== beforeGo
-answers['the lander reaches six away, by panning and at a wider zoom'] = (fogTile.k >= 6 && r3.plotted) && dist === 6 && offScreen && stillChosen
+// with the slim card the tile six out is often on the map already, and then no pan is needed
+answers['the lander reaches six away, panning when it must and at a wider zoom'] = (fogTile.k >= 6 && r3.plotted) && dist === 6 && stillChosen
 answers['turn ends are numbered on the map'] = markers.length >= 2 && markers.every((m, i) => m === String(i + 1))
 answers['an attack needs a hold and then a confirming tap'] = r6.plotted && !r6.moved && foeAfterHold === 'regulars' && afterAway.route === null && afterAway.foe === 'regulars' && afterAway.wars === warsAtStart && attacked.wars.length > 0
 note('answers', answers)

@@ -43,6 +43,16 @@ section says which ones are load-bearing.
 | A tap meant for the map commits the route | The end's hit area too wide at wide zoom | `C.feel.routeEndHitPx` | Lower, not below 22 | Below 22 the end is under the 44 point floor |
 | The route is hard to see on light ground | Line or halo too thin | `--route-width`, `--route-halo-width` in `src/ui/theme.ts` | Raise | Nothing else |
 
+## Choosing a unit misses, or the chosen one is hard to see
+
+| Symptom | Likely cause | Constant | Direction | Also affects |
+|---|---|---|---|---|
+| A small figure is hard to hit | Target too small | `TAP_MIN_PX` in `src/ui/theme.ts` | Raise | Every control's floor; next to a building behind it, more of the building chooses the unit |
+| A tap on a faint edge of a picture goes through it | Too much of the picture counted as clear | `TAP.solid` in `src/render/look.ts` | Lower | A clear corner over a unit behind starts to hide it |
+| The chosen unit is lost on pale ground or in haze | Outline too thin, or its dark band too faint | `SELECTION.outlinePx`, `outlineHaloPx`, `outlineHaloAlpha` | Raise | Thick outlines merge in a stack |
+| The ring under a chosen hull is too big or too small | Ring sized from the picture's width | `SELECTION.ringShare`, `ringMin`, `ringMax` | Lower or raise | Every unit's ring |
+| The frame loop runs too long after the opening | Steam rises too long | `ARRIVAL.steamSeconds`, `steamFadeSeconds` | Lower | The opening shot is still while the lines read |
+
 ## Immigration stalls
 
 | Symptom | Likely cause | Constant | Direction | Also affects |
