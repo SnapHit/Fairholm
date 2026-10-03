@@ -98,6 +98,12 @@ function runExplore(s: GameState, u: Unit, ctx: TurnContext) {
   advance(s, u)
 }
 
+/** An armed unit of the player's on the hauler's tile or beside it. */
+function escorted(s: GameState, u: Unit): boolean {
+  const near = [u.tile, ...neighbours8(s.world.width, s.world.height, u.tile)]
+  return s.units.some(x => x.owner === 0 && x !== u && isArmed(x.kind) && !isHull(x.kind) && near.includes(x.tile))
+}
+
 function runHaul(s: GameState, u: Unit, ctx: TurnContext) {
   if (!u.order || u.order.kind !== 'haul') return
   const o = u.order
@@ -105,7 +111,11 @@ function runHaul(s: GameState, u: Unit, ctx: TurnContext) {
   const stop = o.stops[o.next % o.stops.length]
   const to = s.settlements[stop.settlement]
   if (!to || to.owner !== 0) { u.order = null; u.since['contact'] = s.turn; return }
-  if (o.risk === 'avoid' && hostileNear(s, u.tile, 3)) { u.since['contact'] = u.since['contact'] ?? s.turn; return }
+  // the risk posture, rival charters brief section 8, decided once for the route: avoid waits
+  // while anything hostile is near; escort waits unless an armed unit of the player's stands with
+  // it or beside it; run goes on regardless
+  if (o.risk === 'avoid' && hostileNear(s, u.tile, C.orders.hostileRadius)) { u.since['contact'] = u.since['contact'] ?? s.turn; return }
+  if (o.risk === 'escort' && hostileNear(s, u.tile, C.orders.hostileRadius) && !escorted(s, u)) { u.since['contact'] = u.since['contact'] ?? s.turn; return }
   if (u.tile !== to.tile) {
     const path = findPath(s, u, u.tile, to.tile)
     if (!path) { u.since['contact'] = s.turn; return }
@@ -193,7 +203,8 @@ export const ordersSystem: System = {
     for (const u of s.units) {
       if (u.owner !== 0 || !u.order) continue
       if (u.since['contact'] !== undefined && (u.order.kind === 'haul' || u.order.kind === 'goto')) {
-        out.push({ key: `haulStopped:${u.id}`, group: 'haulStopped', type: 3, title: `A ${unitLabel(u.kind)} stopped on its route`, body: u.order.kind === 'haul' ? 'Hostile units near, or no way through. It waits for you.' : 'No way through to where it was sent.', unit: u.id, tile: u.tile, magnitude: 1, since: u.since['contact'], choices: [{ label: 'Clear the order', action: { t: 'setUnitOrder', unit: u.id, order: null } }], opens: 'unit' })
+        const posture = u.order.kind === 'haul' ? (u.order.risk === 'escort' ? 'Hostile units near and no escort with it, or no way through. It waits for an armed unit beside it, or for you.' : 'Hostile units near, or no way through. It waits for you.') : 'No way through to where it was sent.'
+        out.push({ key: `haulStopped:${u.id}`, group: 'haulStopped', type: 3, title: `A ${unitLabel(u.kind)} stopped on its route`, body: posture, unit: u.id, tile: u.tile, magnitude: 1, since: u.since['contact'], choices: [{ label: 'Clear the order', action: { t: 'setUnitOrder', unit: u.id, order: null } }], opens: 'unit' })
       }
     }
     return out

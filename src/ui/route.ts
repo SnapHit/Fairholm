@@ -19,6 +19,9 @@ const SVG = 'http://www.w3.org/2000/svg'
 export interface RouteLayer {
   /** After a plot, a commit or a clear: what to draw, from where the unit stands. */
   show(s: GameState, r: RoutePlan | null, from: number): void
+  /** A circuit being planned (DECISIONS.md 161): the stops in order, closed back to the first,
+   *  each numbered, drawn as a guess line since nothing walks it yet. Null takes it away. */
+  showCircuit(s: GameState, stops: number[] | null): void
   /** Every frame: where it is on the screen. */
   place(): void
 }
@@ -70,9 +73,43 @@ export function mountRouteLayer(root: HTMLElement, scene: Scene): RouteLayer {
   oddsTag.append(oddsBox, oddsText)
   svg.append(halo, strikeHalo, known, guess, strikeLeg, endRing, cross, marks, oddsTag)
 
+  let circuit = false
+
+  const numbered = (at: [number, number], n: number) => {
+    const g = el('g', 'turn')
+    const c = el('circle', '')
+    c.setAttribute('r', String(ROUTE_TURN_PX))
+    const tx = el('text', '')
+    tx.setAttribute('text-anchor', 'middle')
+    tx.setAttribute('dominant-baseline', 'central')
+    tx.textContent = String(n)
+    g.append(c, tx)
+    marks.append(g)
+    turnEnds.push({ at, n })
+  }
+
+  const showCircuit = (s: GameState, stops: number[] | null) => {
+    const w = s.world.width
+    const mid = (t: number): [number, number] => [(t % w) + 0.5, Math.floor(t / w) + 0.5]
+    points = []; unseen = []; turnEnds = []; end = null; strike = null; odds = null; kind = 'none'
+    while (marks.firstChild) marks.removeChild(marks.firstChild)
+    circuit = !!stops && stops.length > 0
+    if (!stops || !stops.length) { svg.style.display = 'none'; return }
+    svg.style.display = ''
+    svg.setAttribute('class', 'circuit')
+    // the stops in order and back to the first, every leg a guess: nothing has walked it
+    points = [...stops.map(mid), ...(stops.length > 1 ? [mid(stops[0])] : [])]
+    unseen = points.slice(1).map(() => true)
+    end = mid(stops[stops.length - 1])
+    stops.forEach((t, i) => numbered(mid(t), i + 1))
+    place()
+  }
+
   const show = (s: GameState, r: RoutePlan | null, from: number) => {
     const w = s.world.width
     const mid = (t: number): [number, number] => [(t % w) + 0.5, Math.floor(t / w) + 0.5]
+    if (circuit && !r) return
+    circuit = false
     points = []; unseen = []; turnEnds = []; end = null; strike = null; odds = null; kind = 'none'
     while (marks.firstChild) marks.removeChild(marks.firstChild)
     if (!r || from < 0) { svg.style.display = 'none'; return }
@@ -86,17 +123,9 @@ export function mountRouteLayer(root: HTMLElement, scene: Scene): RouteLayer {
     if (r.kind !== 'move') strike = end
     if (r.kind === 'attack') odds = r.odds === null ? 'Odds unknown' : oddsWords(r.odds)
     svg.setAttribute('class', r.kind)
-    for (const t of turnEnds) {
-      const g = el('g', 'turn')
-      const c = el('circle', '')
-      c.setAttribute('r', String(ROUTE_TURN_PX))
-      const tx = el('text', '')
-      tx.setAttribute('text-anchor', 'middle')
-      tx.setAttribute('dominant-baseline', 'central')
-      tx.textContent = String(t.n)
-      g.append(c, tx)
-      marks.append(g)
-    }
+    const ends = turnEnds.slice()
+    turnEnds = []
+    for (const t of ends) numbered(t.at, t.n)
     place()
   }
 
@@ -154,5 +183,5 @@ export function mountRouteLayer(root: HTMLElement, scene: Scene): RouteLayer {
   }
 
   svg.style.display = 'none'
-  return { show, place }
+  return { show, showCircuit, place }
 }

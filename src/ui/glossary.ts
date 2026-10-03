@@ -52,7 +52,7 @@ export const TERMS: Record<string, Term> = {
   frame: { title: 'Frame', text: 'Frame is timber the carpenter has worked, counted toward the building under way. It is never traded.' },
   tier: { title: 'Tier', text: 'Each building line has three tiers. Each tier multiplies what its two workers can make.' },
   workers: { title: 'Workers', text: 'Two colonists fit in any building. Their standing sets their output, and the tier multiplies it.' },
-  standingOrders: { title: 'Standing orders', text: 'Four rules a settlement follows by itself: what it is for, what to do with surplus, what to do with growth, and what to build. They never fight you.' },
+  standingOrders: { title: 'Standing orders', text: 'Four rules a settlement follows by itself: what it is for, what to do with surplus, what to do with growth, and what to build. They never fight you. A unit has orders too: a haul circuit or a patrol, planned by tapping the map.' },
   purpose: { title: 'Purpose', text: 'What a settlement is for. New arrivals take jobs that serve it, after feeding themselves.' },
   surplus: { title: 'Surplus rule', text: 'What a settlement does with stock above a threshold: consign, hold, ship to another settlement, or offer to a predecessor people. Tap a good in the strip to give that good a rule of its own.' },
   growth: { title: 'Growth rule', text: 'What happens when food banks a new colonist: keep them, or send them to another settlement.' },

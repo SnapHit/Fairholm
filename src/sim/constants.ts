@@ -241,6 +241,15 @@ export const C = {
   },
 
   // -------------------------------------------------------------------------------------------
+  // Units under standing orders, queue brief section 4 and rival charters brief section 8
+  // -------------------------------------------------------------------------------------------
+  orders: {
+    /** How near a hostile armed unit has to be, in tiles, for a haul route's avoid or escort
+     *  posture to stop the hauler. */
+    hostileRadius: 3,
+  },
+
+  // -------------------------------------------------------------------------------------------
   // Turn, queue and standing orders brief
   // -------------------------------------------------------------------------------------------
   queue: {

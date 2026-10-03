@@ -2541,6 +2541,38 @@ roundabout way to spend gold. It is the first number tried.
 **Symptom if wrong.** Every lot of linen going to the predecessors for flax and nothing to the
 Company: lower the bonus. Nobody bothering: raise it, or the store's rate.
 
+### 161. Orders that outlast the turn: a mode for planning them, and routes that start next turn
+
+**What.** From a unit's detail, "Plan a haul circuit" for anything that carries and "Plan a patrol"
+for anything armed on land open a mode: the sheet goes away, the card says what is being planned,
+and every tap on the map adds a stop, a settlement of the player's for a circuit, any tile for a
+patrol; the last stop tapped again comes off. The circuit shows on the map as the stops numbered and
+a dashed line through them and back to the first, drawn by the route layer in the accent colour.
+More, for a circuit, opens the stops' detail: for each stop and each good, load or unload, all of
+it, and the risk posture for the whole route from the rival charters brief section 8, avoid, run or
+escort, decided once per route and not once per encounter. Save sets the order; Cancel or letting
+the unit go leaves everything as it was. Holds in the mode plot nothing and say so. Outside it the
+gesture rules are what they were. `Authoring` in `src/ui/app.ts`, `authoringCard` in
+`src/ui/card.ts`, `authoringSheet` in `src/ui/sheets.ts`, `showCircuit` in `src/ui/route.ts`.
+
+The orders system now honours the posture: avoid waits while anything hostile is within
+`C.orders.hostileRadius`; escort waits unless an armed unit of the player's stands with the hauler
+or beside it; run goes on regardless. The stopped card says which posture stopped it.
+
+And a unit with no moves left can plot a route: the planner no longer refuses, the walk is reckoned
+from next turn's full movement, the card says "starting next turn", and committing it sets the
+order the orders system carries out on the next turn, which is what a route set at the end of a
+turn was always going to do.
+
+**Why.** The prompt. The haul and patrol orders have been in the state since the first build with no
+way to author them (`RISKS.md` section 2, the sheets), and a route the player could not plot because
+the unit had already moved this turn was the commonest small refusal in play.
+
+**Measured** in `scripts/phase5.mjs`: from the hauler's sheet, Plan a haul circuit; two taps add
+the Landing and a settlement three tiles off; the circuit draws with two numbered stops; More sets
+linen to load at the first and the posture to run; Save sets the order, and two turns later the
+hauler has loaded and left.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

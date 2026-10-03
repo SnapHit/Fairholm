@@ -140,6 +140,13 @@ has been sent. The player should feel it on the first big sale.
 | Rival war parties are hardened and unbeatable | Strength growth | `C.rivals.strengthPerTurn` | Lower | The hardened threshold is `strength > 12` in `rivals.ts` |
 | Every rival declares and wins by turn 480 on hard | Declaration chance | `0.004` a turn after turn 150 in `rivals.ts` (move to `C.rivals`) | Lower | `difficulty.*.rivalsMayDeclare` turns it off |
 
+## Haul routes stop too often, or walk into trouble
+
+| Symptom | Likely cause | Constant | Direction | Also affects |
+|---|---|---|---|---|
+| A hauler under avoid waits for a hostile three tiles off that never comes | The radius | `C.orders.hostileRadius` | Lower | Escort uses the same radius |
+| Routes under run are raided every time | That is the posture; the player chose it | | Choose avoid or escort in the circuit's detail (decision 161) | |
+
 ## The predecessors are not worth the attention
 
 | Symptom | Likely cause | Constant | Direction | Also affects |
@@ -240,7 +247,7 @@ Found while writing this table. Each is a number a tuner will look for in `C` an
 |---|---|---|
 | `src/sim/rivals.ts` | `0.08`, `strength / 4`, `0.3`, `> 12`, `0.02`, `0.01`, `0.015`, `0.004`, `turn > 150`, `pop > 20`, `0.02`, `/ 30` | War-party chance and cap, outrider share, hardened threshold, rival building chances, declaration chance and gates, war resolution odds |
 | `src/sim/fleet.ts` | `0.6`, `3`, `0.4`, `+= 2`, `<= 10` | Launch chance, intervention accrual, intervention cut, blockade ship damage, anchorage preference radius |
-| `src/sim/orders.ts` | `2`, `4`, `3`, `>= 10` | Transit speeds without and with roads, hostile radius, minimum surplus to ship |
+| `src/sim/orders.ts` | `2`, `4`, `>= 10` | Transit speeds without and with roads, minimum surplus to ship (the hostile radius is `C.orders.hostileRadius` now) |
 | `src/sim/predecessors.ts` | `200`, `0.35`, `0.1`, `3`, `0.5` | Purse base, purse drawdown, purse gain, refill, haggle loss fraction |
 | `src/sim/military.ts` | `0.5`, `1.6`, `<= 12` | Sack fraction, signatory eight promotion bonus, the Company's landing preference radius |
 | `src/sim/naval.ts` | `0.5`, `>= 2`, `6`, `5` | Coin toss for a slower raider, go-home damage, raider path length, the sail card radius |

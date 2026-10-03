@@ -10,7 +10,7 @@ import { previewProduction, buildable, buildingName, storageCapacity, isCoastalS
 import { neighbours8, isLand, dist } from '../sim/worldgen'
 import { turnsToCoast } from '../sim/autopilot'
 import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, recompute } from '../sim/market'
-import { maxMoves, cargoCapacity, equipCost, isHull, unitAttack, unitDefence } from '../sim/units'
+import { maxMoves, cargoCapacity, equipCost, isHull, isArmed, unitAttack, unitDefence } from '../sim/units'
 import { sightMask } from '../sim/fog'
 import { signatoryList } from '../sim/grievance'
 import { predecessorStore, offerTerms } from '../sim/predecessors'
@@ -24,7 +24,7 @@ import {
 import { settlementScreen, terrainLayers, tileGoodOrder } from './settlement'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
-import type { App } from './app'
+import type { App, Authoring } from './app'
 import type { RoutePlan } from '../sim/route'
 import { oddsWords } from './route'
 import type { Action } from '../sim/actions'
@@ -43,6 +43,7 @@ export type SheetSpec =
   | { kind: 'unit'; id: number } | { kind: 'cargo'; id: number } | { kind: 'tile'; tile: number } | { kind: 'stack'; tile: number }
   | { kind: 'demand' } | { kind: 'glossary'; key: string } | { kind: 'dispatch' }
   | { kind: 'signatories' } | { kind: 'predecessor'; id: number } | { kind: 'rivals' } | { kind: 'declaration' }
+  | { kind: 'authoring' }
   | { kind: 'menu' } | { kind: 'newgame' } | { kind: 'intent' } | { kind: 'settings' }
 
 // One place each of these becomes a word: the goods in src/ui/selectors.ts, the ground in
@@ -116,6 +117,7 @@ export function renderSheet(app: App, spec: SheetSpec): HTMLElement {
     case 'dispatch': return dispatchSheet(app, s)
     case 'signatories': return signatoriesSheet(app, s)
     case 'predecessor': return predecessorSheet(app, s, spec.id)
+    case 'authoring': return app.authoring ? authoringSheet(app, s, app.authoring) : app.renderQueue()
     case 'rivals': return rivalsSheet(app, s)
     case 'declaration': return declarationSheet(app, s)
     case 'menu': return menuSheet(app, s)
@@ -608,6 +610,11 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   if (u.kind !== 'colonist' && u.kind !== 'hauler' && u.kind !== 'improver' && !isHull(u.kind)) {
     if (here && here.owner === 0) actions.push(button(u.order?.kind === 'garrison' ? 'Garrisoned' : 'Garrison here', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: u.order?.kind === 'garrison' ? null : { kind: 'garrison', settlement: here.id } }, 'Order set'), 'small'))
   }
+  // orders that outlast the turn (DECISIONS.md 161): a haul circuit for anything that carries, a
+  // patrol for anything armed on land. Planning is a mode: taps on the map add stops, Save sets it
+  if (cargoCapacity(u) > 0 && u.kind !== 'lander') actions.push(button(u.order?.kind === 'haul' ? 'Change the haul circuit' : 'Plan a haul circuit', () => app.beginAuthoring(u.id, 'haul'), 'small'))
+  if (isArmed(u.kind) && !isHull(u.kind) && u.kind !== 'battery' && u.kind !== 'damagedBattery') actions.push(button(u.order?.kind === 'patrol' ? 'Change the patrol' : 'Plan a patrol', () => app.beginAuthoring(u.id, 'patrol'), 'small'))
+  if (u.order && u.order.kind === 'haul') actions.push(muted(`On a circuit of ${u.order.stops.length}: ${u.order.stops.map(st => s.settlements[st.settlement]?.name ?? '?').join(', ')}. Posture: ${RISK_WORDS[u.order.risk]}.`))
   if (u.order && u.order.kind !== 'garrison') actions.push(button(STOP_LABELS[u.order.kind] ?? 'Stop', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: null }, 'Order cleared'), 'small ghost'))
   if (u.kind === 'colonist' && !u.order) actions.push(button('Explore by itself', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: { kind: 'explore' } }, 'Exploring'), 'small ghost'))
   const carrying = Object.keys(u.cargo).length ? 'Carrying ' + Object.entries(u.cargo).map(([g, n]) => `${n} ${g}`).join(', ') + '.' : null
@@ -846,6 +853,51 @@ function signatoriesSheet(app: App, s: GameState): HTMLElement {
   panel.append(section('The twelve', ...list.map(e => line([h('b', {}, e.name), muted(` · ${e.category}`)], ch.signatories.includes(e.index) ? 'signed' : muted(e.effect)))))
   return panel
 }
+
+const RISK_WORDS: Record<'avoid' | 'run' | 'escort', string> = {
+  avoid: 'avoid: wait while anything hostile is near',
+  run: 'run: go on regardless',
+  escort: 'escort: wait for an armed unit to stand with it',
+}
+
+/** The stops of a haul circuit being planned, each with what it loads and unloads, and the risk
+ *  posture for the whole route. Nothing here is written until Save on the card. */
+function authoringSheet(app: App, s: GameState, a: Authoring): HTMLElement {
+  const panel = h('div', { class: 'panel' }, header(app, 'The haul circuit', `${a.stops.length} ${a.stops.length === 1 ? 'stop' : 'stops'} so far · tap the map to add more`))
+  const goods = (st: Settlement) => GOODS.filter(g => st.stock[g] > 0 || a.stops.some(x => (x.load[g] ?? 0) > 0))
+  a.stops.forEach((stop, i) => {
+    const st = s.settlements[stop.settlement]
+    if (!st) return
+    const rows: HTMLElement[] = []
+    for (const g of goods(st)) {
+      const loading = (stop.load[g] ?? 0) > 0, unloading = (stop.unload[g] ?? 0) > 0
+      const set = (what: 'load' | 'unload' | 'leave') => {
+        delete stop.load[g]; delete stop.unload[g]
+        if (what === 'load') stop.load[g] = HAUL_ALL
+        if (what === 'unload') stop.unload[g] = HAUL_ALL
+        app.renderSheet()
+      }
+      rows.push(h('div', { class: 'line' },
+        h('span', { class: 'l' }, GOOD_NAMES[g], muted(` · ${st.stock[g]} here`)),
+        h('span', { class: 'chips' },
+          h('button', { class: 'chip small' + (loading ? ' on' : ''), type: 'button', onClick: () => set(loading ? 'leave' : 'load') }, 'load'),
+          h('button', { class: 'chip small' + (unloading ? ' on' : ''), type: 'button', onClick: () => set(unloading ? 'leave' : 'unload') }, 'unload'),
+        )))
+    }
+    panel.append(section(`${i + 1}. ${st.name}`,
+      rows.length ? h('p', { class: 'muted' }, 'Load takes all of a good there is room for; unload leaves all of it.') : muted('Nothing in store here yet; set what to unload when it has something.'),
+      ...rows,
+      button('Take this stop off', () => { a.stops.splice(i, 1); app.renderSheet(); app.renderQueueBar(); app.paintCircuit() }, 'small ghost'),
+    ))
+  })
+  panel.append(section('Risk posture', h('p', { class: 'muted' }, 'Decided once for the route, not once per encounter.'),
+    h('div', { class: 'chips' }, (['avoid', 'run', 'escort'] as const).map(r => h('button', { class: 'chip' + (a.risk === r ? ' on' : ''), type: 'button', onClick: () => { a.risk = r; app.renderSheet() } }, RISK_WORDS[r])))))
+  panel.append(row(button('Save the circuit', () => { if (app.saveAuthoring()) app.back() }, 'primary'), button('Cancel', () => app.cancelAuthoring(), 'ghost')))
+  return panel
+}
+
+/** "All of it": a load or unload amount larger than any cargo. */
+const HAUL_ALL = 9999
 
 function predecessorSheet(app: App, s: GameState, id: number): HTMLElement {
   const p = s.predecessors[id]

@@ -19,7 +19,7 @@ import { tileLook, tileWords } from '../render/tiles'
 import { GOOD_WORDS, standingWords } from './selectors'
 import { oddsWords } from './route'
 import { button, plural } from './dom'
-import type { App, UiRoute } from './app'
+import type { App, UiRoute, Authoring } from './app'
 
 /** What the card shows: a title with a short tag beside it (the moves left), one line, the actions
  *  that fit, and what More opens, or null where there is nothing more to say. */
@@ -66,12 +66,13 @@ export function routeLine(s: GameState, u: Unit, r: UiRoute): string {
       : `Ashore onto ${ground}, this turn.`
   }
   const turns = plural(Math.max(1, r.arrives), 'turn')
+  const later = r.startsNextTurn ? ', starting next turn' : ''
   if (r.kind === 'attack') {
     const odds = r.odds === null ? 'odds unknown until in sight' : oddsWords(r.odds).toLowerCase()
-    return `Attack ${r.target}, ${odds}${r.arrives > 1 ? `, in ${turns}` : ''}${r.declares !== null ? `. A declaration of war on ${s.charters[r.declares].name}` : ''}`
+    return `Attack ${r.target}, ${odds}${r.arrives > 1 ? `, in ${turns}` : ''}${later}${r.declares !== null ? `. A declaration of war on ${s.charters[r.declares].name}` : ''}`
   }
-  if (r.kind === 'board') return r.arrives <= 1 ? 'Back aboard the lander, this turn' : `Back aboard the lander in ${turns}`
-  return `${plural(r.path.length, 'tile')}, ${turns}${r.unseen.some(Boolean) ? ', through fog' : ''}`
+  if (r.kind === 'board') return r.arrives <= 1 ? 'Back aboard the lander, this turn' : `Back aboard the lander in ${turns}${later}`
+  return `${plural(r.path.length, 'tile')}, ${turns}${r.unseen.some(Boolean) ? ', through fog' : ''}${later}`
 }
 
 /** Why there is no route, in the card's words. For the lander holding the shore beside it the card
@@ -214,6 +215,31 @@ export function tileCard(app: App, s: GameState, tile: number): Card {
   if (owner) bits.push(owner.player ? 'your ground' : `${owner.name}'s ground`)
   card.line = cap(bits.join(' · '))
   return card
+}
+
+/** The card while a circuit or a patrol is being planned: what has been tapped so far, and Save and
+ *  Cancel. More opens the stops' detail, where each stop's load and unload and the risk posture
+ *  are set. */
+export function authoringCard(app: App, s: GameState, a: Authoring): Card {
+  const u = s.units.find(x => x.id === a.unit)
+  const haul = a.kind === 'haul'
+  const names = haul ? a.stops.map(st => s.settlements[st.settlement]?.name ?? '?') : a.tiles.map(t => tileWords(tileLook(s, t)).toLowerCase())
+  const n = names.length
+  const enough = n >= 2
+  const line = n === 0
+    ? (haul ? 'Tap your settlements in the order to visit them.' : 'Tap the tiles the patrol should walk between.')
+    : `${names.map((x, i) => `${i + 1} ${x}`).join(', ')}${enough ? `, and back to ${names[0]}` : haul ? '. Tap the next settlement.' : '. Tap the next tile.'}`
+  const actions: HTMLElement[] = []
+  if (enough) actions.push(button('Save', () => { app.saveAuthoring() }, 'go'))
+  actions.push(button('Cancel', () => app.cancelAuthoring(), 'ghost'))
+  return {
+    title: haul ? `Planning a haul circuit${u ? ` for ${unitLabel(u.kind).toLowerCase()}` : ''}` : `Planning a patrol${u ? ` for ${unitLabel(u.kind).toLowerCase()}` : ''}`,
+    tag: n ? plural(n, haul ? 'stop' : 'point') : null,
+    line,
+    warn: false,
+    actions,
+    more: haul && n > 0 ? () => app.open({ kind: 'authoring' }) : null,
+  }
 }
 
 function cap(text: string): string {

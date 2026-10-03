@@ -116,6 +116,8 @@ body {
 #route .end { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 3px; }
 #route.attack .end { fill: var(--loss-soft); stroke: var(--loss); }
 #route .cross { fill: none; stroke: var(--loss); stroke-width: 4px; stroke-linecap: round; }
+#route.circuit .leg.guess { stroke: var(--accent); }
+#route.circuit .end { display: none; }
 #route .turn circle { fill: var(--surface-base); stroke: var(--route-line); stroke-width: 2px; }
 #route .turn text { fill: var(--route-line); font: var(--weight-strong) var(--text-tiny) var(--font); }
 #route .odds rect { fill: var(--loss); }

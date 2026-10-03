@@ -181,6 +181,53 @@ describe('the predecessors trade in kind', () => {
   })
 })
 
+describe('a haul circuit and its risk posture', () => {
+  it('runs the circuit, waits under avoid and escort with a hostile near, and runs regardless under run', () => {
+    const s = landed('haul-seed')
+    const home = s.settlements.find(x => x.owner === 0)!
+    const w = s.world.width
+    const site = s.world.tiles.findIndex((tt, i) => isLand(tt) && tt.terrain !== 'mountain' && dist(w, i, home.tile) === 3 && foundingProblem(s, i) === null)
+    expect(site).toBeGreaterThanOrEqual(0)
+    const far = foundSettlement(s, site, 0, [makeColonist(s, 'free')])
+    home.buildings.storage = 2
+    home.stock.linen = 100
+    const hauler = makeUnit(s, 0, 'hauler', home.tile, makeColonist(s, 'free'))
+    s.units.push(hauler)
+    const circuit = (risk: 'avoid' | 'run' | 'escort') => applyAction(s, { t: 'setUnitOrder', unit: hauler.id, order: { kind: 'haul', next: 0, risk, stops: [{ settlement: home.id, load: { linen: 9999 }, unload: {} }, { settlement: far.id, load: {}, unload: { linen: 9999 } }] } })
+    circuit('avoid')
+    // the first stop is where it stands: it loads and sets out; a few turns on the linen is there
+    for (let i = 0; i < 6; i++) applyAction(s, { t: 'endTurn' })
+    expect(far.stock.linen).toBeGreaterThan(0)
+    // a hostile near the road, two tiles off so it threatens without reaching the hauler this turn:
+    // under avoid it waits and the queue says so
+    const foeTile = s.world.tiles.findIndex((tt, i) => isLand(tt) && tt.terrain !== 'mountain' && dist(w, i, hauler.tile) === 2 && !s.settlements.some(x => dist(w, x.tile, i) <= 1) && !s.units.some(x => x.tile === i))
+    expect(foeTile).toBeGreaterThanOrEqual(0)
+    const foe = makeUnit(s, -1, 'regulars', foeTile, null)
+    s.units.push(foe)
+    s.declaration = { declared: true, turnDeclared: s.turn, waves: [], interventionProgress: 0, nextWaveId: 1, won: true, lost: false, intervened: null }   // the war over: the Company's units stand still
+    const at = hauler.tile
+    applyAction(s, { t: 'endTurn' })
+    expect(hauler.tile).toBe(at)
+    expect(hauler.since['contact']).toBeDefined()
+    const q = deriveQueue(s, SYSTEMS)
+    expect(q.shown.concat(q.folded).some(g => g.group === 'haulStopped')).toBe(true)
+    // under escort it waits too, until an armed unit of the player's stands with it
+    circuit('escort')
+    applyAction(s, { t: 'endTurn' })
+    expect(hauler.tile).toBe(at)
+    s.units.push(makeUnit(s, 0, 'militia', hauler.tile, makeColonist(s, 'free')))
+    applyAction(s, { t: 'endTurn' })
+    expect(hauler.tile === at && hauler.order?.kind === 'haul' && hauler.since['contact'] === undefined || hauler.tile !== at).toBe(true)
+    // under run it goes on regardless
+    s.units = s.units.filter(x => x.kind !== 'militia')
+    const before = hauler.tile
+    circuit('run')
+    applyAction(s, { t: 'endTurn' })
+    expect(hauler.since['contact']).toBeUndefined()
+    void before
+  })
+})
+
 describe('determinism', () => {
   it('a turn resolves identically twice with the same play rng state', () => {
     const a = createGame('det', { size: 'small' }, 123)

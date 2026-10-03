@@ -22,7 +22,7 @@ export type RouteKind = 'move' | 'attack' | 'board'
 /** Why a tile cannot be reached. */
 export type RouteProblem =
   | 'here'            // the unit is already there
-  | 'noMoves'         // nothing left to move with this turn
+  | 'noMoves'         // nothing left to move with this turn (no longer returned: the walk starts next turn)
   | 'landerAshore'    // the lander goes ashore by founding, not by sailing
   | 'shipOnLand'      // a ship held land that is not a port
   | 'landOnWater'     // a land unit held water
@@ -55,6 +55,9 @@ export interface Route {
   declares: number | null
   /** For an attack: what is attacked, in words. */
   target: string | null
+  /** The unit has no movement left this turn, so the walk begins next turn: the order is set now
+   *  and the orders system carries it out (DECISIONS.md 161). */
+  startsNextTurn: boolean
 }
 
 export interface NoRoute {
@@ -100,31 +103,33 @@ export function planRoute(s: GameState, u: Unit, end: number): RoutePlan {
         ? 'Ships fight when they meet; they are not sent to attack.'
         : `${label(u)} cannot attack. Only armed units can.`)
     }
-    if (u.moves <= 0) return no('noMoves', 'No moves left this turn. It can go again next turn.')
     const approach = approachTo(s, u, end)
     if (!approach) return wayProblem(s, u, end, no)
     const owner = foreignUnit ? foreignUnit.owner : foreignSettlement!.owner
     const walk = walkTurns(s, u, approach)
     const what = foreignSettlement ? foreignSettlement.name : owner === -1 ? phrase(foreignUnit!.kind) : `${s.charters[owner]?.name ?? 'a rival'}'s ${bare(foreignUnit!.kind)}`
+    const later = u.moves <= 0
     return {
       ok: true, unit: u.id, end, kind: 'attack', path: approach, unseen: approach.map(k => fog && !s.world.tiles[k].explored), turnEnds: walk.ends,
-      arrives: walk.left > 0 ? Math.max(1, walk.ends.length) : walk.ends.length + 1,
+      arrives: (walk.left > 0 ? Math.max(1, walk.ends.length) : walk.ends.length + 1) + (later ? 1 : 0),
       odds: !fog || canSee(s, end, mask ?? undefined) ? attackOdds(s, u, end) : null,
       declares: owner > 0 && s.charters[owner]?.relation !== 'war' ? owner : null,
       target: what,
+      startsNextTurn: later,
     }
   }
 
   // ---- going aboard the lander ----------------------------------------------------------------
   if (ownLander && u.kind === 'colonist' && u.colonist) {
-    if (u.moves <= 0 && !neighbours8(w, h, u.tile).includes(end)) return no('noMoves', 'No moves left this turn. It can go again next turn.')
     const approach = approachTo(s, u, end)
     if (!approach) return wayProblem(s, u, end, no)
     const walk = walkTurns(s, u, approach)
+    const later = u.moves <= 0 && approach.length > 0
     return {
       ok: true, unit: u.id, end, kind: 'board', path: approach, unseen: approach.map(k => fog && !s.world.tiles[k].explored), turnEnds: walk.ends,
       // going aboard takes no movement: it happens on the turn the walk reaches the lander
-      arrives: Math.max(1, walk.ends.length), odds: null, declares: null, target: null,
+      arrives: Math.max(1, walk.ends.length) + (later ? 1 : 0), odds: null, declares: null, target: null,
+      startsNextTurn: later,
     }
   }
 
@@ -141,13 +146,15 @@ export function planRoute(s: GameState, u: Unit, end: number): RoutePlan {
     if (u.kind === 'hauler') return no('roughGround', 'A hauler needs a road or open country, and this ground is too rough.')
     return no('noWay', `There is no way onto that ground for ${phrase(u.kind)}.`)
   }
-  if (u.moves <= 0) return no('noMoves', 'No moves left this turn. It can go again next turn.')
   const path = findPath(s, u, u.tile, end)
   if (!path || !path.length) return wayProblem(s, u, end, no)
   const walk = walkTurns(s, u, path)
+  // with nothing left to move with, the walk is plotted all the same and begins next turn
+  const later = u.moves <= 0
   return {
     ok: true, unit: u.id, end, kind: 'move', path, unseen: path.map(k => fog && !s.world.tiles[k].explored), turnEnds: walk.ends,
-    arrives: walk.ends.length, odds: null, declares: null, target: null,
+    arrives: walk.ends.length + (later ? 1 : 0), odds: null, declares: null, target: null,
+    startsNextTurn: later,
   }
 }
 
@@ -188,7 +195,8 @@ function stepCost(s: GameState, u: Unit, tile: number): number {
  *  at the end. A unit steps while it has any movement left, so a step may cost more than is left. */
 function walkTurns(s: GameState, u: Unit, path: number[]): { ends: number[]; left: number } {
   const ends: number[] = []
-  let moves = u.moves
+  // nothing left this turn: the walk is reckoned from next turn's full movement
+  let moves = u.moves > 0 ? u.moves : maxMoves(u)
   for (let i = 0; i < path.length; i++) {
     if (moves <= 0) { ends.push(i - 1); moves = maxMoves(u) }
     moves -= stepCost(s, u, path[i])

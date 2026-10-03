@@ -33,6 +33,37 @@ function longestWater(s: GameState, from: number): number[] {
   return best
 }
 
+describe('a route for a unit with no moves left', () => {
+  it('is plotted all the same, starts next turn, and the orders system walks it', () => {
+    const s = arrived('route-later', { size: 'small' }, 1)
+    const home = s.settlements.find(x => x.owner === 0)!
+    const w = s.world.width, h = s.world.height
+    const start = neighbours8(w, h, home.tile).find(n => isLand(s.world.tiles[n]) && s.world.tiles[n].terrain !== 'mountain')!
+    const u = makeUnit(s, 0, 'colonist', start, makeColonist(s, 'free'))
+    s.units.push(u)
+    u.moves = 0
+    // somewhere a few tiles off over land
+    const target = s.world.tiles.findIndex((tt, i) => isLand(tt) && tt.terrain !== 'mountain' && dist(w, i, start) === 3 && !!findPath(s, u, start, i))
+    expect(target).toBeGreaterThanOrEqual(0)
+    const r = planRoute(s, u, target)
+    expect(r.ok).toBe(true)
+    const route = r as Route
+    expect(route.startsNextTurn).toBe(true)
+    expect(route.arrives).toBeGreaterThanOrEqual(2)
+    // committing it moves nothing now and sets the order
+    applyAction(s, { t: 'moveUnit', unit: u.id, path: route.path })
+    expect(u.tile).toBe(start)
+    expect(u.order?.kind).toBe('goto')
+    // next turn it walks
+    applyAction(s, { t: 'endTurn' })
+    expect(u.tile).not.toBe(start)
+    // and with moves in hand the same route does not say it starts next turn
+    u.moves = 1
+    const now = planRoute(s, u, target)
+    if (now.ok) expect(now.startsNextTurn).toBe(false)
+  })
+})
+
 describe('the plotted route', () => {
   it('a hold plots and moves nothing', () => {
     const s = createGame('route-plot', { size: 'standard' }, 1)
@@ -98,10 +129,11 @@ describe('the plotted route', () => {
     // land that nobody has seen is not known to be land: the plan goes into the fog
     const unseenLand = s.world.tiles.findIndex((t, i) => isLand(t) && !t.explored && t.river !== 2 && dist(w, i, u.tile) < 12)
     if (unseenLand >= 0) expect(planRoute(s, u, unseenLand).ok).toBe(true)
-    // no moves left
+    // no moves left: the route is plotted all the same and starts next turn (DECISIONS.md 161);
+    // before, this was a refusal
     u.moves = 0
     const run = longestWater(s, u.tile)
-    expect(planRoute(s, u, run[0])).toMatchObject({ ok: false, problem: 'noMoves' })
+    expect(planRoute(s, u, run[0])).toMatchObject({ ok: true, startsNextTurn: true })
   })
 
   it('a ship holding land, a colonist holding water: each says why', () => {

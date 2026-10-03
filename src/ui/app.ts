@@ -17,6 +17,18 @@ import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
 import { openingAction, siteScore } from '../sim/autopilot'
 import { planRoute, type RoutePlan, type Route } from '../sim/route'
+import type { HaulStop, UnitOrder } from '../sim/state'
+import { authoringCard } from './card'
+
+/** A haul circuit or a patrol being planned: the unit it is for, the stops so far, and for a haul
+ *  the risk posture (rival charters brief section 8). Nothing is written to the state until Save. */
+export interface Authoring {
+  unit: number
+  kind: 'haul' | 'patrol'
+  stops: HaulStop[]
+  tiles: number[]
+  risk: 'avoid' | 'run' | 'escort'
+}
 import { Scene } from '../render/scene'
 import { pick, tileUnderPoint } from '../render/picking'
 import { Input } from './input'
@@ -411,6 +423,8 @@ export class App {
     // the end of a route the player has just plotted: the one tap on the map that commits anything
     if (this.route?.ok && this.onRouteEnd(px, py)) { void this.commitRoute(); return }
     const p = pick(s, this.scene.cam, px, py, this.scene.unitPositions, this.picturesForPicking(), TAP_MIN_PX)
+    // planning a circuit or a patrol: every tap on the map is a stop, and nothing else happens
+    if (this.authoring) { this.authoringTap(p.tile, p.settlement); return }
     // any other tap puts a plotted route away first
     const hadRoute = this.route !== null
     if (hadRoute) this.clearRoute(false)
@@ -480,6 +494,90 @@ export class App {
     return { units: scene.unitPictures, settlements: scene.settlementPictures, shown: scene.drawnClose, cover: scene.pictureCover.bind(scene) }
   }
 
+  // ---- authoring a circuit or a patrol ---------------------------------------------------------
+  /** A route being planned for a unit, DECISIONS.md 161: while it is up, a tap on one of the
+   *  player's settlements adds a stop to a haul circuit, a tap on any tile adds a point to a patrol,
+   *  and holds plot nothing. Save sets the unit's order; nothing is written until then. */
+  authoring: Authoring | null = null
+
+  beginAuthoring(unitId: number, kind: 'haul' | 'patrol') {
+    const u = this.state.units.find(x => x.id === unitId && x.owner === 0)
+    if (!u) return
+    const existing = u.order && u.order.kind === kind ? u.order : null
+    this.authoring = {
+      unit: unitId, kind,
+      stops: existing && existing.kind === 'haul' ? existing.stops.map(st => ({ settlement: st.settlement, load: { ...st.load }, unload: { ...st.unload } })) : [],
+      tiles: existing && existing.kind === 'patrol' ? [...existing.tiles] : [],
+      risk: existing && existing.kind === 'haul' ? existing.risk : 'avoid',
+    }
+    this.closeSheet()
+    this.select(unitId)
+    this.paintCircuit()
+    this.toast(kind === 'haul' ? 'Tap your settlements in the order the circuit should visit them.' : 'Tap the tiles the patrol should walk between.')
+  }
+
+  /** The stops as tiles, for the drawing. */
+  private circuitTiles(): number[] {
+    const a = this.authoring
+    if (!a) return []
+    return a.kind === 'haul' ? a.stops.map(st => this.state.settlements[st.settlement]?.tile).filter((x): x is number => x !== undefined) : a.tiles
+  }
+
+  paintCircuit() {
+    this.routeLayer.showCircuit(this.state, this.authoring ? this.circuitTiles() : null)
+    this.scene.requestDraw()
+  }
+
+  /** A tap while authoring: a stop added, or an existing one taken away again. */
+  private authoringTap(tile: number | null, settlement: number | null) {
+    const a = this.authoring!
+    if (a.kind === 'haul') {
+      const st = settlement !== null ? this.state.settlements[settlement] : tile !== null ? this.state.settlements.find(x => x.tile === tile) : undefined
+      if (!st || st.owner !== 0) { this.toast('A haul circuit stops only at your own settlements.'); return }
+      const i = a.stops.findIndex(x => x.settlement === st.id)
+      if (i >= 0 && i === a.stops.length - 1) a.stops.splice(i, 1)
+      else if (i >= 0) { this.toast(`${st.name} is already stop ${i + 1}. Tap the last stop to take it off.`); return }
+      else a.stops.push({ settlement: st.id, load: {}, unload: {} })
+    } else {
+      if (tile === null) return
+      const i = a.tiles.indexOf(tile)
+      if (i >= 0 && i === a.tiles.length - 1) a.tiles.splice(i, 1)
+      else if (i >= 0) { this.toast('That is already on the patrol. Tap the last point to take it off.'); return }
+      else a.tiles.push(tile)
+    }
+    this.paintCircuit()
+    this.renderQueueBar()
+    this.renderSheet()
+  }
+
+  /** Save: the order is set on the unit and begins next turn, however many moves it has now. */
+  saveAuthoring(): boolean {
+    const a = this.authoring
+    if (!a) return false
+    const u = this.state.units.find(x => x.id === a.unit)
+    if (!u) { this.cancelAuthoring(); return false }
+    const order: UnitOrder | null = a.kind === 'haul'
+      ? (a.stops.length >= 2 ? { kind: 'haul', stops: a.stops, next: 0, risk: a.risk } : null)
+      : (a.tiles.length >= 2 ? { kind: 'patrol', tiles: a.tiles, next: 0 } : null)
+    if (!order) { this.toast(a.kind === 'haul' ? 'A circuit needs two stops at least.' : 'A patrol needs two points at least.'); return false }
+    const ok = this.dispatch({ t: 'setUnitOrder', unit: u.id, order }, a.kind === 'haul' ? 'Haul circuit set' : 'Patrol set')
+    if (!ok) return false
+    this.authoring = null
+    this.paintCircuit()
+    this.renderQueueBar()
+    this.renderSheet()
+    return true
+  }
+
+  cancelAuthoring() {
+    if (!this.authoring) return
+    this.authoring = null
+    this.paintCircuit()
+    if (this.sheet.kind === 'authoring') this.closeSheet()
+    this.renderQueueBar()
+    this.renderSheet()
+  }
+
   /** Choose a unit of the player's: its card takes the queue bar's place, its ring and outline go
    *  on the map, and the camera moves only if the unit would be covered. Any sheet slides away. */
   select(id: number) {
@@ -534,6 +632,7 @@ export class App {
   /** Let the chosen unit, passenger or tile go, and give the queue bar back. */
   deselect(render = true) {
     const v = this.scene.cam.view
+    if (this.authoring) { this.authoring = null; this.paintCircuit() }
     v.activeUnit = null
     v.selectedTile = null
     this.route = null
@@ -643,7 +742,7 @@ export class App {
       : !neighbours8(w, h, lander.tile).includes(tile) ? no('From the lander they can step only onto the shore beside it.')
       : t.terrain === 'water' || !t.explored ? no('Hold the shore beside the lander: there is no ground there to stand on.')
       : t.terrain === 'mountain' ? no('Not onto a mountain. Hold other ground beside the lander.')
-      : { ok: true, ashore: true, aboard: p.aboard, unit: lander.id, end: tile, kind: 'board', path: [], unseen: [], turnEnds: [], arrives: 1, odds: null, declares: null, target: null }
+      : { ok: true, ashore: true, aboard: p.aboard, unit: lander.id, end: tile, kind: 'board', path: [], unseen: [], turnEnds: [], arrives: 1, odds: null, declares: null, target: null, startsNextTurn: false }
     this.renderQueueBar()
     this.afterSelect()
   }
@@ -751,6 +850,8 @@ export class App {
     const other = held !== null && held !== u?.id ? s.units.find(x => x.id === held) : undefined
     const t = other ? other.tile : tileUnderPoint(s, this.scene.cam, px, py)
     if (t === null) return
+    // while a circuit is being planned a hold plots nothing: taps add stops
+    if (this.authoring) { this.toast(this.authoring.kind === 'haul' ? 'Tap a settlement to add a stop. Save when the circuit is complete.' : 'Tap a tile to add a point. Save when the patrol is complete.'); return }
     if (u && u.owner === 0 && v.zoom >= C.feel.routeHoldFloor) {
       // a passenger chosen: the hold plots their step ashore rather than the lander's course
       if (this.passenger && this.passenger.lander === u.id) { this.plotAshore(t); return }
@@ -1082,6 +1183,7 @@ export class App {
   private currentCard(): Card | null {
     const s = this.state
     const v = this.scene.cam.view
+    if (this.authoring) return authoringCard(this, s, this.authoring)
     const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit && x.owner === 0) : undefined
     if (u && this.passenger && this.passenger.lander === u.id && u.aboard.length) return passengerCard(this, s, u)
     if (u) return unitCard(this, s, u)
