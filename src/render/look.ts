@@ -409,6 +409,18 @@ export const SPRITE = {
 
 // ---- the people, drawn ------------------------------------------------------------------------------
 
+/** No unit is ever fully hidden. Where a building's picture covers a unit standing behind it, the
+ *  unit's silhouette is drawn faintly through the building in its owner's colour, over the one
+ *  sorted layer and without changing its sort: a second pass of the covered unit's own alpha, only
+ *  where the building in front is solid too. `shade` darkens the owner's colour so the player's bone
+ *  reads on a cream wall; `alpha` is how much of it shows; a drawing counts as solid above `solid`,
+ *  so soft edges do not draw. Feel brief section 3. */
+export const SILHOUETTE = {
+  shade: 0.62,
+  alpha: 0.5,
+  solid: 0.45,
+}
+
 export const UNIT_SPRITE = {
   /** Which drawing a kind of unit is, where the sheet does not already have a piece of that name. A
    *  piece named for the kind wins without any entry here, so a new figure arriving on the sheet is

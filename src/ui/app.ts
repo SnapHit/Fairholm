@@ -35,7 +35,7 @@ import { term } from './glossary'
 
 /** A passenger's step from the lander onto the shore beside it, plotted as a route is and drawn as a
  *  boarding is, the other way: the disembark action, which puts the next one off on that tile. */
-export type AshoreRoute = Route & { ashore: true }
+export type AshoreRoute = Route & { ashore: true; aboard: number | null }
 /** What a hold has plotted: a route the simulation planned, or a passenger's step ashore. */
 export type UiRoute = RoutePlan | AshoreRoute
 
@@ -58,9 +58,10 @@ export class App {
   route: UiRoute | null = null
   /** The tile looked at with a tap when no unit is selected: its card shows in the queue bar's place. */
   focusTile: number | null = null
-  /** A passenger chosen from the lander's detail to go ashore: the next one off, the one the lander
-   *  puts on the shore. A hold on the shore beside the lander then plots their step ashore. */
-  passenger: { lander: number } | null = null
+  /** A passenger chosen from the lander's detail to go ashore: which one, by their place in the
+   *  lander's list, or null for the next one off. A hold on the shore beside the lander then plots
+   *  their step ashore. */
+  passenger: { lander: number; aboard: number | null } | null = null
   /** The colonist being placed, while the player is choosing where they should work. */
   pick: { settlement: number; colonist: number } | null = null
   /** The tile the founding control is looking at: the shore the lander would beach on, or the
@@ -505,14 +506,29 @@ export class App {
 
   /** Choose the lander's next one off, from its detail: the sheet goes away, the passenger's card
    *  comes up, and a hold on the shore beside the lander plots their step ashore. */
-  choosePassenger(landerId: number) {
+  choosePassenger(landerId: number, aboard: number | null = null) {
     const lander = this.state.units.find(x => x.id === landerId && x.kind === 'lander')
     if (!lander || !lander.aboard.length) return
     this.closeSheet()
     this.select(landerId)
-    this.passenger = { lander: landerId }
+    this.passenger = { lander: landerId, aboard }
     this.renderQueueBar()
     this.afterSelect()
+  }
+
+  /** Send a passenger ashore from the lander onto a shore tile beside it: the one chosen, or the
+   *  next one off. The one who steps off is chosen in their place. The passenger shortcut: with the
+   *  lander chosen, a hold on the shore offers this on the card beside Found here. */
+  sendAshore(landerId: number, tile: number, aboard: number | null = null): boolean {
+    const before = new Set(this.state.units.map(x => x.id))
+    this.route = null
+    this.passenger = null
+    const a: Action = aboard === null ? { t: 'disembark', unit: landerId, tile } : { t: 'disembark', unit: landerId, tile, aboard }
+    if (!this.dispatch(a, 'Went ashore')) { this.renderQueueBar(); this.afterSelect(); return false }
+    const off = this.state.units.find(x => !before.has(x.id) && x.tile === tile)
+    if (off) this.select(off.id)
+    else { this.renderQueueBar(); this.afterSelect() }
+    return true
   }
 
   /** Let the chosen unit, passenger or tile go, and give the queue bar back. */
@@ -620,14 +636,14 @@ export class App {
     const s = this.state, w = s.world.width, h = s.world.height
     const p = this.passenger
     const lander = p ? s.units.find(x => x.id === p.lander && x.kind === 'lander') : undefined
-    if (!lander) { this.passenger = null; this.renderQueueBar(); return }
+    if (!p || !lander) { this.passenger = null; this.renderQueueBar(); return }
     const t = s.world.tiles[tile]
     const no = (words: string): UiRoute => ({ ok: false, unit: lander.id, end: tile, problem: 'noWay', words, shore: null })
     this.route = tile === lander.tile ? no('Hold the shore beside the lander to send them ashore.')
       : !neighbours8(w, h, lander.tile).includes(tile) ? no('From the lander they can step only onto the shore beside it.')
       : t.terrain === 'water' || !t.explored ? no('Hold the shore beside the lander: there is no ground there to stand on.')
       : t.terrain === 'mountain' ? no('Not onto a mountain. Hold other ground beside the lander.')
-      : { ok: true, ashore: true, unit: lander.id, end: tile, kind: 'board', path: [], unseen: [], turnEnds: [], arrives: 1, odds: null, declares: null, target: null }
+      : { ok: true, ashore: true, aboard: p.aboard, unit: lander.id, end: tile, kind: 'board', path: [], unseen: [], turnEnds: [], arrives: 1, odds: null, declares: null, target: null }
     this.renderQueueBar()
     this.afterSelect()
   }
@@ -651,15 +667,8 @@ export class App {
     const u = this.state.units.find(x => x.id === r.unit)
     if (!u) { this.clearRoute(); return false }
     this.route = null
-    // a passenger's step ashore: the next one off stands on that shore, and is the one chosen now
-    if ('ashore' in r) {
-      const before = new Set(this.state.units.map(x => x.id))
-      this.passenger = null
-      if (!this.dispatch({ t: 'disembark', unit: u.id, tile: r.end }, 'Went ashore')) { this.renderQueueBar(); return false }
-      const off = this.state.units.find(x => !before.has(x.id) && x.tile === r.end)
-      if (off) this.select(off.id)
-      return true
-    }
+    // a passenger's step ashore: the one chosen stands on that shore, and is the one chosen now
+    if ('ashore' in r) return this.sendAshore(u.id, r.end, r.aboard)
     if (r.kind === 'move') return this.moveTo(u.id, r.end)
     if (r.path.length && !(await this.moveTo(u.id, r.path[r.path.length - 1]))) return false
     const w = this.state.world.width, h = this.state.world.height
@@ -1051,7 +1060,7 @@ export class App {
           card.more ? button('More', card.more, 'small ghost more') : null,
           one ? turn : null,
         ),
-        one ? null : h('div', { class: 'uc-actions' }, ...card.actions, h('span', { class: 'spacer' }), turn),
+        one ? null : h('div', { class: 'uc-actions' + (card.actions.length >= 3 ? ' tight' : '') }, ...card.actions, h('span', { class: 'spacer' }), turn),
       ])
     } else {
       const total = q.shown.reduce((a, g) => a + g.items.length, 0) + q.folded.reduce((a, g) => a + g.items.length, 0)

@@ -310,7 +310,10 @@ export function buildUnits(
       const right = going !== null && going !== e.unit.tile ? goesRight(s, e.unit) : (lastRight(e.unit.id) ?? false)
       const flip = e.piece.facing === 'left' && right
       const sh = UNIT_SPRITE.shadow
-      if (hull) billboards.push({ ...waterBillboard(e.piece, scale, e.x, e.z, flip, sheetIndex, plain), tag: { kind: 'unit', id: e.unit.id } })
+      // whose it is, for the silhouette drawn through a building standing in front of it
+      const oc0 = ownerColour(e.unit)
+      const owner = new THREE.Color(oc0[0], oc0[1], oc0[2])
+      if (hull) billboards.push({ ...waterBillboard(e.piece, scale, e.x, e.z, flip, sheetIndex, plain), tag: { kind: 'unit', id: e.unit.id }, owner })
       else {
         // the light is read a little toward the sun, clear of the piece's own shadow, and no further:
         // a ship three people tall read its light from three tiles away, which was the next ship's
@@ -324,6 +327,7 @@ export function buildUnits(
           tilt: damaged ? (d.tiltDeg * Math.PI) / 180 : 0,
           cut: 0, bob: 0,
           tag: { kind: 'unit', id: e.unit.id },
+          owner,
         })
       }
       occluders.push({ x: e.x, z: e.z, height: hull ? sh.hullHeight : height * sh.heightShare, radius: Math.max(sh.minRadius, width * sh.widthShare) })

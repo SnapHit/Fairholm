@@ -45,8 +45,9 @@ export type Action =
   | { t: 'setUnitOrder'; unit: number; order: UnitOrder | null }
   /** A colonist founds where it stands; the lander founds on the shore tile beside it. */
   | { t: 'found'; unit: number; tile?: number; name?: string }
-  /** One of the lander's passengers steps ashore onto a land tile beside it, to scout on foot. */
-  | { t: 'disembark'; unit: number; tile: number }
+  /** One of the lander's passengers steps ashore onto a land tile beside it, to scout on foot: the
+   *  one at `aboard` in the lander's list, or the last aboard when none is named. */
+  | { t: 'disembark'; unit: number; tile: number; aboard?: number }
   /** A colonist beside the lander climbs back aboard. */
   | { t: 'embark'; unit: number; lander: number }
   | { t: 'attack'; unit: number; tile: number }
@@ -418,8 +419,11 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
       if (!neighbours8(w, h, u.tile).includes(a.tile)) throw new Error('The shore must be beside the lander.')
       const t = s.world.tiles[a.tile]
       if (!isLand(t) || t.terrain === 'mountain') throw new Error('Not onto that.')
-      // the last aboard steps off, so the contracted colonist at the head of the list stays to found
-      const col = u.aboard.pop()!
+      // the last aboard steps off unless one is named, so the contracted colonist at the head of the
+      // list stays to found by default
+      const idx = a.aboard ?? u.aboard.length - 1
+      if (idx < 0 || idx >= u.aboard.length) throw new Error('No one of that number is aboard.')
+      const col = u.aboard.splice(idx, 1)[0]
       const scout = makeUnit(s, 0, 'colonist', a.tile, col)
       scout.moves = 0
       s.units.push(scout)

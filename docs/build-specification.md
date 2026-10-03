@@ -98,13 +98,13 @@ interface GameState {
   schemaVersion: number
   seed: string
   settings: Settings           // generation options and difficulty
-  turn: number                 // 1 = first month after landing
+  turn: number                 // 1 = the first month, at sea; the voyage counts from here
 
   world: {
     width: number
     height: number
     tiles: Tile[]              // flat, index = y * width + x
-    anchorages: number[]       // tile indices
+    splashdowns: number[]      // where each charter's lander came down, by charter index; open sea
     rivers: RiverSegment[]
   }
 
@@ -265,7 +265,7 @@ rng.world   // seeded from state.seed. Deterministic, versioned, saved
 rng.play    // seeded from Date.now() on load. Never saved
 ```
 
-**`Math.random` appears nowhere in `/sim`.** World generation, terrain, resources, anchorage placement
+**`Math.random` appears nowhere in `/sim`.** World generation, terrain, resources, splashdown placement
 and gold reserves use `rng.world`. Combat exchanges, fleet landing selection, price jitter and
 predecessor preference rotation use `rng.play`.
 
@@ -368,7 +368,7 @@ Named here so they are stubs rather than omissions:
 16. Military, fortification, sieges
 17. Naval and raiding
 18. The declaration, waves, blockade, intervention
-19. Onboarding: landing sites, unlock triggers, one-sentence explanations
+19. Onboarding: the opening at sea, unlock triggers, one-sentence explanations
 20. Overlays and polish
 
 **Steps 1 to 9 are the floor.** A build that reaches step 9 is playable, saveable and measurable, which
@@ -396,7 +396,8 @@ Small, in `/sim` only, because that is the part that can be tested headlessly.
 Manual, in order, on a phone:
 
 1. Loads and shows a coastline in about a second
-2. Three landing sites offered; one tap starts the game
+2. Opens at sea in fog with the five lines; the first tap dismisses them, and the lander can be sailed to a
+   coast and beached to found
 3. Tiles are tappable at working zoom and not at overview
 4. A worker can be assigned and output appears next turn
 5. A quiet turn is one tap

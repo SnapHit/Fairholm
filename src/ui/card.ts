@@ -58,7 +58,7 @@ function cargoWords(u: Unit): string | null {
 
 /** The plotted route in one line: "4 tiles, 1 turn", or "Attack Company regulars, 2 in 10". */
 export function routeLine(s: GameState, u: Unit, r: UiRoute): string {
-  if (!r.ok) return noRouteWords(s, r)
+  if (!r.ok) return noRouteWords(s, u, r)
   if ('ashore' in r) {
     const ground = tileWords(tileLook(s, r.end)).toLowerCase()
     return u.aboard.length <= 1
@@ -74,14 +74,24 @@ export function routeLine(s: GameState, u: Unit, r: UiRoute): string {
   return `${plural(r.path.length, 'tile')}, ${turns}${r.unseen.some(Boolean) ? ', through fog' : ''}`
 }
 
-/** Why there is no route, in the card's words. The founding control is Found here on the card. */
-function noRouteWords(s: GameState, r: NoRoute): string {
+/** Why there is no route, in the card's words. For the lander holding the shore beside it the card
+ *  carries the two things it can do there: Found here beaches it, Go ashore sends one to look about. */
+function noRouteWords(s: GameState, u: Unit, r: NoRoute): string {
   if (r.problem === 'landerAshore') {
     if (r.shore === null) return 'The lander goes ashore by founding. Sail in beside that shore first.'
     const problem = foundingProblem(s, r.shore)
-    return problem ? `Not here: ${problem}.` : 'The lander goes ashore by founding. Found here beaches it on that shore.'
+    const who = canStepAshore(s, u, r.shore) ? (u.aboard.length > 1 ? 'the next one off' : 'the last one aboard') : null
+    const ashore = who ? ` Go ashore sends ${who} to look about.` : ''
+    return problem ? `Not here: ${problem}.${ashore}` : `${cap(tileWords(tileLook(s, r.shore)).toLowerCase())}. Found here beaches the lander.${ashore}`
   }
   return r.words
+}
+
+/** Whether a passenger could step from the lander onto this tile: known ground beside it that is not
+ *  a mountain, with someone aboard to step. */
+function canStepAshore(s: GameState, u: Unit, tile: number): boolean {
+  const t = s.world.tiles[tile]
+  return u.aboard.length > 0 && t.explored && t.terrain !== 'water' && t.terrain !== 'mountain' && neighbours8(s.world.width, s.world.height, u.tile).includes(tile)
 }
 
 /** A unit of the player's, chosen. */
@@ -109,8 +119,13 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
       const go = r.kind === 'attack' ? 'Attack' : r.kind === 'board' ? 'Go aboard' : 'Go'
       actions.push(button(go, () => { void app.commitRoute() }, r.kind === 'attack' ? 'danger' : 'go'))
     } else {
-      card.warn = r.shore === null || !canFound
-      if (r.shore !== null && canFound) actions.push(found())
+      // the shore beside the lander: Found here beaches it, Go ashore sends the next one off. Two
+      // touches in all from the hold; the Aboard list in More chooses a particular passenger
+      const shore = r.shore
+      const step = shore !== null && canStepAshore(s, u, shore)
+      card.warn = shore === null || (!canFound && !step)
+      if (shore !== null && canFound) actions.push(found())
+      if (shore !== null && step) actions.push(button('Go ashore', () => { app.sendAshore(u.id, shore) }, canFound ? '' : 'go'))
     }
     actions.push(button('Clear', () => app.clearRoute(), 'ghost'))
     return card
@@ -146,7 +161,8 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
 /** A passenger chosen from the lander's detail: the next one off, whom a hold on the shore beside
  *  the lander sends ashore. */
 export function passengerCard(app: App, s: GameState, lander: Unit): Card {
-  const next = lander.aboard[lander.aboard.length - 1]
+  const which = app.passenger?.aboard ?? lander.aboard.length - 1
+  const next = lander.aboard[which] ?? lander.aboard[lander.aboard.length - 1]
   const r = app.route && app.route.unit === lander.id && ('ashore' in app.route || !app.route.ok) ? app.route : null
   const actions: HTMLElement[] = []
   const card: Card = {

@@ -1,5 +1,9 @@
 # Setting and fiction brief
 
+**Changed 3 October 2026.** Section 7 says how the lander is moved under the current rule: a hold plots
+a course and the route's end or Go commits it. The vocabulary paragraph in section 12 no longer
+contrasts signatories with a term the legal constraint forbids. Nothing else changed.
+
 **Changed 2 October 2026.** In section 7 the lander now sails six tiles a turn and sees three, and comes
 down out of sight of land but near enough to sight it within the first move or two, so the opening
 turns are spent choosing ground rather than reaching it. Rival landers sail as fast. The boat the lander
@@ -208,8 +212,8 @@ cheapness decides everything.
 enough to a coast with food, timber and fresh water that sailing in any sensible direction sights land
 within the first move or two, carrying the starting colonists and knowing nothing of the world. It
 moves wherever boats can go, open water and the major rivers, six tiles a turn, and sees three tiles
-around it; one gesture sends it the whole way through the fog, and a course that meets land stops at
-the coast. The opening turns are for choosing ground, not for reaching it: you sight land quickly, run
+around it; a hold plots a course through the fog and a tap on the course's end, or Go, sails it, and a
+course that meets land stops at the coast. The opening turns are for choosing ground, not for reaching it: you sight land quickly, run
 along the coast comparing sites, and choose your own ground. Rival charters' landers sail at the same
 speed. There is no landing-site chooser: nobody tells you where to land.
 
@@ -401,7 +405,8 @@ colony builds what it can maintain, and what it can maintain is rope and sail an
 is untouched by the correction.
 
 Working vocabulary: the Company, the charter, the passage, the debt, the Landing. Grievance produced
-in a meeting house and amplified by a press or a bulletin. Signatories rather than founding fathers.
+in a meeting house and amplified by a press or a bulletin. Signatories, people of standing who put
+their names to the cause.
 The recall fleet. A consignment office that sells surplus without a ship. Haulers, outriders,
 batteries. A standing ladder running **debtor, contracted, free, master**, which describes how much a
 person still owes rather than a legal status borrowed from another century.

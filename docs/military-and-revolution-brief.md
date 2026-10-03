@@ -1,5 +1,8 @@
 # Military and revolution brief
 
+**Changed 3 October 2026.** The three em dashes in the section 3 table read "none" now, per the writing
+convention. Nothing else changed.
+
 **Changed 1 October 2026.** Anchorages are gone from this brief, along with every landing, blockade
 and generator rule that leaned on them; the recall fleet now lands on any coast within two tiles of
 one of your settlements, and sections 9, 10, 11, 14, 15 and 16 are changed to match. The reason is
@@ -73,11 +76,11 @@ Three consequences worth noting:
 
 | Unit | Made from | Attack | Defence | Moves |
 |---|---|---|---|---|
-| Colonist | — | — | 1 | 1 |
+| Colonist | none | none | 1 | 1 |
 | Militia | colonist + 15 Arms | 3 | 3 | 1 |
 | Outrider | militia + 10 Horses | 5 | 5 | 3 |
 | Battery | 30 Arms | 10 vs settlements, 2 in open | **8** in a settlement, 2 in open | 1 |
-| Improver | colonist + 10 Tooling | — | 1 | 1 |
+| Improver | colonist + 10 Tooling | none | 1 | 1 |
 
 **Batteries have separate attack and defence values**, because a gun crew assaulting a position and a
 gun crew serving a fixed emplacement are not the same thing. This is what keeps a fortified settlement

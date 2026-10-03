@@ -36,7 +36,7 @@ import { seedNumber } from './seed'
 import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
 import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
-import { spriteSheet, buildBillboards, setBillboardFade, placeBillboard, manifestFrom, pictureBox, pictureCover, type AtlasManifest, type BillboardTag, type Billboard } from './billboards'
+import { spriteSheet, buildBillboards, buildSilhouettes, setBillboardFade, placeBillboard, manifestFrom, pictureBox, pictureCover, type AtlasManifest, type BillboardTag, type Billboard } from './billboards'
 import { SelectionMark } from './selection'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
@@ -151,6 +151,8 @@ export class Scene {
   private sheetManifests: AtlasManifest[]
   /** Every picture standing on the map, in one mesh, sorted back to front with the settlements. */
   private billboards: THREE.InstancedMesh | null = null
+  /** The faint silhouettes of units standing behind a building, drawn through it. */
+  private silhouettes: THREE.InstancedMesh | null = null
   private unitClose: THREE.Group | null = null
   private unitFar: THREE.Group | null = null
   shadow: ShadowBake | null = null
@@ -414,6 +416,10 @@ export class Scene {
     if (this.billboards) { this.scene.remove(this.billboards); this.billboards.geometry.dispose(); (this.billboards.material as THREE.Material).dispose() }
     this.billboards = buildBillboards([...sb.billboards, ...ub.billboards], this.light, this.sheets, this.sheetManifests.map(m => m.size))
     if (this.billboards) this.scene.add(this.billboards)
+    // no unit is ever fully hidden: a unit a building covers shows through it as a silhouette
+    if (this.silhouettes) { this.scene.remove(this.silhouettes); this.silhouettes.geometry.dispose(); (this.silhouettes.material as THREE.Material).dispose() }
+    this.silhouettes = buildSilhouettes(ub.billboards, sb.billboards.filter(b => b.tag?.kind === 'settlement'), this.light, this.sheets, this.sheetManifests.map(m => m.size))
+    if (this.silhouettes) this.scene.add(this.silhouettes)
     this.applyFades()
     this.applyTierVisibility()
     // what is on the water that is not a unit: steam, and the Company's landers while a wave is at sea
@@ -518,15 +524,16 @@ export class Scene {
 
   /** Put the beaching's fade onto the pictures it concerns, in place, without a rebuild. */
   private applyFades() {
-    if (!this.billboards) return
     const f = this.fading
-    setBillboardFade(this.billboards, (tag: BillboardTag | null) => {
+    const pick = (tag: BillboardTag | null) => {
       if (!tag) return null
       if (!f) return 1
       if (tag.kind === 'settlement' && f.settlements.has(tag.id)) return f.k
       if (tag.kind === 'unit' && f.units.has(tag.id)) return f.k
       return 1
-    })
+    }
+    if (this.billboards) setBillboardFade(this.billboards, pick)
+    if (this.silhouettes) setBillboardFade(this.silhouettes, pick)
   }
 
   // ---- a move, drawn --------------------------------------------------------------------------
@@ -869,6 +876,7 @@ export class Scene {
     if (this.unitClose) this.unitClose.visible = this.propsVisible
     if (this.unitFar) this.unitFar.visible = !this.propsVisible
     if (this.billboards) this.billboards.visible = this.propsVisible
+    if (this.silhouettes) this.silhouettes.visible = this.propsVisible
     if (this.terrain) this.terrain.material.uniforms.uCover.value = this.propsVisible ? 0 : 1
   }
 

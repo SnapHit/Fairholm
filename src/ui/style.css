@@ -199,6 +199,9 @@ body {
 #queuebar .uc-actions { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
 #queuebar .uc-actions .spacer { flex: 1; }
 #queuebar .uc-actions .btn { padding: var(--space-3) var(--space-6); }
+/* three actions and End turn in one row at 390 points: the labels stay on one line */
+#queuebar .uc-actions.tight .btn { padding: var(--space-3) var(--space-4); font-size: var(--text-small); }
+#queuebar .uc-actions.tight { gap: var(--space-3); }
 #queuebar .btn.end { flex: none; }
 #queuebar .uc-head .btn.end { padding: var(--space-3) var(--space-6); }
 /* while a move is drawn the card's controls wait for it; End turn never does */

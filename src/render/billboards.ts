@@ -24,7 +24,7 @@
 
 import * as THREE from 'three'
 import { LIGHT_GLSL, type LightUniforms } from './shading'
-import { LIGHT, CLOUD } from './look'
+import { LIGHT, CLOUD, SILHOUETTE } from './look'
 
 // ---- sheets and their manifests -----------------------------------------------------------------
 
@@ -158,6 +158,8 @@ export interface Billboard {
   /** What on the map this picture belongs to, so the scene can find its instances again after the
    *  sort and fade them without rebuilding. */
   tag?: BillboardTag
+  /** Whose it is, for a unit: the colour its silhouette shows through a building in. */
+  owner?: THREE.Color
 }
 
 export interface BillboardTag { kind: 'settlement' | 'unit'; id: number }
@@ -323,6 +325,35 @@ export function pictureCover(b: Billboard, sheet: THREE.IUniform, sheetSize: [nu
   return mask.data[iy * mask.w + ix] / 255
 }
 
+/** Where a picture's quad lies: its anchor at the foot, scaled to its size on the ground, and turned
+ *  about the anchor when the piece is knocked askew. Written into `m` and returned. */
+const PLACE = { p: new THREE.Vector3(), q: new THREE.Quaternion(), sc: new THREE.Vector3(), turn: new THREE.Matrix4(), back: new THREE.Matrix4(), up: new THREE.Vector3(0, 1, 0) }
+function placement(b: Billboard, m: THREE.Matrix4): THREE.Matrix4 {
+  const pc = b.piece
+  const { p, q, sc, turn, back, up } = PLACE
+  // a flipped picture's anchor is as far from its right edge as it was from its left
+  const anchorX = b.flip ? pc.w - pc.anchorX : pc.anchorX
+  const ax = (anchorX / pc.w) * b.width
+  const az = (pc.anchorY / pc.h) * b.height
+  if (b.tilt) {
+    // turned on the ground about the anchor: the quad's corner is moved so the anchor is at the
+    // origin, the turn is made there, and the whole thing is set down at the foot
+    p.set(b.x, b.y + b.lift, b.z)
+    q.setFromAxisAngle(up, b.tilt)
+    sc.set(1, 1, 1)
+    m.compose(p, q, sc)
+    back.makeTranslation(-ax, 0, -az)
+    turn.makeScale(b.width, 1, b.height)
+    m.multiply(back).multiply(turn)
+  } else {
+    p.set(b.x - ax, b.y + b.lift, b.z - az)
+    q.identity()
+    sc.set(b.width, 1, b.height)
+    m.compose(p, q, sc)
+  }
+  return m
+}
+
 /** Everything drawn rather than built, in one mesh, back to front. Two sheets at most, by index. */
 export function buildBillboards(list: Billboard[], light: LightUniforms, sheets: THREE.IUniform[], sizes: [number, number][]): THREE.InstancedMesh | null {
   if (!list.length) return null
@@ -349,33 +380,11 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
   // over the ground and everything standing on it, and under the selection rings, which are pushed
   // after it. A billboard cannot be depth sorted against a form: it has no depth
   mesh.renderOrder = -1
-  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3()
-  const turn = new THREE.Matrix4(), back = new THREE.Matrix4()
-  const up = new THREE.Vector3(0, 1, 0)
+  const m = new THREE.Matrix4()
   sorted.forEach((b, i) => {
     const pc = b.piece
     const size = sizes[b.sheet] ?? sizes[0]
-    // a flipped picture's anchor is as far from its right edge as it was from its left
-    const anchorX = b.flip ? pc.w - pc.anchorX : pc.anchorX
-    const ax = (anchorX / pc.w) * b.width
-    const az = (pc.anchorY / pc.h) * b.height
-    if (b.tilt) {
-      // turned on the ground about the anchor: the quad's corner is moved so the anchor is at the
-      // origin, the turn is made there, and the whole thing is set down at the foot
-      p.set(b.x, b.y + b.lift, b.z)
-      q.setFromAxisAngle(up, b.tilt)
-      sc.set(1, 1, 1)
-      m.compose(p, q, sc)
-      back.makeTranslation(-ax, 0, -az)
-      turn.makeScale(b.width, 1, b.height)
-      m.multiply(back).multiply(turn)
-    } else {
-      p.set(b.x - ax, b.y + b.lift, b.z - az)
-      q.identity()
-      sc.set(b.width, 1, b.height)
-      m.compose(p, q, sc)
-    }
-    mesh.setMatrixAt(i, m)
+    mesh.setMatrixAt(i, placement(b, m))
     mesh.setColorAt(i, b.tint)
     // the sheet's origin is its top left and a texture's is its bottom left
     rect[i * 4] = pc.x / size[0]
@@ -405,6 +414,151 @@ export function buildBillboards(list: Billboard[], light: LightUniforms, sheets:
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
   // what each instance belongs to, in the sorted order, so a fade can find it again
   mesh.userData.tags = sorted.map(b => b.tag ?? null)
+  return mesh
+}
+
+const SILHOUETTE_VS = /* glsl */ `
+attribute vec4 aRect;
+attribute vec3 aFoot;
+attribute vec4 aExtra;
+attribute vec2 aFade;
+attribute vec4 aCover;
+attribute vec4 aCoverRect;
+attribute vec2 aCoverStyle;
+uniform float uTime;
+varying vec2 vUv;
+varying vec2 vLocal;
+varying vec2 vWorld;
+varying vec4 vExtra;
+varying vec2 vFade;
+varying vec4 vCover;
+varying vec4 vCoverRect;
+varying vec2 vCoverStyle;
+varying vec3 vTint;
+void main() {
+  vFade = aFade;
+  float u = mix(uv.x, 1.0 - uv.x, aExtra.x);
+  vUv = vec2(aRect.x + u * aRect.z, aRect.y + uv.y * aRect.w);
+  vLocal = uv;
+  vExtra = aExtra;
+  vCover = aCover;
+  vCoverRect = aCoverRect;
+  vCoverStyle = aCoverStyle;
+  vTint = vec3(1.0);
+  #ifdef USE_INSTANCING_COLOR
+    vTint = instanceColor;
+  #endif
+  vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  // the same drift the picture itself has on the water
+  float ph = aFoot.x * 3.1 + aFoot.z * 1.7;
+  world.xz += vec2(cos(uTime * 0.9 + ph), sin(uTime * 1.3 + ph)) * aExtra.w;
+  vWorld = world.xz;
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`
+
+const SILHOUETTE_FS = /* glsl */ `
+precision highp float;
+uniform sampler2D uSheet0;
+uniform sampler2D uSheet1;
+varying vec2 vUv;
+varying vec2 vLocal;
+varying vec2 vWorld;
+varying vec4 vExtra;
+varying vec2 vFade;
+varying vec4 vCover;
+varying vec4 vCoverRect;
+varying vec2 vCoverStyle;
+varying vec3 vTint;
+void main() {
+  // the unit's own drawing, where it is solid
+  vec4 t0 = texture2D(uSheet0, vUv);
+  vec4 t1 = texture2D(uSheet1, vUv);
+  float a = mix(t0.a, t1.a, step(0.5, vCoverStyle.y));
+  a *= smoothstep(vExtra.z - 0.07, vExtra.z, vLocal.y) * vFade.x;
+  if (a < ${SILHOUETTE.solid.toFixed(3)}) discard;
+  // the building in front, where its drawing is solid at this point on the ground
+  vec2 c = (vWorld - vCover.xy) / vCover.zw;
+  if (c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0) discard;
+  float cu = mix(c.x, 1.0 - c.x, vCoverStyle.x);
+  vec2 cuv = vec2(vCoverRect.x + cu * vCoverRect.z, vCoverRect.y + (1.0 - c.y) * vCoverRect.w);
+  // the buildings are all on the first sheet
+  float ba = texture2D(uSheet0, cuv).a;
+  if (ba < ${SILHOUETTE.solid.toFixed(3)}) discard;
+  gl_FragColor = vec4(vTint * ${SILHOUETTE.shade.toFixed(3)}, ${SILHOUETTE.alpha.toFixed(3)});
+}
+`
+
+/** The silhouettes: for every unit with an owner whose picture a building's picture in front of it
+ *  covers, one quad placed exactly as the unit's own, drawn in the owner's colour only where both
+ *  drawings are solid. The buildings come from the settlement sheet, index 0; the units from theirs.
+ *  Drawn just after the sorted layer, so the sort itself is untouched. Null when nothing is covered. */
+export function buildSilhouettes(units: Billboard[], buildings: Billboard[], light: LightUniforms, sheets: THREE.IUniform[], sizes: [number, number][]): THREE.InstancedMesh | null {
+  const pairs: { u: Billboard; b: Billboard }[] = []
+  const boxes = buildings.map(b => { const [l, t, r, d] = pictureBox(b); return { b, l: b.x + l, t: b.z + t, r: b.x + r, d: b.z + d } })
+  for (const u of units) {
+    if (!u.owner) continue
+    const [l, t, r, d] = pictureBox(u)
+    const ul = u.x + l, ut = u.z + t, ur = u.x + r, ud = u.z + d
+    for (const bx of boxes) {
+      // in front is drawn later: a larger foot z. Overlap of the two boxes on the ground is the test
+      if (bx.b.z <= u.z) continue
+      if (bx.r <= ul || bx.l >= ur || bx.d <= ut || bx.t >= ud) continue
+      pairs.push({ u, b: bx.b })
+    }
+  }
+  if (!pairs.length) return null
+  const geo = quadGeometry()
+  const n = pairs.length
+  const rect = new Float32Array(n * 4), foot = new Float32Array(n * 3), extra = new Float32Array(n * 4), fade = new Float32Array(n * 2)
+  const cover = new Float32Array(n * 4), coverRect = new Float32Array(n * 4), coverStyle = new Float32Array(n * 2)
+  const blank = sheets[0]
+  const material = new THREE.ShaderMaterial({
+    vertexShader: SILHOUETTE_VS,
+    fragmentShader: SILHOUETTE_FS,
+    uniforms: { uTime: light.uTime, uSheet0: sheets[0] ?? blank, uSheet1: sheets[1] ?? sheets[0] ?? blank },
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.InstancedMesh(geo, material, n)
+  mesh.frustumCulled = false
+  // over the sorted layer, under the selection outline and the steam
+  mesh.renderOrder = -0.9
+  const m = new THREE.Matrix4()
+  pairs.forEach(({ u, b }, i) => {
+    const pc = u.piece, size = sizes[u.sheet] ?? sizes[0]
+    mesh.setMatrixAt(i, placement(u, m))
+    mesh.setColorAt(i, u.owner!)
+    rect[i * 4] = pc.x / size[0]
+    rect[i * 4 + 1] = 1 - (pc.y + pc.h) / size[1]
+    rect[i * 4 + 2] = pc.w / size[0]
+    rect[i * 4 + 3] = pc.h / size[1]
+    foot[i * 3] = u.x; foot[i * 3 + 1] = u.y; foot[i * 3 + 2] = u.z
+    extra[i * 4] = u.flip ? 1 : 0; extra[i * 4 + 1] = u.desaturate; extra[i * 4 + 2] = u.cut; extra[i * 4 + 3] = u.bob
+    fade[i * 2] = u.fade ?? 1; fade[i * 2 + 1] = u.clear ? 1 : 0
+    // the building's box on the ground and its place on its sheet
+    const [l, t, r, d] = pictureBox(b)
+    cover[i * 4] = b.x + l; cover[i * 4 + 1] = b.z + t; cover[i * 4 + 2] = r - l; cover[i * 4 + 3] = d - t
+    const bp = b.piece, bsize = sizes[b.sheet] ?? sizes[0]
+    coverRect[i * 4] = bp.x / bsize[0]
+    coverRect[i * 4 + 1] = 1 - (bp.y + bp.h) / bsize[1]
+    coverRect[i * 4 + 2] = bp.w / bsize[0]
+    coverRect[i * 4 + 3] = bp.h / bsize[1]
+    coverStyle[i * 2] = b.flip ? 1 : 0
+    coverStyle[i * 2 + 1] = u.sheet
+  })
+  geo.setAttribute('aRect', new THREE.InstancedBufferAttribute(rect, 4))
+  geo.setAttribute('aFoot', new THREE.InstancedBufferAttribute(foot, 3))
+  geo.setAttribute('aExtra', new THREE.InstancedBufferAttribute(extra, 4))
+  geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(fade, 2))
+  geo.setAttribute('aCover', new THREE.InstancedBufferAttribute(cover, 4))
+  geo.setAttribute('aCoverRect', new THREE.InstancedBufferAttribute(coverRect, 4))
+  geo.setAttribute('aCoverStyle', new THREE.InstancedBufferAttribute(coverStyle, 2))
+  mesh.instanceMatrix.needsUpdate = true
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  mesh.userData.tags = pairs.map(({ u }) => u.tag ?? null)
   return mesh
 }
 

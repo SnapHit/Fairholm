@@ -2153,6 +2153,58 @@ line was wrong.
 - **The frame loop** was not idle with the lander chosen on turns one and two, because of the steam,
   not the choice (138).
 
+## Making the whole game reachable, session of 3 October 2026
+
+The game opened properly and could not be played to the end: the rates were derived one at a time
+and never summed against a turn count (`RISKS.md` section 1). This run makes every era reachable. Its
+phases are housekeeping, the two defects that would corrupt the measurement, tuning to outcomes
+against an autopilot that plays sensibly, per-good surplus rules, predecessor barter, and orders that
+outlast the turn. Each phase is committed on its own.
+
+### 146. Housekeeping: the specification, two briefs, and what "two em dashes" turned out to be
+
+**What.** `docs/build-specification.md` now describes the opening at sea where it described landing
+sites and anchorages: the state's `splashdowns`, the turn counter's first month at sea, splashdown
+placement on the world stream, build step nineteen, and acceptance check two, which reads as
+`CLAUDE.md` has it. The section 3 table of the military brief carries "none" where it carried em
+dashes; there were three, not two (the colonist's two cells and the improver's attack), and all
+three are changed. The setting brief's section 7 says a hold plots a course and the route's end or
+Go sails it, and its vocabulary paragraph in section 12 no longer contrasts signatories with a term
+from the forbidden list. Each changed brief has a dated line at its top, the repository's convention
+for marking a change, though the prompt asked for nothing but the changes themselves.
+
+### 147. The passenger shortcut: Found here and Go ashore on one hold
+
+**What.** With the lander chosen, a hold on the shore beside it puts Found here and Go ashore on the
+card with Clear: two touches from hold to landing. Go ashore sends the next one off onto that tile
+and chooses them. The `disembark` action takes an optional `aboard` index, so the Aboard list in More
+can choose any passenger, not only the next one off; a hold on the shore then sends that one.
+`sendAshore` in `src/ui/app.ts`, `noRouteWords` and `canStepAshore` in `src/ui/card.ts`,
+`aboardSection` in `src/ui/sheets.ts`. The three-action row tightens its buttons so the labels stay
+on one line at 390 points.
+
+**Why.** The prompt. Decision 142's version needed More, Choose, a hold and Go ashore: four touches.
+
+### 148. No unit is ever fully hidden: a silhouette through the building in front
+
+**What.** `buildSilhouettes` in `src/render/billboards.ts`: for every drawn unit whose picture a
+settlement building's picture in front of it overlaps (the building's foot further down the screen,
+so drawn later), one more quad placed exactly as the unit's own, drawn just after the sorted layer
+at render order -0.9, in the owner's colour darkened by `SILHOUETTE.shade` at `SILHOUETTE.alpha`,
+only where both the unit's drawing and the building's are solid above `SILHOUETTE.solid`. The
+building's alpha is read in the fragment shader from the point on the ground the fragment stands
+on, so a clear corner of the building's rectangle draws nothing. The layer's sort is untouched; the
+pass fades with the unit's own picture (the beaching) and hides with it below the zoom where units
+are marks. `SILHOUETTE` in `src/render/look.ts`; the unit's owner colour rides on its billboard.
+This is the one change to `/src/render` in this run.
+
+**Why.** Decision 145 called a figure behind a building art debt; the prompt made it a render
+rule. A depth buffer trick was considered and rejected: the billboards write no depth on purpose
+(decision 68), and writing a false one for them would have changed what every later transparent
+mesh is tested against. Pairing on the CPU costs one quad per covered unit and touches nothing else.
+Measured in `scripts/phase0.mjs`: a militia north of The Landing's hall, wholly behind it, shows as a
+faint bone figure through the wall and is chosen by a tap on it.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

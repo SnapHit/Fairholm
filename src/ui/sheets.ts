@@ -667,18 +667,19 @@ function landerControls(app: App, s: GameState, u: Unit): HTMLElement {
   return box
 }
 
-/** Who is aboard the lander, in the order they would step off. The next one off can be chosen, and
- *  a hold on the shore beside the lander then sends them ashore, the way a colonist beside it is
- *  sent aboard by holding the lander. Feel brief section 3. */
+/** Who is aboard the lander, in the order they would step off. Any of them can be chosen, and a hold
+ *  on the shore beside the lander then sends them ashore, the way a colonist beside it is sent
+ *  aboard by holding the lander. With nobody chosen, a hold on the shore offers Go ashore on the
+ *  card for the next one off. Feel brief section 3. */
 function aboardSection(app: App, s: GameState, u: Unit): HTMLElement | null {
   if (!u.aboard.length) return null
   const w = s.world.width, h2 = s.world.height
   const shore = neighbours8(w, h2, u.tile).some(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored && s.world.tiles[n].terrain !== 'mountain')
-  const order = [...u.aboard].reverse()
-  return section(`Aboard, ${u.aboard.length}`,
-    ...order.map((c, i) => line([h('b', {}, standingWords(c)), i === 0 && u.aboard.length > 1 ? muted(' · next off') : null],
-      i === 0 && shore ? button('Choose', () => app.choosePassenger(u.id), 'tiny') : undefined)),
-    muted(shore ? 'Choose the next one off, then hold the shore beside the lander to send them ashore.' : 'Beside a shore, the next one off can be sent ashore to look about.'),
+  const n = u.aboard.length
+  return section(`Aboard, ${n}`,
+    ...u.aboard.map((c, k) => ({ c, k })).reverse().map(({ c, k }) => line([h('b', {}, standingWords(c)), k === n - 1 && n > 1 ? muted(' · next off') : null],
+      shore ? button('Choose', () => app.choosePassenger(u.id, k), 'tiny') : undefined)),
+    muted(shore ? 'Choose one, then hold the shore beside the lander to send them ashore. With nobody chosen, a hold on the shore sends the next one off.' : 'Beside a shore, any of them can be sent ashore to look about.'),
   )
 }
 
