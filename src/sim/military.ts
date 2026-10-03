@@ -157,14 +157,22 @@ export function fight(s: GameState, attacker: Unit, tile: number, ctx: TurnConte
   const won = wins > losses
   const loser = won ? defender : attacker
   const victor = won ? attacker : defender
+  // the names before the loser is degraded, so a militia that lost its arms is still called militia
+  const attackerName = plainLabel(attacker.kind), defenderName = plainLabel(defender.kind), loserName = plainLabel(loser.kind)
   const what = degrade(s, loser, victor, ctx)
   promote(s, victor, ctx)
   const mine = attacker.owner === 0 || defender.owner === 0
-  if (mine) ctx.log({ kind: 'war', text: `${ownerName(s, attacker.owner)} ${unitLabel(attacker.kind)} attacked ${ownerName(s, defender.owner)} ${unitLabel(defender.kind)}${st ? ` at ${st.name}` : ''}: ${wins} exchanges to ${losses}. The ${unitLabel(loser.kind === 'colonist' && loser !== victor ? loser.kind : loser.kind)} ${what}.`, why: `Each exchange is won with chance ${Math.round(100 * A / (A + D))} per cent, attack ${Math.round(A * 10) / 10} against defence ${Math.round(D * 10) / 10}.`, tile })
+  if (mine) ctx.log({ kind: 'war', text: `${cap(ownerName(s, attacker.owner))} ${attackerName} attacked ${ownerName(s, defender.owner)} ${defenderName}${st ? ` at ${st.name}` : ''}: ${wins} exchanges to ${losses}. The ${loserName} ${what}.`, why: `Each exchange is won with chance ${Math.round(100 * A / (A + D))} per cent, attack ${Math.round(A * 10) / 10} against defence ${Math.round(D * 10) / 10}.`, tile })
   return won
 }
 
 function ownerName(s: GameState, owner: number): string { return owner === 0 ? 'your' : owner === -1 ? "the Company's" : `${s.charters[owner]?.name ?? 'a rival'}'s` }
+function cap(text: string): string { return text ? text[0].toUpperCase() + text.slice(1) : text }
+/** A unit's name without its article, for the middle of a sentence: "militia", "Company regulars". */
+export function plainLabel(kind: string): string {
+  const l = unitLabel(kind).replace(/^(A|An|The) /, '')
+  return l.startsWith('Company') ? l : l[0].toLowerCase() + l.slice(1)
+}
 
 /** Capture or fall of a settlement once its last defender is beaten. */
 function takeSettlement(s: GameState, st: Settlement, by: number, ctx: TurnContext) {
@@ -178,7 +186,10 @@ function takeSettlement(s: GameState, st: Settlement, by: number, ctx: TurnConte
       return
     }
     st.buildings.works = 0
-    for (const k of Object.keys(st.stock) as (keyof typeof st.stock)[]) st.stock[k] = Math.floor(st.stock[k] * 0.5)
+    for (const k of Object.keys(st.stock) as (keyof typeof st.stock)[]) st.stock[k] = Math.floor(st.stock[k] * C.military.sackFraction)
+    // sacked once; the Company marches on and does not come back to a place it has already broken
+    // until the cooldown is out (DECISIONS.md 154)
+    st.conditions['sacked'] = s.turn
     ctx.log({ kind: 'war', text: `The Company sacked ${st.name}: the works are thrown down and half the store is gone.`, why: 'A settlement with no garrison left cannot keep the Company out.', tile: st.tile })
     return
   }
@@ -224,7 +235,8 @@ function moveHostiles(s: GameState, ctx: TurnContext) {
   const mine = s.settlements.filter(x => x.owner === 0)
   if (!mine.length) return
   const over = !!(s.declaration && (s.declaration.won || s.declaration.lost))
-  for (const u of s.units) {
+  const breached = new Set<number>(), battering = new Set<number>()
+  for (const u of [...s.units]) {
     // a ship blockades and fights ships; it does not march, and it cannot take ground. The
     // Company's landing craft now lies off the settlement its wave makes for, and left in this
     // loop it took an ungarrisoned Landing from the water the turn it arrived
@@ -235,18 +247,31 @@ function moveHostiles(s: GameState, ctx: TurnContext) {
     // the Company marches on the Landing when it can, otherwise the nearest settlement
     const landing = mine.find(x => x.tile === s.charters[0].landing)
     const target = (u.owner === -1 && landing && dist(w, u.tile, landing.tile) <= 12) ? landing : mine.reduce((a, b) => dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a)
-    // attack anything of the player's beside it first
-    const near = neighbours8(w, h, u.tile).filter(n => s.units.some(x => x.tile === n && x.owner === 0 && !isHull(x.kind)) || (settlementAt(s, n)?.owner === 0))
+    // attack anything of the player's beside it first. A settlement the Company sacked lately is
+    // left alone while the cooldown runs: it has been broken, and the landing is the war
+    const recentlySacked = (st: Settlement) => u.owner === -1 && st.conditions['sacked'] !== undefined && s.turn - st.conditions['sacked'] < C.military.sackCooldown && !s.units.some(x => x.tile === st.tile && x.owner === 0 && isArmed(x.kind))
+    const near = neighbours8(w, h, u.tile).filter(n => s.units.some(x => x.tile === n && x.owner === 0 && !isHull(x.kind)) || (settlementAt(s, n)?.owner === 0 && !recentlySacked(settlementAt(s, n)!)))
     let attacked = false
     for (const n of near) {
       const st = settlementAt(s, n)
       if (st && st.owner === 0) {
         if (u.kind === 'siegeTrain' || u.kind === 'damagedSiegeTrain') {
-          // a siege train beside works breaches them over time
+          // a siege train beside works breaches them over time: one tier every threshold turns
+          // for the settlement, however many trains batter it, so a wall is a clock the player
+          // can read and not a wall that falls in a turn (DECISIONS.md 154)
           if (st.buildings.works > 0) {
-            u.progress++
-            if (u.progress >= C.military.breachThreshold) { st.buildings.works--; u.progress = 0; ctx.log({ kind: 'war', text: `The works at ${st.name} were breached. They stand a tier lower.`, why: `A siege train beside the works for ${C.military.breachThreshold} turns brings them down a tier.`, tile: st.tile }) }
-            else ctx.log({ kind: 'war', text: `A siege train is battering the works at ${st.name}, ${C.military.breachThreshold - u.progress} turns from a breach.`, tile: st.tile })
+            if (!breached.has(st.id)) {
+              u.progress++
+              if (u.progress >= C.military.breachThreshold) {
+                st.buildings.works--
+                breached.add(st.id)
+                for (const x of s.units) if (x.owner === u.owner && (x.kind === 'siegeTrain' || x.kind === 'damagedSiegeTrain') && neighbours8(w, h, x.tile).includes(n)) x.progress = 0
+                ctx.log({ kind: 'war', text: `The works at ${st.name} were breached. They stand a tier lower.`, why: `Siege trains beside the works for ${C.military.breachThreshold} turns bring them down a tier.`, tile: st.tile })
+              } else if (!battering.has(st.id)) {
+                battering.add(st.id)
+                ctx.log({ kind: 'war', text: `A siege train is battering the works at ${st.name}, ${C.military.breachThreshold - u.progress} turns from a breach.`, tile: st.tile })
+              }
+            }
             attacked = true
             break
           }

@@ -43,6 +43,12 @@ export function grievanceGathered(s: GameState, st: Settlement): number {
   return Math.min(C.grievance.maxPerSettlement, g)
 }
 
+/** The grievance a settlement needs for full resolve: so much a head, scaled by the map's pace and
+ *  the charter's terms, DECISIONS.md 153. */
+export function resolveNeed(s: GameState, st: Settlement): number {
+  return C.grievance.perPopulationForResolve * C.session.pace[s.settings.size] * difficultyOf(s.settings.difficulty).resolveNeed * Math.max(1, st.colonists.length)
+}
+
 export function nationalResolve(s: GameState): number {
   const mine = s.settlements.filter(x => x.owner === 0)
   const pop = mine.reduce((a, st) => a + st.colonists.length, 0)
@@ -52,7 +58,7 @@ export function nationalResolve(s: GameState): number {
 
 export function fleetStrengthFor(s: GameState): number {
   const diff = difficultyOf(s.settings.difficulty)
-  const units = C.military.fleetBase + s.charters[0].grievanceTotal * C.military.fleetPerGrievance * diff.fleetMultiplier
+  const units = C.military.fleetBase + s.charters[0].grievanceTotal * C.military.fleetPerGrievance * diff.fleetMultiplier / C.session.pace[s.settings.size]
   return Math.min(C.military.fleetMaxUnits, Math.round(units * 10) / 10)
 }
 
@@ -98,8 +104,7 @@ export const grievanceSystem: System = {
       } else {
         st.grievance *= 1 - C.grievance.decayPerTurn
       }
-      const need = C.grievance.perPopulationForResolve * Math.max(1, st.colonists.length)
-      st.resolve = Math.min(1.2, st.grievance / need)
+      st.resolve = Math.min(1.2, st.grievance / resolveNeed(s, st))
     }
     s.company.fleetStrength = fleetStrengthFor(s)
     let guard = 0

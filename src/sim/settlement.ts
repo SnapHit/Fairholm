@@ -113,7 +113,7 @@ export function inferOrders(s: GameState, tile: number): StandingOrders {
     if (v > best) { best = v; purpose = g }
   }
   if (best < 6) purpose = 'food'
-  return { purpose, surplus: { threshold: 40, destination: { kind: 'consign' } }, growth: { kind: 'keep' }, reviewed: false }
+  return { purpose, surplus: { threshold: C.market.defaultSurplusThreshold, destination: { kind: 'consign' } }, growth: { kind: 'keep' }, reviewed: false }
 }
 
 function firstBuilding(purpose: Purpose): BuildingLine | null {
@@ -151,7 +151,8 @@ export function foundingProblem(s: GameState, tile: number): string | null {
 }
 
 /** Found a settlement. Claims the nine tiles where unowned. Every settlement begins with a meeting
- * house and the tier-one building its terrain suggests, remaining systems proposal section 4. */
+ * house, a carpenter's shop and the tier-one building its terrain suggests, remaining systems
+ * proposal section 4 and DECISIONS.md 151. */
 export function foundSettlement(s: GameState, tile: number, owner: number, colonists: Colonist[], name?: string): Settlement {
   const orders = inferOrders(s, tile)
   const st: Settlement = {
@@ -180,6 +181,9 @@ export function foundSettlement(s: GameState, tile: number, owner: number, colon
     seen: null,
   }
   st.buildings.meeting = 1
+  // and a carpenter's shop, always: frame comes from nowhere else, and a settlement that cannot
+  // make frame can never build anything (DECISIONS.md 151). The line its ground suggests as well
+  st.buildings.carpenter = 1
   const fb = orders.purpose === 'ask' ? null : firstBuilding(orders.purpose)
   if (fb) st.buildings[fb] = 1
   if (s.charters[owner]?.signatories.includes(4)) st.buildings.works = 1
@@ -419,7 +423,7 @@ export const settlementSystem: System = {
       if (c.hunger !== undefined) out.push({
         key: `hunger:${st.id}`, group: 'hunger', type: 1, title: `${st.name} is running short of food`,
         body: `Food eaten outpaces food grown and the store is nearly empty.`, settlement: st.id, magnitude: st.colonists.length, since: c.hunger, choices: [], opens: 'settlement',
-        explain: 'Each person eats two food a turn. Put more people on food tiles, or fewer on everything else.',
+        explain: `Each person eats ${C.labour.eats === 1 ? 'one' : C.labour.eats} food a turn. Put more people on food tiles, or fewer on everything else.`,
       })
       if (c.spoilage !== undefined) out.push({
         key: `spoilage:${st.id}`, group: 'spoilage', type: 1, title: `${st.name} is losing goods`,

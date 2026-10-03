@@ -55,7 +55,7 @@ export function landingCoast(s: GameState): number[] {
       const xx = x + dx, zz = z + dz
       if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue
       const i = zz * w + xx
-      if (isLand(tiles[i]) && tiles[i].terrain !== 'mountain' && isCoastal(w, h, tiles, i)) out.add(i)
+      if (isLand(tiles[i]) && tiles[i].terrain !== 'mountain' && isCoastal(w, h, tiles, i) && !s.settlements.some(x => x.tile === i)) out.add(i)
     }
   }
   return [...out].sort((a, b) => a - b)

@@ -12,9 +12,17 @@ section says which ones are load-bearing.
 
 ## The game feels too fast or too slow
 
+The reachability tables in `DECISIONS.md` 158 are the reference: three machine policies
+(`src/sim/policy.ts`) play whole games and `tests/pace.test.ts` prints where each milestone fell.
+Run it after any change in this section, before and after, and read the table rather than guessing.
+`PACE_SIZES=small PACE_POLICIES=competent PACE_SEEDS=3 npx vitest run tests/pace.test.ts` is one
+map in a few seconds.
+
 | Symptom | Likely cause | Constant | Direction | Also affects |
 |---|---|---|---|---|
 | The turn count runs out with the story half told | Too few turns for the rates | `C.session.sizes[size].turns` | Raise | Nothing else; the fleet and drift are per turn, so a longer game faces a bigger fleet and dearer tooling |
+| The declaration comes at the right time on one size and not another | The per-size pace factor | `C.session.pace[size]` | Raise for later, lower for sooner, that size only | The fleet's growth with grievance on that size, which is divided by the same factor |
+| Generous and punitive reach the declaration on the same turn | Terms do not touch resolve | `C.difficulty.*.resolveNeed` | Spread them | Nothing else |
 | Nothing changes for twenty turns at a time | Growth and Word too slow (see the next two sections) | `C.labour.granaryThreshold` | Lower | Births per turn, therefore resolve denominators, food demand, and the size gates at 5 and 9 |
 | Everything happens at once in the first fifty turns | Unlock backstops too early | `C.onboarding.unlockBackstop.*` | Raise | Which cards appear when; nothing mechanical |
 | Payments feel disconnected from the sale | Crossing lag | `C.market.crossingTurns[crossing]` | Lower | Word arrives with the gold, so immigration lags by the same amount |
@@ -69,7 +77,7 @@ section says which ones are load-bearing.
 | Symptom | Likely cause | Constant | Direction | Also affects |
 |---|---|---|---|---|
 | Every settlement runs a deficit with half its people on food | Yields too low for the eating rate | `C.terrain.yields[terrain].food` | Raise grassland and plains by one | The own-tile free food (decision 9), which uses the same table |
-| | or the eating rate too high | `C.labour.eats` | Lower to 1 is drastic; keep 2 and raise yields | Every settlement's balance; the hunger card threshold |
+| | or the eating rate too high | `C.labour.eats` | It is 1 now (decision 152); at 2 a settlement of eight needed six on food | Every settlement's balance; the hunger card threshold; the copy reads the constant |
 | Forested coast starves | Forest food cap | `C.terrain.forestFoodCap` | Raise to 2 | Makes clearing less urgent |
 | Food never banks a birth | Surplus too small against the threshold | `C.labour.granaryThreshold` | Lower | See pace |
 | Colonists die before the player understands food | Starvation too quick | `C.labour.starvationTurns` | Raise | Nothing else |
@@ -99,6 +107,10 @@ has been sent. The player should feel it on the first big sale.
 | The price hits the floor and the lesson is "nothing matters below here" | Floor too high or too low | `C.market.goods[good].floor` | Set the floor so a dump of four lots lands above it | |
 | The dispatch does not say why | The `why` text only appears when the price fell | `market.ts` `consign` | | |
 | The office dumps on the player's behalf | Office threshold | `C.market.consignmentOfficeThreshold` | Raise | The office's keep-back for building inputs is twice the threshold |
+| New settlements sell everything, or nothing | The inferred threshold | `C.market.defaultSurplusThreshold` | Raise or lower; keep it under the base storage | Horses and inputs are kept at twice it |
+| The dispatch is full of one-unit sales | The full store sale | `C.market.fullStoreMinSale` | Raise | Spoilage takes what is not sold |
+| A steady seller's price walks to the floor by itself | Recovery too slow for the output | `C.market.goods[good].recovery` | Raise; it is twice the proposal's now (decision 157) | The quiet turn test is twice the recovery |
+| The dumping card nags a settlement that sells a little | The card's thresholds | `C.market.dumpingAlertShare`, `dumpingAlertDrop` | Raise | Nothing else |
 
 ## The queue asks too much, or too little
 
@@ -119,6 +131,7 @@ has been sent. The player should feel it on the first big sale.
 | Symptom | Likely cause | Constant | Direction | Also affects |
 |---|---|---|---|---|
 | Rivals never leave peace | War needs suspicion 1.0 from raiders caught | `C.rivals.suspicionPerRaid`, `warAt`, `C.naval.rivalRaidChancePerTurn` | Raise the first, lower the second, raise the third | Raiders off the coast; the naval cards |
+| Rivals never even go tense | Nothing crowds and nothing undercuts | `C.rivals.crowdingRadius`, `undercutBelow`, `suspicionPerUndercut` | Raise the first and third, raise the second toward 1 | Undercutting stops at tense by rule (decision 156) |
 | Rivals go tense the moment you settle | Crowding | `C.rivals.crowdingRadius`, `crowdingRelationPerTurn` | Lower | |
 | Rival settlements everywhere by turn 200 | Cap binds | `C.rivals.settlementCap`, `expansionBase`, `expansionPerSettlement` | See `DECISIONS.md` 15; lower the base and raise the per-settlement drag before touching the cap | The measured table in that decision |
 | Rivals never found a second settlement | | `C.difficulty.*.rivalExpansion`, `expansionBase` | Raise | |
@@ -149,7 +162,8 @@ has been sent. The player should feel it on the first big sale.
 | Waves land where nobody is | Anchorage choice | `candidateAnchorages` in `fleet.ts` prefers within ten tiles of a settlement | Lower the ten | |
 | The narrowing is meaningless | `approachTurns` | Raise to four | The wave card text |
 | Works do nothing | Multipliers | `C.military.fortMultipliers` | Raise tiers two and three | Rival settlements use the same table to resist |
-| A siege train breaches in two turns | | `C.military.breachThreshold` | Raise | |
+| A siege train breaches in two turns | | `C.military.breachThreshold` | Raise; it is per settlement now, however many trains (decision 154) | |
+| Outposts are sacked every turn by every unit beside them | The sack cooldown | `C.military.sackCooldown`, `sackFraction` | Raise the first | |
 | Batteries are useless | Table | `C.military.units.battery.attackSettlement`, `defenceSettlement` | Raise | Signatory nine doubles coastal batteries |
 | Militia are useless against regulars | Regulars table | `C.military.company.regulars`, `horse` | Lower to 6 and 8 | Ambush odds in cover |
 | Nobody promotes | | `C.military.promotionChance` | Raise | Signatory eight multiplies it by 1.6 |
@@ -189,7 +203,12 @@ queue, then change the next.
 - `C.military.fortMultipliers`: defence of every settlement, including rival resistance.
 - `C.buildings.costs`, `popGate`, `C.labour.workersPerBuilding`, `tierMultiplier`: the build economy.
 - `C.queue.typeWeight`: the order of everything the player sees.
-- `C.rivals.expansionBase`, `settlementCap`: how crowded the coast is.
+- `C.rivals.expansionBase`, `expansionPerSettlement`, `expansionPerPop`, `expansionPerTile`: how
+  crowded the coast is; `settlementCap` is a backstop only (decision 149).
+- `C.session.pace[size]`: when the declaration comes and how big the fleet is, by size (decision
+  153). Change it for one size at a time and rerun `tests/pace.test.ts` for that size.
+- `C.autopilot.*`: the machine's play, not the game's. Changing a knob changes what the tables
+  measure, never what a player can do; say so in the decision when a table is re-recorded.
 
 ## Safe to adjust freely
 

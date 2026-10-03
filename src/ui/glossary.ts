@@ -11,7 +11,7 @@ import { SEASON_NAMES, season, year } from '../sim/turn'
 export interface Term { title: string; text: string; state?: (s: GameState) => string }
 
 const GOODS: Record<GoodId, [string, string]> = {
-  food: ['Food', 'Everyone eats two a turn and surplus banks toward a new colonist. It is never worth sending across the sea.'],
+  food: ['Food', `Everyone eats ${C.labour.eats === 1 ? 'one' : 'two'} a turn and surplus banks toward a new colonist. It is never worth sending across the sea.`],
   timber: ['Timber', 'Cut from forest and turned into frame by the carpenter, which every building needs. Sells for little.'],
   gold: ['Gold', 'Dug from seams that run out. It sells high, then the seam is gone and the tile is old workings.'],
   horses: ['Horses', 'Grazed on grassland and bred in a stable. They mount outriders and pull haulers.'],
@@ -43,7 +43,7 @@ export const TERMS: Record<string, Term> = {
   passage: { title: 'Passage', text: 'A passage brings one colonist across. Each costs more Word than the last; gold can buy one outright.', state: s => `${s.charters[0].passages} passages so far.` },
   landing: { title: 'The Landing', text: 'Your first settlement, where the lander beached. Freight landers come down offshore of any coastal settlement you own; inland settlements haul to one, or build a consignment office.', state: s => s.settlements.find(x => x.owner === 0) ? `${s.settlements.find(x => x.owner === 0)!.name}.` : 'Not yet ashore.' },
   settlement: { title: 'Settlement', text: 'A settlement works the nine tiles around it and the buildings within. Every colonist in it has one job.', state: s => `${s.settlements.filter(x => x.owner === 0).length} of yours.` },
-  colonist: { title: 'Colonist', text: 'A person. Each works one tile or one building, or stands idle, and each eats two food a turn.', state: s => `${s.settlements.filter(x => x.owner === 0).reduce((a, st) => a + population(st), 0)} across your settlements.` },
+  colonist: { title: 'Colonist', text: `A person. Each works one tile or one building, or stands idle, and each eats ${C.labour.eats === 1 ? 'one' : 'two'} food a turn.`, state: s => `${s.settlements.filter(x => x.owner === 0).reduce((a, st) => a + population(st), 0)} across your settlements.` },
   debtor: { title: 'Debtor', text: 'A colonist working off the passage the Company paid. Debtors produce two less in buildings and cannot be taught.', state: s => `${countStanding(s, 'debtor')} at present.` },
   contracted: { title: 'Contracted', text: 'A colonist under contract, one less in buildings. Contracts run out with time and schooling.', state: s => `${countStanding(s, 'contracted')} at present.` },
   free: { title: 'Free', text: 'A colonist free of obligation, working at full output and able to learn a trade.', state: s => `${countStanding(s, 'free')} at present.` },

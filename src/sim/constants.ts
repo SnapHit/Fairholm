@@ -38,6 +38,9 @@ export interface DifficultyBundle {
   alarmSensitivity: number
   wordPerValue: number
   recoveryRate: number
+  /** Grievance needed per head for full resolve, as a multiple of the base: generous terms give
+   *  the declaration sooner, punitive later but still within the game (DECISIONS.md 153). */
+  resolveNeed: number
 }
 
 export const C = {
@@ -53,6 +56,14 @@ export const C = {
       large: { w: 72, h: 48, turns: 660 },
       massive: { w: 92, h: 60, turns: 900 },
     } as Record<MapSize, { w: number; h: number; turns: number }>,
+    /** The one per-size pace factor (DECISIONS.md 153). The early milestones are the same number of
+     *  turns on every size, and the economy's rates are per turn, so they need no scaling; but the
+     *  eras that are fractions of the game, the declaration above all, must come at the same
+     *  fraction on a 660 turn map as on a 300 turn one. Resolve needs this much more grievance per
+     *  head by size, and the fleet grows this much more slowly with it. Less than the game's length
+     *  over the small game's, because a bigger map carries more settlements and more people and
+     *  they take longer to bring round by themselves. Measured, not derived. */
+    pace: { small: 1, standard: 1.15, large: 1.6, massive: 2.1 } as Record<MapSize, number>,
     landFraction: { continent: 0.47, coast: 0.42, archipelago: 0.36 } as Record<LandShape, number>,
     dispatchCap: 400,
     intentDefault: 'You owe the Company for your passage. You intend to stop owing them.',
@@ -62,9 +73,13 @@ export const C = {
   // Colonists and labour brief
   // -------------------------------------------------------------------------------------------
   labour: {
-    granaryThreshold: 160,     // section 3, surplus food that converts to a colonist
-    eats: 2,                   // food per colonist per turn
-    firstPassageWord: 30,      // section 3
+    granaryThreshold: 100,     // section 3, surplus food that converts to a colonist; 160 in the brief, see DECISIONS.md 152
+    /** Food per colonist per turn. One, down from the brief's two (DECISIONS.md 152): the brief's
+     *  own derivation has a settlement of eight with four on the ground banking five or six food a
+     *  turn, which at two a head and three a tile is impossible, and at one a head is what three
+     *  on food and the settlement's own tile give. Food is a pressure, not a wall. */
+    eats: 1,
+    firstPassageWord: 20,      // section 3 has 30; 20 so the first lot consigned pays the first passage, DECISIONS.md 152
     passageWordStep: 8,
     goldPassageBase: 60,       // gold buys passage at a price that rises with the count
     goldPassageStep: 15,
@@ -92,36 +107,50 @@ export const C = {
     demandDeadline: 4,         // turns to answer
     embargoGrievanceBurst: 40,
     consignmentOfficeThreshold: 60,   // surplus above this is sold automatically
+    /** The surplus threshold a new settlement's orders are inferred with. Half the base storage,
+     *  so the rule can fire before the store is full (DECISIONS.md 151): at the old forty, equal to
+     *  the base storage, a standing order waiting for a full lot above it could never sell. */
+    defaultSurplusThreshold: 20,
+    /** When the store is full the surplus rule sells what is above the threshold short of a lot,
+     *  but never a dribble smaller than this: the rest is the spoilage card's to say. */
+    fullStoreMinSale: 5,
     /** Dumping by standing order is never silent. When the player's own automatic sales account for
      *  at least this share of a good's fall below its baseline, and the fall is at least this share
      *  of the baseline (never under one price point), a loss card says so until the price recovers or
      *  the orders change. RISKS.md risk seven. */
     dumpingAlertShare: 0.5,
     dumpingAlertDrop: 0.25,
+    dumpingAlertMinPoints: 2,
     smugglerRate: 0.5,         // consignment office after the declaration or under blockade
     freightLossPerTile: 0.004, // the third soft pressure: distance from the Landing
     freightLossMax: 0.25,
     crossingTurns: { short: 2, standard: 3, long: 5 },   // payment lag, months each way
     priceJitter: 0.04,         // play randomness on displayed price movement, fraction
+    /** volumeToShift is the units of a good that move its price one point, and it is half what the
+     *  proposal's table gave (DECISIONS.md 157): at the old numbers a lot of twenty five never
+     *  moved a refined good's price a visible point, and the dumping lesson was never taught by
+     *  one sale. At these a single lot of linen shows the fall. recovery, the pressure a quiet turn
+     *  takes off, is doubled with it, so that a settlement selling what two workers make holds its
+     *  price and only a colony that sends more than that walks it down. */
     goods: {
-      food:        { open: 2,  floor: 1, ceiling: 3,  volumeToShift: 250, recovery: 3,   drift: 0,     spread: 2,  traded: false, predecessor: false },
-      timber:      { open: 2,  floor: 1, ceiling: 4,  volumeToShift: 200, recovery: 3,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
-      gold:        { open: 22, floor: 2, ceiling: 24, volumeToShift: 40,  recovery: 0,   drift: 0,     spread: 6,  traded: true,  predecessor: false },
-      horses:      { open: 6,  floor: 2, ceiling: 14, volumeToShift: 90,  recovery: 2,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
-      ore:         { open: 3,  floor: 1, ceiling: 6,  volumeToShift: 150, recovery: 3,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
-      metal:       { open: 7,  floor: 2, ceiling: 12, volumeToShift: 110, recovery: 2,   drift: 0,     spread: 3,  traded: true,  predecessor: true },
-      tooling:     { open: 4,  floor: 2, ceiling: 14, volumeToShift: 100, recovery: 2,   drift: 0.012, spread: 5,  traded: true,  predecessor: true },
-      arms:        { open: 5,  floor: 3, ceiling: 24, volumeToShift: 90,  recovery: 2,   drift: 0.018, spread: 5,  traded: true,  predecessor: true },
-      flax:        { open: 3,  floor: 1, ceiling: 7,  volumeToShift: 120, recovery: 1,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
-      linen:       { open: 11, floor: 3, ceiling: 22, volumeToShift: 90,  recovery: 3,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
-      hemp:        { open: 4,  floor: 1, ceiling: 7,  volumeToShift: 120, recovery: 1,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
-      cordage:     { open: 9,  floor: 3, ceiling: 22, volumeToShift: 90,  recovery: 3,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
-      madder:      { open: 5,  floor: 1, ceiling: 7,  volumeToShift: 120, recovery: 1,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
-      dye:         { open: 14, floor: 3, ceiling: 22, volumeToShift: 90,  recovery: 3,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
-      bloom:       { open: 6,  floor: 2, ceiling: 9,  volumeToShift: 110, recovery: 2,   drift: 0,     spread: 3,  traded: true,  predecessor: false },
-      attar:       { open: 15, floor: 5, ceiling: 26, volumeToShift: 80,  recovery: 2,   drift: 0,     spread: 5,  traded: true,  predecessor: true },
-      cores:       { open: 18, floor: 6, ceiling: 34, volumeToShift: 70,  recovery: 2,   drift: 0,     spread: 6,  traded: true,  predecessor: true },
-      instruments: { open: 12, floor: 8, ceiling: 40, volumeToShift: 60,  recovery: 1,   drift: 0.04,  spread: 6,  traded: true,  predecessor: false },
+      food:        { open: 2,  floor: 1, ceiling: 3,  volumeToShift: 125, recovery: 6,   drift: 0,     spread: 2,  traded: false, predecessor: false },
+      timber:      { open: 2,  floor: 1, ceiling: 4,  volumeToShift: 100, recovery: 6,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
+      gold:        { open: 22, floor: 2, ceiling: 24, volumeToShift: 20,  recovery: 0,   drift: 0,     spread: 6,  traded: true,  predecessor: false },
+      horses:      { open: 6,  floor: 2, ceiling: 14, volumeToShift: 45,  recovery: 4,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
+      ore:         { open: 3,  floor: 1, ceiling: 6,  volumeToShift: 75, recovery: 6,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
+      metal:       { open: 7,  floor: 2, ceiling: 12, volumeToShift: 55, recovery: 4,   drift: 0,     spread: 3,  traded: true,  predecessor: true },
+      tooling:     { open: 4,  floor: 2, ceiling: 14, volumeToShift: 50, recovery: 4,   drift: 0.012, spread: 5,  traded: true,  predecessor: true },
+      arms:        { open: 5,  floor: 3, ceiling: 24, volumeToShift: 45,  recovery: 4,   drift: 0.018, spread: 5,  traded: true,  predecessor: true },
+      flax:        { open: 3,  floor: 1, ceiling: 7,  volumeToShift: 60, recovery: 2,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
+      linen:       { open: 11, floor: 3, ceiling: 22, volumeToShift: 45,  recovery: 6,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
+      hemp:        { open: 4,  floor: 1, ceiling: 7,  volumeToShift: 60, recovery: 2,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
+      cordage:     { open: 9,  floor: 3, ceiling: 22, volumeToShift: 45,  recovery: 6,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
+      madder:      { open: 5,  floor: 1, ceiling: 7,  volumeToShift: 60, recovery: 2,   drift: 0,     spread: 2,  traded: true,  predecessor: false },
+      dye:         { open: 14, floor: 3, ceiling: 22, volumeToShift: 45,  recovery: 6,   drift: 0,     spread: 4,  traded: true,  predecessor: true },
+      bloom:       { open: 6,  floor: 2, ceiling: 9,  volumeToShift: 55, recovery: 4,   drift: 0,     spread: 3,  traded: true,  predecessor: false },
+      attar:       { open: 15, floor: 5, ceiling: 26, volumeToShift: 40,  recovery: 4,   drift: 0,     spread: 5,  traded: true,  predecessor: true },
+      cores:       { open: 18, floor: 6, ceiling: 34, volumeToShift: 35,  recovery: 4,   drift: 0,     spread: 6,  traded: true,  predecessor: true },
+      instruments: { open: 12, floor: 8, ceiling: 40, volumeToShift: 30,  recovery: 2,   drift: 0.04,  spread: 6,  traded: true,  predecessor: false },
     } as Record<GoodId, GoodParams>,
   },
 
@@ -133,7 +162,7 @@ export const C = {
     pressMultiplier: 1.5,
     bulletinMultiplier: 2,
     maxPerSettlement: 12,
-    perPopulationForResolve: 250,
+    perPopulationForResolve: 150,   // 250 in the proposal, see DECISIONS.md 153
     declarationGate: 0.60,
     bonusAt50: 1,              // extra output per producing worker once resolve crosses 50%
     bonusAt100: 1,             // again at 100%
@@ -166,7 +195,11 @@ export const C = {
     terrainDefence: { grassland: 1, plains: 1, downs: 1.1, marsh: 1.2, highland: 1.4, mountain: 1.7, dry: 1, water: 1 } as Record<TerrainId, number>,
     forestDefence: 1.3,
     riverDefence: 1.15,
-    breachThreshold: 5,        // section 11, turns of adjacency before a tier falls
+    breachThreshold: 5,        // section 11, turns of adjacency before a tier falls, per settlement
+    /** A sacked settlement is left alone for this many turns; the Company marches on (decision 20
+     *  and 154). And the share of its store left after a sack. */
+    sackCooldown: 12,
+    sackFraction: 0.5,
     approachTurns: 3,          // section 10
     /** How far the recall fleet's landers motor in a turn, in tiles. Not the player's lander's
      *  speed: at six a turn a three turn approach would splash down eighteen tiles out, which on
@@ -176,12 +209,12 @@ export const C = {
     landingRadius: 2,
     declarationWindow: 6,
     fleetBase: 4,              // units before any grievance
-    fleetPerGrievance: 0.004,  // units per point of cumulative national grievance, times difficulty
+    fleetPerGrievance: 0.0025, // units per point of cumulative national grievance, times difficulty; 0.004 before DECISIONS.md 155
     fleetMaxUnits: 60,
     waveSize: 5,
     waveInterval: 5,
     promotionChance: 0.3,      // section 8
-    interventionGrievance: 1200,   // section 12, wartime grievance that buys a rival's ships
+    interventionGrievance: 360,    // section 12, wartime grievance that buys a rival's ships; 1200 before DECISIONS.md 155
     fleetComposition: { regulars: 0.55, horse: 0.25, siegeTrain: 0.2 },
   },
 
@@ -377,6 +410,64 @@ export const C = {
   },
 
   // -------------------------------------------------------------------------------------------
+  // The machine that plays a whole game, src/sim/policy.ts. Three policies: lazy does what the
+  // cards suggest and no more, competent plays a sensible game and is what the pace is tuned to,
+  // strong plays a sharp one. The difficulty of the game is what these three feel like; the
+  // reachability tables in DECISIONS.md are measured with them. Nothing here touches play.
+  // -------------------------------------------------------------------------------------------
+  autopilot: {
+    policies: {
+      lazy: {
+        civicAtPop: 5,           // staff the meeting house once a settlement is this big
+        civicWorkers: 2,         // with this many: the card says what a meeting house is for
+        foodSurplus: 0,          // aim for this much food over what is eaten, in units a turn
+        settleAtPop: 7,          // send a settler out once a settlement is this big
+        settlements: { small: 2, standard: 2, large: 2, massive: 2 } as Record<MapSize, number>,
+        sendAtPop: 99,           // a settlement this big sends its children to a smaller one
+        acceptChargeTo: 1,       // accept the Company's demands while the charge is below this
+        buyToolingGold: Infinity,   // buy tooling for a build when gold is above this
+        buyPassageGold: Infinity,   // buy a passage when gold is above this many times its price
+        musterShare: 0,          // declare once this share of the fleet is matched by armed units
+        declareBy: 0,            // or by this fraction of the game, if the gate is open
+        batteries: 0,            // batteries wanted at the landing before declaring
+        worksTier: 1,            // works wanted at the landing before declaring
+        armsStock: 0,            // arms held at the landing before declaring, bought if not made
+        musterFrom: 1,           // begin buying arms and raising works at this fraction of the game
+        tierTwoAtPop: 99,        // raise the main building to tier two at this population
+      },
+      competent: {
+        civicAtPop: 4, civicWorkers: 2, foodSurplus: 3, settleAtPop: 5,
+        settlements: { small: 5, standard: 9, large: 14, massive: 18 } as Record<MapSize, number>,
+        sendAtPop: 12, acceptChargeTo: 0.35, buyToolingGold: 100, buyPassageGold: 4, musterShare: 0.5, declareBy: 0.85,
+        batteries: 3, worksTier: 3, armsStock: 160, musterFrom: 0.45, tierTwoAtPop: 5,
+      },
+      strong: {
+        // sharper, not wider: the gate is a share of everyone, so a strong player keeps the colony
+        // compact and civic rather than sprawling, and does not buy people it must then bring round
+        civicAtPop: 3, civicWorkers: 2, foodSurplus: 4, settleAtPop: 4,
+        settlements: { small: 5, standard: 8, large: 12, massive: 16 } as Record<MapSize, number>,
+        sendAtPop: 10, acceptChargeTo: 0.3, buyToolingGold: 80, buyPassageGold: 4, musterShare: 0.7, declareBy: 0.8,
+        batteries: 3, worksTier: 3, armsStock: 220, musterFrom: 0.4, tierTwoAtPop: 5,
+      },
+    },
+    /** A settler looks for ground this far from the settlement that sends it, in tiles. */
+    settleRange: { min: 3, max: 6 },
+    /** A coastal site is worth this much more than an inland one: it can consign by itself. */
+    coastalSiteBonus: 10,
+    /** A site within this many tiles of a rival's settlement is left alone. */
+    rivalClearance: 4,
+    /** A site nobody has seen yet scores this much less than one in known ground. */
+    unseenSitePenalty: 5,
+    /** A sally is made at these odds or better: against a siege train, and against anything else. */
+    sallyOdds: { siege: 0.45, other: 0.55 },
+    /** Gold kept in hand when buying the tooling a build in progress is waiting on. */
+    toolingFloat: 40,
+    /** Buy arms for the muster only while gold stays above this, a lot at a time. */
+    armsGold: 120,
+    armsLot: 10,
+  },
+
+  // -------------------------------------------------------------------------------------------
   // Founding. Session brief section 8: anywhere but mountain and water, and two settlements'
   // centres at least this far apart in every direction, anyone's, so no two rings share a tile.
   // -------------------------------------------------------------------------------------------
@@ -441,7 +532,7 @@ export const C = {
     popGrowthPerTurn: 0.06,
     strengthPerTurn: 0.08,
     marketFootprintPerPop: 0.8,   // units of a good sold per population point per turn
-    crowdingRadius: 4,
+    crowdingRadius: 6,         // 4 before DECISIONS.md 156: rivals settle four tiles from the player, so four never crowded
     crowdingRelationPerTurn: 0.02,
     /** A rival's lander makes for a site at least this far from any other charter's settlement and
      *  from the player's lander, so a rival as fast as the player does not come ashore on top of
@@ -452,6 +543,13 @@ export const C = {
      *  is not taken on the first turn. Relaxed to landingClearance where it leaves nothing in reach. */
     playerLanderClearance: 10,
     suspicionPerRaid: 0.2,
+    /** Undercutting their trade, rival charters brief section 5: a good a rival lives by, standing
+     *  below this share of its baseline in the Company's book because of what the player has sent,
+     *  adds this much suspicion a turn to that rival, as far as tense and no further: war needs
+     *  proof. Each rival lives by a third of the shared goods, so a colony that dumps one good
+     *  wears on one rival first (DECISIONS.md 156). */
+    undercutBelow: 0.75,
+    suspicionPerUndercut: 0.012,
     tenseAt: 0.4,
     warAt: 1.0,
     colours: ['#7a1f2b', '#2b2f6e', '#2e2e2e'],   // deep crimson, indigo, charcoal
@@ -462,10 +560,10 @@ export const C = {
   // Difficulty brief section 3. Difficulty changes the terms, never the rules.
   // -------------------------------------------------------------------------------------------
   difficulty: {
-    generous: { startingColonists: 5, openingCharge: 0.03, chargeRise: 0.02, turnsBetweenDemands: 50, fleetMultiplier: 0.6, unresolvedThreshold: 8, rivalExpansion: 0.7, rivalsMayDeclare: false, alarmSensitivity: 0.7, wordPerValue: 8,  recoveryRate: 1.3 },
-    standard: { startingColonists: 3, openingCharge: 0.05, chargeRise: 0.03, turnsBetweenDemands: 40, fleetMultiplier: 1.0, unresolvedThreshold: 6, rivalExpansion: 1.0, rivalsMayDeclare: false, alarmSensitivity: 1.0, wordPerValue: 10, recoveryRate: 1.0 },
-    hard:     { startingColonists: 3, openingCharge: 0.08, chargeRise: 0.04, turnsBetweenDemands: 32, fleetMultiplier: 1.5, unresolvedThreshold: 5, rivalExpansion: 1.3, rivalsMayDeclare: true,  alarmSensitivity: 1.3, wordPerValue: 13, recoveryRate: 0.8 },
-    punitive: { startingColonists: 2, openingCharge: 0.12, chargeRise: 0.05, turnsBetweenDemands: 25, fleetMultiplier: 2.2, unresolvedThreshold: 4, rivalExpansion: 1.6, rivalsMayDeclare: true,  alarmSensitivity: 1.6, wordPerValue: 16, recoveryRate: 0.6 },
+    generous: { startingColonists: 5, openingCharge: 0.03, chargeRise: 0.02, turnsBetweenDemands: 50, fleetMultiplier: 0.6, unresolvedThreshold: 8, rivalExpansion: 0.7, rivalsMayDeclare: false, alarmSensitivity: 0.7, wordPerValue: 8,  recoveryRate: 1.3, resolveNeed: 0.85 },
+    standard: { startingColonists: 3, openingCharge: 0.05, chargeRise: 0.03, turnsBetweenDemands: 40, fleetMultiplier: 1.0, unresolvedThreshold: 6, rivalExpansion: 1.0, rivalsMayDeclare: false, alarmSensitivity: 1.0, wordPerValue: 10, recoveryRate: 1.0, resolveNeed: 1.0 },
+    hard:     { startingColonists: 3, openingCharge: 0.08, chargeRise: 0.04, turnsBetweenDemands: 32, fleetMultiplier: 1.5, unresolvedThreshold: 5, rivalExpansion: 1.3, rivalsMayDeclare: true,  alarmSensitivity: 1.3, wordPerValue: 13, recoveryRate: 0.8, resolveNeed: 1.15 },
+    punitive: { startingColonists: 2, openingCharge: 0.12, chargeRise: 0.05, turnsBetweenDemands: 25, fleetMultiplier: 2.2, unresolvedThreshold: 4, rivalExpansion: 1.6, rivalsMayDeclare: true,  alarmSensitivity: 1.6, wordPerValue: 16, recoveryRate: 0.6, resolveNeed: 1.3 },
   } as Record<Difficulty, DifficultyBundle>,
 
   // -------------------------------------------------------------------------------------------

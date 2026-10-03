@@ -153,18 +153,30 @@ describe('turn loop pin', () => {
   // New: founded on turn 1, turn 51, prices { instruments: 14 }, dispatch 41, both from the turns
   // the voyage no longer takes and the rivals' earlier trade; foodStore, stock, the timber price,
   // units, nextId, the rival count and everything else did not move.
+  //
+  // Re-recorded a fourth time on 3 October 2026 for the reachability tuning (DECISIONS.md 151 to
+  // 157), which moved several formulas at once and is the first change since the probe that was
+  // meant to move this pin: everyone eats one food a turn rather than two, so the passive settlement
+  // banks food and a child comes of age inside the fifty turns (pop 4 to 5, foodStore 4 to 54 with
+  // the granary at 100); the surplus rule's default threshold is 20 and it sells a full store, so
+  // the timber the ground gives is consigned and paid for (gold 40 to 567, word 0 to 7.2 after two
+  // passages at the first passage of 20 Word, passages 0 to 2, nextId 10 to 11); the volume that
+  // moves a price is halved, so that selling shows (timber 2 to 1), and with it the rivals' coupled
+  // trade and the drift show differently (tooling 4 to 5, instruments 14 to 13); and every sale and
+  // payment writes a line, so the dispatch is 41 to 98. The rival count, the charge, units, frame,
+  // grievance and the fleet did not move.
   it('fifty turns from a fixed seed reproduce the recorded aggregates', () => {
     const s = landed('pin-seed')
     expect(s.turn).toBe(1)
     for (let i = 0; i < 50; i++) applyAction(s, { t: 'endTurn' })
     expect(aggregates(s)).toEqual({
-      turn: 51, pop: 4, settlements: 1, rivalSettlements: 3,
-      gold: 40, word: 0, passages: 0,
-      foodStore: 4, frame: 0,
+      turn: 51, pop: 5, settlements: 1, rivalSettlements: 3,
+      gold: 567, word: 7.2, passages: 2,
+      foodStore: 54, frame: 0,
       stock: { timber: 40, tooling: 8 },
-      prices: { timber: 2, tooling: 4, arms: 6, instruments: 14, linen: 11 },
-      charge: 0.08, units: 1, dispatch: 41, grievance: 0, fleet: 4,
-      nextId: 10, demand: null, embargoed: 0,
+      prices: { timber: 1, tooling: 5, arms: 6, instruments: 13, linen: 11 },
+      charge: 0.08, units: 1, dispatch: 98, grievance: 0, fleet: 4,
+      nextId: 11, demand: null, embargoed: 0,
     })
   })
 
@@ -180,19 +192,28 @@ describe('turn loop pin', () => {
 })
 
 describe('grievance gate pin', () => {
-  // Protects: two meeting-house workers gather six a turn, resolve is grievance over 250 per head,
-  // the gate is sixty per cent, the first signatory costs 300 and is taken from the national pool
-  // without touching the settlement's own grievance, and the fleet scales at 0.004 per point
-  // times the generous multiplier. The turn number is exact: 750 needed at 6 a turn, so the gate
-  // falls 125 turns after founding. It was turn 126 when the game began ashore on turn one; with
-  // the voyage in front of it the pin counts from the founding turn instead, and the 125 is unchanged.
-  it('a settlement of five reaches the gate 125 turns after founding and can then declare', () => {
+  // Protects: two meeting-house workers gather six a turn, resolve is grievance over so much a head
+  // scaled by the map's pace and the charter's terms, the gate is sixty per cent, the first
+  // signatory costs 300 and is taken from the national pool without touching the settlement's own
+  // grievance, and the fleet scales per point of grievance times the generous multiplier over the
+  // pace. The turn number is exact. It was turn 126 when the game began ashore on turn one; with the
+  // voyage in front of it the pin counts from the founding turn instead.
+  //
+  // Re-recorded on 3 October 2026 for the reachability tuning (DECISIONS.md 153): old 125 turns and
+  // 750 grievance, at 250 a head; new 64 turns and 384 grievance, at 150 a head times the small
+  // map's pace of 1 and generous terms' 0.85 (150 * 0.85 * 5 * 0.6 = 382.5, reached on the 64th
+  // turn of gathering at six a turn). The fleet moves with it: old 4.0 + 750 * 0.004 * 0.6, new
+  // 4 + 384 * 0.0025 * 0.6 / 1. The settlement's surplus is now held, because the surplus rule
+  // sells by default from the first turn and the Word that paid would bring a sixth and a seventh
+  // person ashore inside the window, and the pin is about a settlement of five.
+  it('a settlement of five reaches the gate 64 turns after founding and can then declare', () => {
     const g = createGame('gate-seed', { size: 'small', difficulty: 'generous' }, 5)
     const founded = playOpening(g)
     g.rng.play = [11, 22, 33, 44]
     const st = g.settlements.find(x => x.owner === 0)!
     expect(st.colonists.length).toBe(5)
     st.buildings.meeting = 1
+    applyAction(g, { t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { threshold: C.market.defaultSurplusThreshold, destination: { kind: 'hold' } } })
     applyAction(g, { t: 'assignWorker', settlement: st.id, colonist: 0, job: { kind: 'building', line: 'meeting' } })
     applyAction(g, { t: 'assignWorker', settlement: st.id, colonist: 1, job: { kind: 'building', line: 'meeting' } })
     applyAction(g, { t: 'autoAssign', settlement: st.id })
@@ -203,10 +224,11 @@ describe('grievance gate pin', () => {
       applyAction(g, { t: 'endTurn' })
       if (nationalResolve(g) >= C.grievance.declarationGate) { gate = g.turn; break }
     }
-    expect(gate).toBe(founded + 125)
-    expect(Math.round(st.grievance)).toBe(750)
+    expect(gate).toBe(founded + 64)
+    expect(Math.round(st.grievance)).toBe(384)
     expect(g.charters[0].signatories).toEqual([0])
-    expect(g.company.fleetStrength).toBeCloseTo(C.military.fleetBase + 750 * C.military.fleetPerGrievance * C.difficulty.generous.fleetMultiplier, 5)
+    // the strength is kept to one decimal, so 4.576 reads 4.6
+    expect(g.company.fleetStrength).toBeCloseTo(Math.round((C.military.fleetBase + 384 * C.military.fleetPerGrievance * C.difficulty.generous.fleetMultiplier / C.session.pace.small) * 10) / 10, 5)
     expect(g.charters[0].unlocked.fleet).toBe(true)
     const q = deriveQueue(g, SYSTEMS)
     expect(q.shown.some(x => x.group === 'declaration' && x.type === 5)).toBe(true)

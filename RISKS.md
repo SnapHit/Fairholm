@@ -19,7 +19,10 @@ These are finished and might be wrong. Unfinished things are in the README and a
    On a 300-turn map the population may never reach the size the buildings assume (the tier two gate
    is five people, tier three is nine). Nothing in the briefs was checked against a turn count; all
    the rates were set independently and never summed. `C.labour.granaryThreshold`, `eats`,
-   `firstPassageWord`, `passageWordStep`, `difficulty.*.wordPerValue`.
+   `firstPassageWord`, `passageWordStep`, `difficulty.*.wordPerValue`. **Changed 3 October 2026**,
+   decisions 151 to 158: measured with three machine policies over whole games and tuned to the
+   milestones in decision 158. Pop 25 comes at two fifths of a small game now; the first colonist
+   at eighteen turns. Still untouched by a person.
 
 2. **Grievance is too slow to reach the declaration in a normal game.** Two meeting-house workers
    gather six a turn (cap twelve), resolve needs 250 per head, the gate is sixty per cent. A
@@ -28,13 +31,18 @@ These are finished and might be wrong. Unfinished things are in the README and a
    standard maps the declaration is therefore something the player forces late or never sees. The
    fleet it produces is small in proportion: 750 grievance gives 5.8 units on generous terms. The
    endgame the fiction is built on may be unreachable in play. `C.grievance.perWorker`,
-   `maxPerSettlement`, `perPopulationForResolve`, `declarationGate`.
+   `maxPerSettlement`, `perPopulationForResolve`, `declarationGate`. **Changed 3 October 2026**,
+   decision 153: 150 a head, scaled by the per-size pace factor and the terms; the competent policy
+   opens the declaration at two thirds of the game on every size.
 
 3. **The recall fleet is a skirmish.** `fleetBase` 4 plus 0.004 per grievance point means twenty
    units needs four thousand grievance on standard terms. Most games will face one or two waves of
    five. The narrowing approach, the blockade, the breach and the intervention are all built for a
    war that lasts; the numbers produce one that does not. Intervention, accruing three per meeting
-   house a turn toward 1200, effectively never fires (see decision 22).
+   house a turn toward 1200, effectively never fires (see decision 22). **Changed 3 October 2026**,
+   decisions 154 and 155: with resolve retuned the fleet is sixteen to nineteen on small and the war
+   four waves; intervention at 360 fires around the third wave. The competent policy wins its war on
+   every size at standard terms, and loses on punitive.
 
 4. **Rivals are passive.** Relations reach war only through suspicion from raiders caught in the act
    (0.2 each, war at 1.0) or the player attacking. Raiders appear with probability 0.03 a turn across
@@ -43,6 +51,9 @@ These are finished and might be wrong. Unfinished things are in the README and a
    reachable in practice only by the player starting a war. Expansion, meanwhile, is set by a cap
    (decision 15). On hard and punitive the rivals all declare against their own Companies by turn
    480, which is probably too often (0.004 a turn after turn 150 compounds to near certainty).
+   **Changed 3 October 2026**, decisions 149 and 156: expansion runs against a drag and the cap is a
+   backstop; crowding at six tiles and undercutting their trade make a rival tense before halfway in
+   every measured run. War still needs proof, and the rivals' own declarations are unchanged.
 
 5. **The predecessor economy is tiny.** Their purse starts at zero, so the first sale is bounded by
    `(0 + 200) / price` units: ten units of a twenty-gold good. The purse refills three a turn. Teaching

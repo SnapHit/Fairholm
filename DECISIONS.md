@@ -100,6 +100,8 @@ more frequent so there are at least three landings to fight.
 
 ### 22. Intervention is bought with 1200 wartime grievance at three per meeting house per turn
 
+**Changed 3 October 2026.** 360 now, decision 155; it fires around the third wave for a colony with four meeting houses.
+
 **What.** After declaring, every settlement with a meeting house adds three a turn toward
 `interventionGrievance`; at the threshold a rival not at war removes forty per cent of the remaining
 fleet pool and damages the blockade ships. `src/sim/fleet.ts`.
@@ -2268,8 +2270,10 @@ the price it fell to, the gold due and when, and in the why, how far the good no
 it would be with nothing sold. The price table keeps `autoPressure`, the share of each good's
 pressure that automatic selling put there, recovering in step with the whole. When a good stands at
 least `dumpingAlertDrop` of its baseline below it and at least `dumpingAlertShare` of that fall is
-the player's own automation, a type one card, "Your standing orders are dumping linen", names the
-price, the fall, the share, and the settlement selling most of it, and opens the orders sheet.
+the player's own automation, and the fall is at least `dumpingAlertMinPoints` (two, so that a cheap
+raw good falling its one point to the floor on any sale does not nag), a type one card, "Your
+standing orders are dumping linen", names the price, the fall, the share, and the settlement selling
+most of it, and opens the orders sheet.
 Type one, so it never folds. `dumpedGoods` in `src/sim/market.ts`, `C.market.dumpingAlertShare`
 and `dumpingAlertDrop`, `PriceEntry.autoPressure` in `src/sim/state.ts`. Saves from before this
 build load with the share at zero.
@@ -2282,6 +2286,214 @@ the baseline, so a good sold a little by a standing order does not nag, and a go
 does. Tested in `tests/systems.test.ts`: a surplus rule over a pile of linen writes the line, the
 share is positive and bounded by the pressure, the card is shown at type one, and holding the good
 for eighty quiet turns lets it go.
+
+### 151. Four defaults that made the economy unplayable, fixed before any constant moved
+
+**What.** Found by playing whole games with the machine (decision 158) and fixed first, because
+tuning against them would have tuned the wrong thing.
+
+- A settlement whose ground suggested a crop began with that crop's refinery and no carpenter's
+  shop, and frame comes from nowhere else, so it could never build anything. Every settlement now
+  begins with a carpenter's shop as well as the line its ground suggests. `foundSettlement` in
+  `src/sim/settlement.ts`.
+- The surplus rule's default threshold was forty, which is the base storage, and the rule waited
+  for a full lot above the threshold, so with no granary a standing order could never sell: the
+  store filled to forty and spoiled. The default threshold is `C.market.defaultSurplusThreshold`,
+  twenty, and when the store is full the rule sells what is above the threshold short of a lot,
+  never a dribble under `fullStoreMinSale`.
+- Horses were kept back from the surplus rule as capability, so a settlement whose ground was
+  pasture earned nothing and spoiled nine horses a turn for three hundred turns. A stud of twice the
+  threshold is kept and the rest are sold.
+- `defaultJob` put every new arrival on the purpose good after food, so a settlement with a build
+  waiting on frame and no one in the forest never built it. While something is being built and the
+  shop has no timber, the default is the carpenter's shop and then the forest. `src/sim/labour.ts`.
+
+**Why.** `RISKS.md` section 1 said the rates were never summed; these were not rates but defaults,
+and each one alone made a settlement of the kind the generator most often gives inert. The lazy
+policy, which plays nothing but the defaults, could not consign once in three hundred turns before
+them and consigns on its sixth turn after.
+
+### 152. Everyone eats one, the granary is a hundred, the first passage is twenty
+
+**What.** `C.labour.eats` 2 to 1; `granaryThreshold` 160 to 100; `firstPassageWord` 30 to 20.
+The copy that said two reads the constant.
+
+**Why.** The colonists brief's own derivation (section 3) has a healthy settlement banking five or
+six food a turn, which at two a head and three a tile means a settlement of eight with six of its
+eight on food. At one a head, three on food and the settlement's own tile give four, which is the
+brief's shape of a settlement (four on the ground, two in buildings) and the brief's number. Food
+remains a pressure: a settlement of twelve still needs three on food to stand still. The granary at
+160 then gave the first child at 53 turns after founding; at 100 with the lander's twenty food it
+comes at eighteen, which is the target of about fifteen; the late game's births, every twenty turns
+or so in a settlement with a surplus of five, are what carries the population to the brief's
+hundred and twenty on a standard map. The first passage at twenty Word is what the first lot of
+linen pays, so the second source of people opens with the first sale, as the brief intends
+("immigration must carry the first fifty turns").
+
+**Symptom if wrong.** Pop twenty-five arriving before a third of a small game, or settlements
+outgrowing their nine tiles with half their people idle: raise the granary. Births never coming in a
+settlement of three: lower it.
+
+### 153. Resolve needs 150 a head, scaled by the one per-size pace factor and the charter's terms
+
+**What.** `C.grievance.perPopulationForResolve` 250 to 150, multiplied by `C.session.pace[size]`
+(small 1, standard 1.15, large 1.6, massive 2.1) and by the terms' `resolveNeed` (generous 0.85,
+standard 1, hard 1.15, punitive 1.3). `resolveNeed` in `src/sim/grievance.ts`. The fleet's growth
+with grievance is divided by the same pace factor, so a long game's larger total does not buy a
+proportionally larger fleet.
+
+**Why.** The pace factor was needed, and this is where. The early milestones are the same number of
+turns after founding on every size, and the economy's rates are per turn, so they need no scaling;
+but the declaration is wanted at the same fraction of the game on every size, and with one rate the
+competent policy opened it at 69 per cent on small, 47 on standard and 35 on large. It is less than
+the game's length over the small game's (1.6, 2.2, 3) because a bigger map carries more settlements
+and more people and they take longer to bring round by themselves: measured, not derived. The
+proposal's 250 was derived for a settlement of eight at twelve a turn over a third of a 480 turn
+game; 150 times 1.15 on standard is 172, which is the same derivation with the settlement sizes the
+policies actually hold. The terms factor is new: nothing in the difficulty bundle touched grievance
+before, so generous and punitive reached the gate on the same turn.
+
+**Symptom if wrong.** The declaration opening before half the game or after four fifths of it for a
+player who staffs the meeting houses: move the pace factor for that size, not the base.
+
+### 154. The war's rules, where the machine found them wrong
+
+**What.** Four changes in `src/sim/military.ts` and `src/sim/fleet.ts`, each found by watching the
+competent policy's war.
+
+- A sacked settlement is sacked once and left alone for `C.military.sackCooldown` turns (twelve);
+  before, every Company unit beside an undefended outpost sacked it again every turn, five lines a
+  turn for ten turns. Decision 20 stands: the Company marches on.
+- Works are breached one tier every `breachThreshold` turns per settlement, however many siege
+  trains batter them. The brief's section 11 says a train accumulates progress and at the threshold
+  the fortification drops a tier; with six trains in a fleet of thirty, read per train, a bastion
+  fell in five turns, and the sally the brief calls the answer cannot pick a train out of a stack
+  screened by regulars. Read per settlement a wall is the clock the brief wants.
+- A wave never comes ashore on a settlement's own tile: `landingCoast` excludes them. Before, a
+  wave could land in the settlement, capture the garrison standing there and never be fought.
+- The fight line names the loser as it was before it lost ("the militia lost its arms"), not as it
+  is after ("the colonist lost its arms"), and no longer reads "your A colonist". `plainLabel`.
+
+### 155. The fleet grows at 0.0025 a point and intervention costs 360
+
+**What.** `C.military.fleetPerGrievance` 0.004 to 0.0025; `interventionGrievance` 1200 to 360.
+
+**Why.** With resolve at 150 a head and the meeting houses staffed, the competent policy's total
+grievance on small runs to about five thousand by the declaration; at 0.004 that was a fleet of
+twenty-nine against a colony that can field three batteries and a few militia, and the war was lost
+every time. At 0.0025 it is sixteen to nineteen on small, which is the target of fifteen to
+twenty-five, and the war is four waves over thirty turns. Intervention at 1200 accrued three a turn
+per meeting house and never fired in a thirty turn war (decision 22); at 360 a colony with four
+meeting houses sees it around the third wave, which is "reachable" and no more.
+
+### 156. Rivals leave peace: crowding at six tiles, and undercutting their trade
+
+**What.** `C.rivals.crowdingRadius` 4 to 6, and a new cause of suspicion in `src/sim/rivals.ts`:
+each rival lives by a third of the goods the rivals trade, and when one of those stands below
+`undercutBelow` (0.75) of its baseline in the Company's book because of what the player has sold,
+that rival's suspicion rises by `suspicionPerUndercut` (0.012) a turn, as far as tense and no
+further. The dispatch says which goods. War still needs proof: a raider caught, or an attack.
+
+**Why.** The rival charters brief, section 5: crowding, undercutting and attacking move relations.
+Undercutting was not built. Crowding at four never happened, because the rivals settle no nearer
+than four to the player and the competent policy no nearer than four to them. In the measured runs
+before this no rival left peace in half the games; after it one does before halfway in every run,
+at 11 to 51 per cent of the game. A first version let undercutting carry a rival to war, and the
+rivals' war parties then took the competent policy's undefended settlements one after another;
+trade now makes a rival tense and no more.
+
+### 157. A lot moves the price, and a quiet turn mends twice as much
+
+**What.** Every good's `volumeToShift` is half the proposal's table and every good's `recovery`
+twice it. `C.market.goods`.
+
+**Why.** Acceptance check six says the price visibly falls when a lot is dumped. At the proposal's
+numbers a lot of twenty-five linen moved the price 0.28 of a point, which rounds to nothing, and the
+dumping lesson was taught by no single sale; the competent policy first saw a fall at 33 to 105
+turns after founding, the lazy policy never. At half, a lot of linen shows the fall on the first
+sale, at fifteen turns after founding for the competent policy. Halving the volume alone let a
+settlement's steady output walk its own price to the floor in ninety turns, so recovery is doubled
+with it: a settlement selling what two workers make now holds its price, and only a colony that
+sends more than that walks it down, which is the lesson.
+
+### 158. The three policies, and the tables they measured
+
+**What.** `src/sim/policy.ts` plays whole games through `applyAction`, like a player's taps, in
+three ways. Lazy does what the cards suggest and no more: auto-assigns the idle, queues the first
+building it could finish without buying anything, staffs the meeting house once a settlement is five,
+founds one more settlement, lets the Company's silence rule answer its demands, and declares the turn
+the gate opens. Competent plans its workers (food to a surplus, the carpenter while something is
+being built, the meeting house, then the best of everything else, the ledger's clerks left idle),
+builds what the settlement needs in order, consigns a lot when it holds one at a fair price, founds
+on the best ground within reach up to a count by size, keeps settlements at twelve by sending
+children and the idle to smaller ones, seeks the voice signatories once civic work begins, accepts
+the Company's demands to a charge of 35 per cent, musters from 45 per cent of the game (works at
+the landing, three batteries, 160 arms bought a lot at a time where the colony cannot make them)
+and declares when ready or at 85 per cent of the game, then sallies against what it can beat.
+Strong is competent with sharper knobs and a compact colony: civic from three, fewer settlements
+kept at ten, more arms, an earlier muster. The knobs are `C.autopilot`. `tests/pace.test.ts` runs
+them and prints the tables; its assertions are the targets below as windows for the competent policy
+on small.
+
+**The targets, and what the competent policy on small at standard terms measures** (two seeds):
+
+| Milestone | Target | Before (decision 151 in, nothing tuned) | After |
+|---|---|---|---|
+| First consignment, turns after founding | about 8 | 14 | 15, 15 |
+| First new colonist | about 15 | 36 | 18, 18 |
+| First visible price fall from own selling | about 20 | 33 | 15, 15 |
+| Second settlement | about 35 | 40 | 27, 28 |
+| Tier two building, share of game | about 25% | 91% | 30%, 25% |
+| Pop 25 | about 50% | 100% | 41%, 38% |
+| Declaration available | 65 to 75% | never | 63%, 66% |
+| Declared | | never | 73%, 79% |
+| War over, won | last 25%, 3 to 5 waves | never | 88% and 92%, won both, 4 waves |
+| Fleet | 15 to 25 | | 16, 17 |
+| A rival leaves peace | before halfway | never | 51%, 11% |
+
+**Every policy on every size, standard terms, two seeds** (turns after founding for the early
+columns, share of the game for the rest; "open" is the declaration available):
+
+| Policy | Size | Consign | Colonist | Price fall | 2nd | Tier 2 | Pop 25 | Rival | Open | Declared | Over | Won | Waves | Fleet | Pop | Settlements |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lazy | small | 6, 3 | 13, 16 | never | 41, 70 | never | never | 23%, 34% | never | never | | | | | 19, 23 | 2 |
+| lazy | standard | 4, 9 | 16, 14 | never | 80, 72 | never | never | 16%, 15% | 75%, 62% | 75%, 62% | 78%, 64% | no, no | 1, 1 | 8, 9 | 20, 23 | 2 |
+| lazy | large | 6, 5 | 13, 11 | never | 46, 53 | never | never, 69% | 10%, 11% | 55%, 98% | 55%, 98% | 57%, 99% | no, no | 1, 1 | 9, 10 | 23, 26 | 2 |
+| competent | small | 15, 15 | 18, 18 | 15, 15 | 27, 28 | 30%, 25% | 41%, 38% | 51%, 11% | 63%, 66% | 73%, 79% | 88%, 92% | yes, yes | 4, 4 | 16, 17 | 79, 84 | 5 |
+| competent | standard | 17, 9 | 20, 27 | 17, 74 | 23, 44 | 17%, 24% | 29%, 28% | 40%, 20% | 77%, 64% | 77%, 64% | 83%, 70% | yes, yes | 4, 4 | 23, 24 | 103, 106 | 9 |
+| competent | large | 25, 35 | 27, 44 | 50, 41 | 52, 47 | 19%, 12% | 23%, 19% | 42%, 12% | 79%, 62% | 79%, 62% | 87%, 67% | yes, yes | 6, 6 | 42, 46 | 186, 227 | 14 |
+| strong | small | 37, 12 | 27, 20 | 61, 127 | 29, 22 | 31%, 22% | 40%, 36% | 29%, 30% | 59%, 46% | 70%, 60% | 79%, 68% | yes, yes | 4, 3 | 18, 14 | 81, 64 | 5 |
+| strong | standard | 12, 25 | 21, 27 | 63, 75 | 23, 29 | 18%, 27% | 28%, 33% | 9%, 34% | 45%, 69% | 51%, 70% | 57%, 77% | yes, yes | 3, 4 | 17, 21 | 76, 91 | 8 |
+| strong | large | 73, 12 | 73, 16 | 127, 41 | 76, 18 | 40%, 12% | 34%, 15% | 29%, 13% | 12%, 65% | 85%, 65% | not over, 72% | , yes | 6, 7 | 46, 54 | 237, 251 | 12 |
+
+Before this run the same table read: lazy never consigned on small; competent never reached the
+declaration on any size and reached pop 25 at the last turn of a small game; strong declared at 80
+per cent on standard and large with wars it lost or did not finish; no policy saw the price fall on
+small before 33 turns.
+
+**The charter's terms, competent on small, two seeds:** the declaration opens at 52% and 49% on
+generous, 63% and 66% on standard, 71% and 88% on hard, 94% and 90% on punitive, which is generous
+earlier and punitive later but within the game, as asked. The wars on punitive are lost: a fleet of
+25 to 43 against a colony on two starting colonists.
+
+**Lazy on generous, two seeds:** the declaration opens at 96% and 78% on small, 61% and 25% on
+standard, 82% and 41% on large; lazy declares the turn it opens, with nothing armed, and loses in
+one wave. It reaches the declaration, which is what was asked of it; what it does with it is its own
+affair.
+
+**Pins changed in this run**, each in the same commit as its cause, with old value, new value and
+why in the test: the market recovery pin (decision 149), the fifty turn aggregates (every number
+that moved is named in the test), and the grievance gate pin (125 turns and 750 to 64 turns and 384,
+with the roster held at five by a hold order).
+
+**What did not work the way the prompt assumed.** The prompt's milestone list assumes a game in
+which only the rates were wrong. Four defaults had to be fixed first (151), four war rules (154),
+and two causes of rival feeling (156), before a constant could be tuned against anything. The
+per-size pace factor was needed, for the declaration and the fleet only. One seed per cell is
+noise; the tables carry two, and the pace test's windows are wide for that reason. The clerk rule
+still costs nothing (RISKS.md), so the policies leave the ledger's bodies idle by choice and a
+player need not; and the predecessors play no part in any policy's game, which phase 4 should
+change.
 
 ## Left out of version one
 

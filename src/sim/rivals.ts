@@ -139,15 +139,21 @@ export const rivalsSystem: System = {
         if (table && table[g]) { table[g].pressure += units; recompute(table[g], g) }
         if (player[g]) { player[g].pressure += units * C.market.rivalCoupling; recompute(player[g], g) }
       }
-      // relations: crowding and suspicion
+      // relations: crowding, undercutting and suspicion. A rival lives by a third of the goods the
+      // rivals trade; the player's own selling standing one of those well below its baseline in the
+      // Company's book is undercutting, and wears on that rival turn by turn
       let crowded = 0
       for (const st of own) for (const m of mine) if (dist(w, st.tile, m.tile) <= C.rivals.crowdingRadius) crowded++
+      const livesBy = RIVAL_GOODS.filter((_, i) => i % C.rivals.count === (ch.id - 1) % C.rivals.count)
+      const undercut = livesBy.some(g => player[g] && (player[g].autoPressure ?? 0) + player[g].pressure > 0 && player[g].price < player[g].baseline * C.rivals.undercutBelow && mine.length > 0)
+      // trade alone makes a rival tense and no more: war needs proof, a raider caught or an attack
+      if (undercut && ch.suspicion < C.rivals.tenseAt) ch.suspicion = Math.min(C.rivals.tenseAt, ch.suspicion + C.rivals.suspicionPerUndercut)
       const before = ch.relation
       if (ch.relation === 'peace' && (crowded > 0 && chance(ctx.rngPlay, C.rivals.crowdingRelationPerTurn * crowded) || ch.suspicion >= C.rivals.tenseAt)) ch.relation = 'tense'
       else if (ch.relation === 'tense' && crowded === 0 && ch.suspicion < C.rivals.tenseAt && chance(ctx.rngPlay, 0.01)) ch.relation = 'peace'
       if (ch.relation === 'tense' && ch.suspicion >= C.rivals.warAt) ch.relation = 'war'
       ch.suspicion = Math.max(0, ch.suspicion - 0.005)
-      if (before !== ch.relation) ctx.log({ kind: 'rival', text: `${ch.name} are now ${ch.relation} toward you.`, why: ch.relation === 'tense' ? 'Settlements within a few tiles of each other crowd, and crowding wears on relations.' : ch.relation === 'war' ? 'Suspicion became certainty.' : 'Distance and quiet mended it.' })
+      if (before !== ch.relation) ctx.log({ kind: 'rival', text: `${ch.name} are now ${ch.relation} toward you.`, why: ch.relation === 'tense' ? (undercut && crowded === 0 ? `Your consignments have been undercutting their trade: ${livesBy.filter(g => player[g].price < player[g].baseline * C.rivals.undercutBelow).join(', ')} stand well below what the Company paid before you came.` : 'Settlements within a few tiles of each other crowd, and crowding wears on relations.') : ch.relation === 'war' ? 'Suspicion became certainty.' : 'Distance and quiet mended it.' })
       // war parties: at war, a rival sends a militia from its nearest settlement now and then
       if (ch.relation === 'war' && chance(ctx.rngPlay, 0.08) && mine.length) {
         const from = own.reduce((a, b) => dist(w, a.tile, mine[0].tile) < dist(w, b.tile, mine[0].tile) ? a : b)

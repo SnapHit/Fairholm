@@ -8,7 +8,7 @@ import { GOODS } from './state'
 import type { System } from './turn'
 import { wordForValue } from './labour'
 import { chance, int } from './rng'
-import { isCoastalSettlement } from './settlement'
+import { isCoastalSettlement, storageCapacity } from './settlement'
 import { isBlockaded } from './military'
 
 export function initMarket(charters: number): Market {
@@ -143,7 +143,9 @@ export function dumpedGoods(s: GameState): { good: GoodId; price: number; below:
     const auto = e.autoPressure ?? 0
     if (e.pressure <= 0 || auto <= 0) continue
     const below = Math.round(e.baseline) - e.price
-    if (below < Math.max(1, Math.round(e.baseline * C.market.dumpingAlertDrop))) continue
+    // never under two points: a cheap raw good falls one point on any sale at all and sits at its
+    // floor, which is the raw cap the design wants and not a lesson to nag about
+    if (below < Math.max(C.market.dumpingAlertMinPoints, Math.round(e.baseline * C.market.dumpingAlertDrop))) continue
     const share = auto / e.pressure
     if (share < C.market.dumpingAlertShare) continue
     out.push({ good: g, price: e.price, below, autoShare: share >= 0.95 ? 'all' : share >= 0.75 ? 'most' : 'half' })
@@ -207,12 +209,16 @@ export const marketSystem: System = {
         const p = C.market.goods[g]
         if (!p.traded) continue
         if (!office && isEmbargoed(s, g)) continue
-        // keep inputs a building needs, and keep tooling, arms and horses which are capability not cargo
-        if (g === 'tooling' || g === 'arms' || g === 'horses' || g === 'instruments') continue
+        // keep inputs a building needs, and keep tooling, arms and instruments, which are capability
+        // not cargo. Horses are both: a stud is kept at twice the threshold and the rest are sold,
+        // or a settlement whose ground is pasture earns nothing (DECISIONS.md 151)
+        if (g === 'tooling' || g === 'arms' || g === 'instruments') continue
         const isInput = Object.values(C.buildings.lines).some(l => (l.input === g || l.secondInput === g) && st.buildings[Object.keys(C.buildings.lines).find(k => C.buildings.lines[k as keyof typeof C.buildings.lines] === l) as keyof typeof st.buildings] > 0)
-        const keep = isInput ? threshold * 2 : threshold
+        const keep = isInput || g === 'horses' ? threshold * 2 : threshold
         const surplus = st.stock[g] - keep
-        if (surplus >= C.market.lotSize) {
+        // a full lot above the threshold, or whatever is above it when the store is full and the
+        // rest would spoil
+        if (surplus >= C.market.lotSize || (surplus >= C.market.fullStoreMinSale && st.stock[g] >= storageCapacity(st))) {
           const r = consign(s, st, g, surplus, null, office, true)
           if (r.units > 0) {
             // what the sale did to the price, and what it will pay: a machine that sells for the
