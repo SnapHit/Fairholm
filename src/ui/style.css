@@ -191,6 +191,10 @@ body {
   font-weight: var(--weight-medium);
 }
 #queuebar .uc-title .tag { flex: none; font-size: var(--text-small); color: var(--ink-dim); }
+#queuebar .uc-title .tag.act {
+  font: inherit; font-size: var(--text-small); color: var(--ink); background: var(--surface-raised); border: 0;
+  border-radius: var(--radius-pill); padding: var(--space-1) var(--space-4); min-height: var(--control-h-tiny); cursor: pointer;
+}
 /* one line at rest; a reason or an attack that needs it may take a second, never a third */
 #queuebar .uc-line {
   font-size: var(--text-small); color: var(--ink-dim);

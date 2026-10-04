@@ -189,7 +189,10 @@ export function mountGallery(root: HTMLElement): Gallery {
   new Input(canvas, scene.cam, {
     onTap: () => {},
     onDoubleTap: () => {},
-    onHold: () => {},
+    onHold: () => false,
+    onAim: () => {},
+    onRelease: () => {},
+    onAimCancel: () => {},
     onHoldProgress: () => {},
     onGesture: (a) => scene.setGesture(a),
     onFirstInteraction: () => {},

@@ -566,16 +566,16 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   const r = app.route && app.route.unit === u.id && !('ashore' in app.route) ? app.route : null
   if (r) panel.append(routeBlock(app, s, u, r))
   else if (!lander) panel.append(h('p', { class: 'muted' }, u.kind === 'colonist' && s.units.some(x => x.owner === 0 && x.kind === 'lander' && neighbours8(w, s.world.height, x.tile).includes(u.tile))
-    ? 'Tap and hold a tile to plot a course there, or hold the lander to go back aboard.'
-    : 'Tap and hold a tile to plot a course there. Nothing moves until you tap the course\'s end, or Go.'))
+    ? 'Press and hold where you want it to go, and let go to set off; hold the lander and let go to go back aboard.'
+    : 'Press and hold where you want it to go. The way shows while you hold; let go to set off, or let go on the unit itself to stay.'))
   else if (!neighbours8(w, s.world.height, u.tile).some(n => isLand(s.world.tiles[n]))) {
     const turns = turnsToCoast(s)
     // once land is in sight the sheet says so rather than talking of a coast that cannot be seen
     const sight = sightMask(s)
     const landInSight = s.world.tiles.some((t, i) => sight[i] === 1 && t.terrain !== 'water')
     panel.append(h('p', { class: 'muted' }, landInSight
-      ? 'Land in sight. Hold a tile of water beside it to plot a course there, then tap the course\'s end, or Go, to sail.'
-      : `Open sea.${isFinite(turns) && turns > 0 ? ` The nearest coast you could found on is about ${plural(turns, 'turn')} away, though you cannot see it yet.` : ''} Hold where you want to go to plot a course; tap its end, or Go, to sail.`))
+      ? 'Land in sight. Press and hold the water beside it: the course shows while you hold, and letting go sails it.'
+      : `Open sea.${isFinite(turns) && turns > 0 ? ` The nearest coast you could found on is about ${plural(turns, 'turn')} away, though you cannot see it yet.` : ''} Press and hold where you want to go: the course shows while you hold, and letting go sails it.`))
   }
   if (lander) {
     // the lander's whole business is the shore beside it: where it can go ashore, what the ground
@@ -625,16 +625,16 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   return panel
 }
 
-/** The plotted route in the sheet: where it goes as far as the player knows, how many turns and
- *  where they end, an attack's odds and what it would start, and the control that goes, which does
- *  what a tap on the route's end does. Or, where there is no way, why. */
+/** The route in the sheet: where it goes as far as the player knows, how many turns and where they
+ *  end, an attack's odds and what it would start. There is no control here: the release is the
+ *  commit (DECISIONS.md 163). Or, where there is no way, why. */
 function routeBlock(app: App, s: GameState, u: Unit, r: RoutePlan): HTMLElement {
-  const clear = button('Clear', () => app.clearRoute(), 'ghost')
+  void app
   if (!r.ok) {
     // the shore beside the lander is not a place to sail to but the place to found: the founding
     // control below is already looking at it
     if (r.shore !== null) return h('div', { class: 'preview' }, h('div', { class: 'big' }, 'Go ashore here'), h('div', {}, r.words))
-    return h('div', { class: 'preview none' }, h('div', { class: 'big warn' }, 'Not there'), h('div', {}, r.words), row(clear))
+    return h('div', { class: 'preview none' }, h('div', { class: 'big warn' }, 'Not there'), h('div', {}, r.words))
   }
   const t = s.world.tiles[r.end]
   const known = !C.flags.fogOfWar || t.explored
@@ -643,28 +643,24 @@ function routeBlock(app: App, s: GameState, u: Unit, r: RoutePlan): HTMLElement 
   const blind = r.unseen.some(Boolean)
   const turns = r.turnEnds.length
   const lines: string[] = []
-  let title: string, go: string, cls = 'primary'
+  let title: string
   if (r.kind === 'attack') {
     title = `Attack ${r.target}`
-    go = 'Attack'
-    cls = 'danger'
     lines.push(r.odds === null ? 'The odds cannot be known until they are in sight.' : r.odds >= 0.995 ? 'Nothing there can stand against it.' : `It wins about ${oddsWords(r.odds).toLowerCase()} times.`)
-    if (r.path.length) lines.push(r.arrives === 1 ? `It closes in ${plural(r.path.length, 'tile')} and attacks this turn.` : `It takes ${plural(r.arrives, 'turn')} to close in, then stops beside them: the attack waits for you to plot it again.`)
+    if (r.path.length) lines.push(r.arrives === 1 ? `It closes in ${plural(r.path.length, 'tile')} and attacks this turn.` : `It takes ${plural(r.arrives, 'turn')} to close in, then stops beside them: the attack waits for you to hold again.`)
     if (r.declares !== null) lines.push(`This is a declaration of war on ${s.charters[r.declares].name}.`)
   } else if (r.kind === 'board') {
     title = 'Back aboard the lander'
-    go = 'Go aboard'
     lines.push(r.arrives === 1 ? 'It goes aboard this turn.' : `It reaches the lander in ${plural(r.arrives, 'turn')}, and goes aboard then.`)
   } else {
     title = ds ? `To ${ds.name}` : !known ? 'Into the fog' : t.terrain === 'water' ? 'Across open water' : `To ${TERRAIN_NAMES[t.terrain]}`
-    go = 'Go'
     lines.push(turns <= 1 ? `${plural(r.path.length, 'tile')}, this turn.` : `${plural(r.path.length, 'tile')}, ${turns} turns: the numbers mark where each turn ends.`)
   }
+  if (r.startsNextTurn) lines.push('It has no moves left this turn, so it sets off next turn.')
   if (blind) lines.push(afloat ? 'Through water nobody has seen: it stops at any coast it meets.' : 'Through ground nobody has seen: it stops where the ground will not let it on.')
   return h('div', { class: 'preview' + (r.kind === 'attack' ? ' attack' : '') },
     h('div', { class: 'big' }, title),
-    ...lines.map(l => h('div', {}, l)),
-    h('div', { class: 'route-go' }, button(go, () => { void app.commitRoute() }, cls), clear, muted('or tap the end of the course')))
+    ...lines.map(l => h('div', {}, l)))
 }
 
 /** What the control that clears a standing order says, in the order's own plain words. */
@@ -720,7 +716,7 @@ function aboardSection(app: App, s: GameState, u: Unit): HTMLElement | null {
   return section(`Aboard, ${n}`,
     ...u.aboard.map((c, k) => ({ c, k })).reverse().map(({ c, k }) => line([h('b', {}, standingWords(c)), k === n - 1 && n > 1 ? muted(' · next off') : null],
       shore ? button('Choose', () => app.choosePassenger(u.id, k), 'tiny') : undefined)),
-    muted(shore ? 'Choose one, then hold the shore beside the lander to send them ashore. With nobody chosen, a hold on the shore sends the next one off.' : 'Beside a shore, any of them can be sent ashore to look about.'),
+    muted(shore ? 'Choose one, then hold the shore beside the lander and let go to send them ashore. The aboard count on the card chooses the next one off.' : 'Beside a shore, any of them can be sent ashore to look about.'),
   )
 }
 

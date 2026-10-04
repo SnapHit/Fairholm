@@ -3,8 +3,9 @@
 // panel opens at the smallest size that answers the question and grows only when the player asks.
 //
 // Two lines, what it is and the one thing worth knowing now, and at most three actions that fit
-// the moment: Found here when it can, Go and Clear while a route is plotted, Attack when one is.
-// Everything else is behind More, which opens the full sheet. End turn stays where it always is.
+// the moment: Found here when it can, Save and Cancel while a circuit is planned. Movement has no
+// control here: a hold aims the route, the line says what it is, and letting go moves (DECISIONS.md
+// 163). Everything else is behind More, which opens the full sheet. End turn stays where it is.
 
 import type { GameState, Unit, UnitOrder } from '../sim/state'
 import type { NoRoute } from '../sim/route'
@@ -26,6 +27,9 @@ import type { App, UiRoute, Authoring } from './app'
 export interface Card {
   title: string
   tag: string | null
+  /** What a tap on the tag does, where it does anything: the lander's aboard count chooses the next
+   *  one off, so a hold on the shore and a release sends them ashore. */
+  tagAction?: () => void
   line: string
   warn: boolean
   actions: HTMLElement[]
@@ -76,23 +80,16 @@ export function routeLine(s: GameState, u: Unit, r: UiRoute): string {
 }
 
 /** Why there is no route, in the card's words. For the lander holding the shore beside it the card
- *  carries the two things it can do there: Found here beaches it, Go ashore sends one to look about. */
+ *  says what the shore is and that Found here beaches it; letting go there moves nothing, because
+ *  the lander cannot go ashore. A passenger is sent ashore by choosing them from the aboard count. */
 function noRouteWords(s: GameState, u: Unit, r: NoRoute): string {
   if (r.problem === 'landerAshore') {
     if (r.shore === null) return 'The lander goes ashore by founding. Sail in beside that shore first.'
     const problem = foundingProblem(s, r.shore)
-    const who = canStepAshore(s, u, r.shore) ? (u.aboard.length > 1 ? 'the next one off' : 'the last one aboard') : null
-    const ashore = who ? ` Go ashore sends ${who} to look about.` : ''
-    return problem ? `Not here: ${problem}.${ashore}` : `${cap(tileWords(tileLook(s, r.shore)).toLowerCase())}. Found here beaches the lander.${ashore}`
+    const who = u.aboard.length > 0 ? ` Tap the aboard count to send one of them to look about.` : ''
+    return problem ? `Not here: ${problem}.${who}` : `${cap(tileWords(tileLook(s, r.shore)).toLowerCase())}. Found here beaches the lander.${who}`
   }
   return r.words
-}
-
-/** Whether a passenger could step from the lander onto this tile: known ground beside it that is not
- *  a mountain, with someone aboard to step. */
-function canStepAshore(s: GameState, u: Unit, tile: number): boolean {
-  const t = s.world.tiles[tile]
-  return u.aboard.length > 0 && t.explored && t.terrain !== 'water' && t.terrain !== 'mountain' && neighbours8(s.world.width, s.world.height, u.tile).includes(tile)
 }
 
 /** A unit of the player's, chosen. */
@@ -103,7 +100,10 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
   const lander = u.kind === 'lander'
   const card: Card = {
     title: unitLabel(u.kind),
-    tag: `${u.moves}/${maxMoves(u)} moves`,
+    // the lander's tag is its aboard count, and a tap on it chooses the next one off; everything
+    // else wears its moves
+    tag: lander ? `${u.aboard.length} aboard` : `${u.moves}/${maxMoves(u)} moves`,
+    tagAction: lander && u.aboard.length > 0 ? () => app.choosePassenger(u.id) : undefined,
     line: '',
     warn: false,
     actions,
@@ -115,40 +115,39 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
   const found = () => button('Found here', () => { void app.found(u.id, target!) }, 'go')
 
   if (r) {
+    // the route under the finger, or why there is none after a release that moved nothing: the
+    // release is the only thing that commits, so there is nothing here to press
     card.line = routeLine(s, u, r)
-    if (r.ok) {
-      const go = r.kind === 'attack' ? 'Attack' : r.kind === 'board' ? 'Go aboard' : 'Go'
-      actions.push(button(go, () => { void app.commitRoute() }, r.kind === 'attack' ? 'danger' : 'go'))
-    } else {
-      // the shore beside the lander: Found here beaches it, Go ashore sends the next one off. Two
-      // touches in all from the hold; the Aboard list in More chooses a particular passenger
+    if (!r.ok) {
       const shore = r.shore
-      const step = shore !== null && canStepAshore(s, u, shore)
-      card.warn = shore === null || (!canFound && !step)
+      card.warn = shore === null || !canFound
       if (shore !== null && canFound) actions.push(found())
-      if (shore !== null && step) actions.push(button('Go ashore', () => { app.sendAshore(u.id, shore) }, canFound ? '' : 'go'))
     }
-    actions.push(button('Clear', () => app.clearRoute(), 'ghost'))
+    return card
+  }
+  if (app.aimNotice) {
+    card.line = app.aimNotice
+    card.warn = true
     return card
   }
 
   const bits: string[] = []
   if (lander) {
-    bits.push(`${u.aboard.length} aboard`)
+    bits.push(`${u.moves}/${maxMoves(u)} moves`)
     if (target !== null) {
       const problem = foundingProblem(s, target)
       bits.push(problem ? `the shore ${bearing(w, u.tile, target)} is ${problem}` : `shore ${bearing(w, u.tile, target)}: ${tileWords(tileLook(s, target)).toLowerCase()}`)
       if (canFound) actions.push(found())
     } else if (neighbours8(w, h, u.tile).some(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored)) {
       bits.push('no shore here to found on')
-    } else bits.push('hold where to go')
+    } else bits.push('hold where to go, and let go to sail')
   } else {
     if (u.colonist) bits.push(standingWords(u.colonist))
     else if (!isHull(u.kind)) bits.push(u.quality)
     if (u.order) bits.push(ORDER_WORDS[u.order.kind])
     const cargo = cargoWords(u)
     if (cargo) bits.push(cargo)
-    if (!u.order && !cargo) bits.push(u.moves > 0 ? 'hold where to go' : 'it can go again next turn')
+    if (!u.order && !cargo) bits.push(u.moves > 0 ? 'hold where to go, and let go to set off' : 'hold where to go: it sets off next turn')
     // a colonist founds where it stands, once the lander has founded the first settlement
     if (u.kind === 'colonist' && s.settlements.some(x => x.owner === 0) && !s.settlements.some(x => x.tile === u.tile) && foundingProblem(s, u.tile) === null) {
       actions.push(button('Found here', () => { void app.found(u.id, u.tile) }, 'go'))
@@ -159,8 +158,8 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
   return card
 }
 
-/** A passenger chosen from the lander's detail: the next one off, whom a hold on the shore beside
- *  the lander sends ashore. */
+/** A passenger chosen from the lander's aboard count or its detail: the next one off, whom a hold
+ *  on the shore beside the lander and a release sends ashore. */
 export function passengerCard(app: App, s: GameState, lander: Unit): Card {
   const which = app.passenger?.aboard ?? lander.aboard.length - 1
   const next = lander.aboard[which] ?? lander.aboard[lander.aboard.length - 1]
@@ -169,7 +168,7 @@ export function passengerCard(app: App, s: GameState, lander: Unit): Card {
   const card: Card = {
     title: next ? `A ${standingWords(next)} colonist, aboard` : 'No one aboard',
     tag: null,
-    line: 'Hold the shore beside the lander to send them ashore.',
+    line: 'Hold the shore beside the lander, and let go to send them ashore.',
     warn: false,
     actions,
     more: () => app.openMore({ kind: 'unit', id: lander.id }, lander.tile),
@@ -177,9 +176,8 @@ export function passengerCard(app: App, s: GameState, lander: Unit): Card {
   if (r) {
     card.line = routeLine(s, lander, r)
     card.warn = !r.ok
-    if (r.ok) actions.push(button('Go ashore', () => { void app.commitRoute() }, 'go'))
-    actions.push(button('Clear', () => app.clearRoute(), 'ghost'))
-  } else actions.push(button('Stay aboard', () => app.select(lander.id), 'ghost'))
+  }
+  actions.push(button('Stay aboard', () => app.select(lander.id), 'ghost'))
   return card
 }
 

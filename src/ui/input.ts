@@ -1,7 +1,10 @@
-// Input. Feel brief sections 2 to 4. Three gestures and one modifier: pinch zooms, drag pans,
-// tap selects (always safe), tap-and-hold commits. Moving beyond a few pixels cancels the hold
-// and becomes a pan. A double tap snaps between overview and working zoom. Everything is
-// pointer events on the canvas with touch-action none; the sheets over it are ordinary DOM.
+// Input. Feel brief sections 2 to 4. Three gestures: pinch zooms, drag pans, tap selects (always
+// safe). Movement is one gesture on top of them: press and hold the destination, and after the
+// hold's length the route shows; slide to re-aim it; let go to move. Moving beyond a few pixels
+// before the hold engages cancels it and becomes a pan; once it has engaged, moving re-aims and
+// never pans. A second finger cancels the hold and becomes a pinch. A double tap snaps between
+// overview and working zoom. Everything is pointer events on the canvas with touch-action none;
+// the sheets over it are ordinary DOM.
 //
 // The hold's length is HOLD_MS in src/ui/theme.ts, not a literal here, so it can be tuned in one
 // place. The ring under the finger fills across the whole of it, from the first frame of contact,
@@ -14,7 +17,16 @@ import type { MapCamera } from '../render/camera'
 export interface InputHandlers {
   onTap(px: number, py: number): void
   onDoubleTap(px: number, py: number): void
-  onHold(px: number, py: number): void
+  /** The hold has engaged under the finger. True when something is now being aimed, so the finger
+   *  moving re-aims and letting go commits; false when the hold was taken as a tap and the rest of
+   *  the gesture means nothing. */
+  onHold(px: number, py: number): boolean
+  /** The finger moved while aiming. */
+  onAim(px: number, py: number): void
+  /** The finger lifted while aiming: commit what is shown, or cancel, as the app decides. */
+  onRelease(px: number, py: number): void
+  /** The aim is abandoned: a second finger came down, or the pointer was lost. */
+  onAimCancel(): void
   onHoldProgress(px: number, py: number, k: number): void   // k in 0..1, negative to hide
   onGesture(active: boolean): void
   onFirstInteraction(): void
@@ -26,7 +38,10 @@ export class Input {
   private pointers = new Map<number, P>()
   private holdTimer: number | null = null
   private holdStart = 0
-  private holdFired = false
+  /** The hold has engaged and the finger is aiming a route; the release commits. */
+  private aiming = false
+  /** The hold engaged but there was nothing to aim: the rest of the gesture means nothing. */
+  private holdSpent = false
   private panning = false
   private pinching = false
   private lastTap: { t: number; x: number; y: number } | null = null
@@ -44,7 +59,7 @@ export class Input {
     canvas.addEventListener('pointerdown', this.down, { passive: false })
     canvas.addEventListener('pointermove', this.move, { passive: false })
     canvas.addEventListener('pointerup', this.up, { passive: false })
-    canvas.addEventListener('pointercancel', this.up, { passive: false })
+    canvas.addEventListener('pointercancel', this.cancel, { passive: false })
     canvas.addEventListener('wheel', this.wheel, { passive: false })
     canvas.addEventListener('contextmenu', e => e.preventDefault())
   }
@@ -62,13 +77,16 @@ export class Input {
     const [x, y] = this.local(e)
     this.pointers.set(e.pointerId, { id: e.pointerId, x, y, sx: x, sy: y, t: performance.now() })
     if (this.pointers.size === 1) {
-      this.panning = false; this.holdFired = false
+      this.panning = false; this.aiming = false; this.holdSpent = false
       this.vel = [0, 0]; this.zoomVel = 0
       this.cam.stop()
       this.cam.glideTarget = null
       this.armHold(x, y)
     } else if (this.pointers.size === 2) {
+      // a second finger: whatever the first was doing is over, and the two pinch
       this.cancelHold()
+      if (this.aiming) { this.aiming = false; this.h.onAimCancel() }
+      this.holdSpent = false
       this.pinching = true
       const [a, b] = [...this.pointers.values()]
       this.lastCentroid = [(a.x + b.x) / 2, (a.y + b.y) / 2]
@@ -80,16 +98,22 @@ export class Input {
   private armHold(x: number, y: number) {
     this.cancelHold()
     this.holdStart = performance.now()
-    const tick = () => {
+    // the hold engages on a timer, not on a frame: a phone drawing slowly while the finger rests
+    // still engages at the hold's length. The ring under the finger is drawn on frames
+    const fire = () => {
+      this.holdTimer = null
       const p = [...this.pointers.values()][0]
       if (!p || this.pointers.size !== 1 || this.panning) { this.h.onHoldProgress(x, y, -1); return }
-      const k = (performance.now() - this.holdStart) / HOLD_MS
-      if (k >= 1) {
-        this.holdFired = true
-        this.h.onHoldProgress(x, y, -1)
-        this.h.onHold(p.x, p.y)
-        return
-      }
+      if (this.raf !== null) { cancelAnimationFrame(this.raf); this.raf = null }
+      this.h.onHoldProgress(x, y, -1)
+      if (this.h.onHold(p.x, p.y)) this.aiming = true
+      else this.holdSpent = true
+    }
+    this.holdTimer = window.setTimeout(fire, HOLD_MS)
+    const tick = () => {
+      const p = [...this.pointers.values()][0]
+      if (!p || this.pointers.size !== 1 || this.panning || this.holdTimer === null) { this.h.onHoldProgress(x, y, -1); return }
+      const k = Math.min(1, (performance.now() - this.holdStart) / HOLD_MS)
       // feedback from the first frame of contact, feel brief section 4
       this.h.onHoldProgress(p.x, p.y, k)
       this.raf = requestAnimationFrame(tick)
@@ -111,7 +135,9 @@ export class Input {
     const [x, y] = this.local(e)
     const now = performance.now()
     if (this.pointers.size === 1) {
-      if (this.holdFired) { p.x = x; p.y = y; return }
+      // aiming: the finger re-aims the route and never pans
+      if (this.aiming) { p.x = x; p.y = y; this.h.onAim(x, y); return }
+      if (this.holdSpent) { p.x = x; p.y = y; return }
       const moved = Math.hypot(x - p.sx, y - p.sy)
       if (!this.panning && moved > C.feel.holdCancelPx) {
         this.panning = true
@@ -142,6 +168,19 @@ export class Input {
     this.lastMoveT = now
   }
 
+  /** The pointer was taken away (the browser took the touch, the window lost it): an aim is
+   *  abandoned rather than committed, and anything else ends as a release would. */
+  private cancel = (e: PointerEvent) => {
+    if (this.aiming && this.pointers.has(e.pointerId)) {
+      this.aiming = false
+      this.cancelHold()
+      this.pointers.delete(e.pointerId)
+      this.h.onAimCancel()
+      return
+    }
+    this.up(e)
+  }
+
   private up = (e: PointerEvent) => {
     const p = this.pointers.get(e.pointerId)
     if (!p) return
@@ -163,7 +202,9 @@ export class Input {
 
   private finish(now: number, p: P, fromPinch: boolean) {
     this.cancelHold()
-    if (this.holdFired) { this.holdFired = false; this.panning = false; return }
+    // letting go while aiming is the commit, or the cancel, where the finger is
+    if (this.aiming) { this.aiming = false; this.panning = false; this.h.onRelease(p.x, p.y); return }
+    if (this.holdSpent) { this.holdSpent = false; this.panning = false; return }
     if (this.panning || fromPinch) {
       this.panning = false
       const stale = now - this.lastMoveT > 60

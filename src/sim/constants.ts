@@ -615,9 +615,20 @@ export const C = {
      *  the route and its numbered turn ends can still be read. A slightly wrong tile shows in the
      *  plot and is put right by holding again. Below it a hold is a tap. */
     routeHoldFloor: 16,
-    /** The end of a plotted route answers a tap across the whole tile, and never less than this
-     *  many pixels either side of its middle, so it can be tapped at a zoom where tiles cannot. */
+    /** The margin a chosen unit or a plotted route is kept inside the free map by, in pixels: a
+     *  thumb's half width, so what the camera keeps in view is not half under the card. */
     routeEndHitPx: 22,
+    /** Movement is one gesture (feel brief section 4, DECISIONS.md 163): press and hold the
+     *  destination, the route shows, slide to re-aim, let go to move. An attack commits on release
+     *  only once its odds have been on the screen this long, so sliding across an enemy on the way
+     *  somewhere else never fires. */
+    attackDwellMs: 500,
+    /** Holding this near an edge of the visible map scrolls it that way, at up to this many pixels
+     *  a frame at the edge itself, so a destination off the screen is reachable in one gesture. */
+    edgeScrollPx: 48,
+    edgeScrollSpeed: 14,
+    /** The short vibration that marks the hold engaging, where the device supports it. */
+    holdVibrateMs: 12,
     lodCull: 40,               // section 2, hysteretic
     lodRestore: 48,
     zoom: { fit: 0, overview: 16, working: 44, detail: 72, min: 6, max: 110 },

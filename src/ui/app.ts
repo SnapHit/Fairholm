@@ -131,6 +131,9 @@ export class App {
       onTap: (x, y) => this.tap(x, y),
       onDoubleTap: (x, y) => this.doubleTap(x, y),
       onHold: (x, y) => this.hold(x, y),
+      onAim: (x, y) => this.aimMove(x, y),
+      onRelease: (x, y) => this.release(x, y),
+      onAimCancel: () => this.cancelAim(),
       onHoldProgress: (x, y, k) => this.holdRing(x, y, k),
       onGesture: (a) => this.scene.setGesture(a),
       onFirstInteraction: () => this.music.unlock(),
@@ -420,9 +423,8 @@ export class App {
   tap(px: number, py: number) {
     const s = this.state
     const v = this.scene.cam.view
-    // the end of a route the player has just plotted: the one tap on the map that commits anything
-    if (this.route?.ok && this.onRouteEnd(px, py)) { void this.commitRoute(); return }
     const p = pick(s, this.scene.cam, px, py, this.scene.unitPositions, this.picturesForPicking(), TAP_MIN_PX)
+    this.aimNotice = null
     // planning a circuit or a patrol: every tap on the map is a stop, and nothing else happens
     if (this.authoring) { this.authoringTap(p.tile, p.settlement); return }
     // any other tap puts a plotted route away first
@@ -584,6 +586,8 @@ export class App {
     const u = this.state.units.find(x => x.id === id)
     if (!u) return
     const v = this.scene.cam.view
+    this.endAim()
+    this.aimNotice = null
     this.route = null
     this.passenger = null
     this.focusTile = null
@@ -632,6 +636,8 @@ export class App {
   /** Let the chosen unit, passenger or tile go, and give the queue bar back. */
   deselect(render = true) {
     const v = this.scene.cam.view
+    this.endAim()
+    this.aimNotice = null
     if (this.authoring) { this.authoring = null; this.paintCircuit() }
     v.activeUnit = null
     v.selectedTile = null
@@ -677,17 +683,6 @@ export class App {
     this.scene.requestDraw()
   }
 
-  /** Whether a point on the screen is on the end of the plotted route: the tile itself, and never
-   *  less than a thumb's width across, so it can be tapped at a zoom where ordinary tiles cannot. */
-  private onRouteEnd(px: number, py: number): boolean {
-    const r = this.route
-    if (!r || !r.ok) return false
-    const w = this.state.world.width
-    const [sx, sy] = this.scene.cam.worldToScreen((r.end % w) + 0.5, Math.floor(r.end / w) + 0.5)
-    const half = Math.max(this.scene.cam.view.zoom / 2, C.feel.routeEndHitPx)
-    return Math.abs(px - sx) <= half && Math.abs(py - sy) <= half
-  }
-
   private afterSelect() {
     this.scene.updateRings(this.state)
     this.paintRoute()
@@ -714,10 +709,13 @@ export class App {
     this.scene.cam.view.activeUnit = u.id
     // the lander holding the shore beside it: the founding control looks at that shore instead
     if (!r.ok && r.shore !== null) this.aimAt(r.shore)
+    else if (this.foundTarget !== null && u.kind === 'lander') this.aimFounding()
     this.renderQueueBar()
     this.renderSheet()
     this.afterSelect()
-    this.keepRouteInView()
+    // while the finger aims, the camera stays where the finger left it: moving the map under a
+    // finger would move the aim
+    if (!this.aim) this.keepRouteInView()
   }
 
   /** The founding look on one shore, without moving the camera: it is beside the lander, which is in
@@ -757,9 +755,9 @@ export class App {
     if (render) { this.renderQueueBar(); this.renderSheet(); this.scene.requestDraw() }
   }
 
-  /** Go: the plotted route, as the move, the attack or the boarding it shows. A walk that ends
+  /** The release: the route shown, as the move, the attack or the boarding it is. A walk that ends
    *  beside the target takes the last step only if there is movement left this turn; otherwise the
-   *  unit waits beside it, and the last step is the player's to plot and confirm again. */
+   *  unit waits beside it, and the last step is the player's to hold and let go again. */
   async commitRoute(): Promise<boolean> {
     const r = this.route
     if (!r || !r.ok) return false
@@ -836,29 +834,164 @@ export class App {
     this.scene.requestDraw()
   }
 
-  /** A hold. With one of the player's units chosen, it plots a route to the tile held and moves
-   *  nothing; the route's end or the Go control commits. It works at any zoom where the route can
-   *  be read, below the one where ordinary taps reach tiles, because a slightly wrong tile shows in
-   *  the plot and is put right by holding again. With nothing chosen, a hold is a tap. */
-  hold(px: number, py: number) {
+  // ---- the movement gesture: hold aims, release moves ------------------------------------------
+  /** What the finger is aiming while a hold is engaged, DECISIONS.md 163: the unit, the tile under
+   *  the finger, where the finger is, the attack whose odds have been showing and since when, and
+   *  the frame loop that scrolls the map when the finger holds near its edge. Null between
+   *  gestures. */
+  private aim: { unit: number; tile: number | null; px: number; py: number; attackOn: number | null; attackSince: number; raf: number | null } | null = null
+  /** A word for the card after a release that moved nothing, such as an attack let go too soon. */
+  aimNotice: string | null = null
+
+  /** The hold has engaged. With one of the player's units chosen, the route to the tile under the
+   *  finger shows and moves nothing; the finger re-aims it; letting go moves. It works at any zoom
+   *  where the route can be read, below the one where ordinary taps reach tiles, because the route
+   *  shows where the finger is before anything is committed. With nothing chosen, a hold is a tap.
+   *  Returns whether a route is now being aimed. */
+  hold(px: number, py: number): boolean {
     const s = this.state
     const v = this.scene.cam.view
     const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit) : undefined
-    // a hold on another unit's picture is a hold on the tile it stands on, as a tap on it is: the
-    // lander held by a colonist is boarding even where its hull hangs over the next tile
-    const held = u ? pick(s, this.scene.cam, px, py, this.scene.unitPositions, this.picturesForPicking(), 0, false).unit : null
-    const other = held !== null && held !== u?.id ? s.units.find(x => x.id === held) : undefined
-    const t = other ? other.tile : tileUnderPoint(s, this.scene.cam, px, py)
-    if (t === null) return
+    this.aimNotice = null
     // while a circuit is being planned a hold plots nothing: taps add stops
-    if (this.authoring) { this.toast(this.authoring.kind === 'haul' ? 'Tap a settlement to add a stop. Save when the circuit is complete.' : 'Tap a tile to add a point. Save when the patrol is complete.'); return }
+    if (this.authoring) { this.toast(this.authoring.kind === 'haul' ? 'Tap a settlement to add a stop. Save when the circuit is complete.' : 'Tap a tile to add a point. Save when the patrol is complete.'); return false }
     if (u && u.owner === 0 && v.zoom >= C.feel.routeHoldFloor) {
-      // a passenger chosen: the hold plots their step ashore rather than the lander's course
-      if (this.passenger && this.passenger.lander === u.id) { this.plotAshore(t); return }
-      this.plot(u, t)
-      return
+      this.scene.endRunningMove()
+      this.aim = { unit: u.id, tile: null, px, py, attackOn: null, attackSince: 0, raf: null }
+      // the moment the hold engages, felt as well as seen, where the device can
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') { try { navigator.vibrate(C.feel.holdVibrateMs) } catch { /* not everywhere */ } }
+      // the renderer draws continuously while the finger is down, as it does for any gesture
+      this.scene.setGesture(true)
+      this.aimAtPoint(px, py)
+      this.edgeScroll()
+      return true
     }
     this.tap(px, py)
+    return false
+  }
+
+  /** The tile the finger is over, as a hold reads it: a finger on another unit's picture is on the
+   *  tile that unit stands on, so the lander held by a colonist is boarding even where its hull
+   *  hangs over the next tile, and a militia holding an enemy's picture is the attack. */
+  private tileUnderFinger(px: number, py: number, u: Unit): number | null {
+    const s = this.state
+    const held = pick(s, this.scene.cam, px, py, this.scene.unitPositions, this.picturesForPicking(), 0, false).unit
+    const other = held !== null && held !== u.id ? s.units.find(x => x.id === held) : undefined
+    return other ? other.tile : tileUnderPoint(s, this.scene.cam, px, py)
+  }
+
+  /** Aim at where the finger is: plot the route there when the tile under it has changed, and keep
+   *  track of how long an attack's odds have been on the screen. */
+  private aimAtPoint(px: number, py: number) {
+    const a = this.aim
+    if (!a) return
+    a.px = px; a.py = py
+    const u = this.state.units.find(x => x.id === a.unit)
+    if (!u) { this.cancelAim(); return }
+    const t = this.tileUnderFinger(px, py, u)
+    if (t === null || t === a.tile) return
+    a.tile = t
+    // a passenger chosen: the hold aims their step ashore rather than the lander's course
+    if (this.passenger && this.passenger.lander === u.id) this.plotAshore(t)
+    else this.plot(u, t)
+    const r = this.route
+    if (r && r.ok && r.kind === 'attack') {
+      if (a.attackOn !== r.end) { a.attackOn = r.end; a.attackSince = performance.now() }
+    } else a.attackOn = null
+  }
+
+  /** The finger moved while aiming. */
+  aimMove(px: number, py: number) {
+    if (!this.aim) return
+    this.aimAtPoint(px, py)
+  }
+
+  /** While the finger holds near an edge of the visible map, the map scrolls that way and the aim
+   *  follows what comes under the finger, so a destination off the screen is reached in one
+   *  gesture. The card and the top strip are not edges: a finger over them scrolls nothing. */
+  private edgeScroll() {
+    const a = this.aim
+    if (!a) return
+    const f = this.freeArea()
+    const band = C.feel.edgeScrollPx, speed = C.feel.edgeScrollSpeed
+    const inside = a.px >= f.left && a.px <= f.right && a.py >= f.top && a.py <= f.bottom
+    let dx = 0, dy = 0
+    if (inside) {
+      if (a.px < f.left + band) dx = (f.left + band - a.px) / band
+      else if (a.px > f.right - band) dx = -(a.px - (f.right - band)) / band
+      if (a.py < f.top + band) dy = (f.top + band - a.py) / band
+      else if (a.py > f.bottom - band) dy = -(a.py - (f.bottom - band)) / band
+    }
+    if (dx !== 0 || dy !== 0) {
+      this.scene.cam.panPixels(dx * speed, dy * speed)
+      this.scene.requestDraw()
+      // what is under the finger has changed, though the finger has not moved
+      const u = this.state.units.find(x => x.id === a.unit)
+      if (u) { const t = this.tileUnderFinger(a.px, a.py, u); if (t !== null && t !== a.tile) this.aimAtPoint(a.px, a.py) }
+    }
+    a.raf = requestAnimationFrame(() => this.edgeScroll())
+  }
+
+  private endAim() {
+    const a = this.aim
+    if (!a) return
+    if (a.raf !== null) cancelAnimationFrame(a.raf)
+    this.aim = null
+    this.scene.setGesture(false)
+  }
+
+  /** The aim abandoned: a second finger, or the pointer lost. Nothing moves and nothing is kept. */
+  cancelAim() {
+    if (!this.aim) return
+    this.endAim()
+    this.route = null
+    this.aimFounding()
+    this.paintRoute()
+    this.renderQueueBar()
+    this.renderSheet()
+    this.afterSelect()
+  }
+
+  /** Whether a point on the screen is over the interface rather than the map: the top strip, the
+   *  card or the queue bar, a sheet, the audio strip. A release there cancels. */
+  private overInterface(px: number, py: number): boolean {
+    const r = this.canvas.getBoundingClientRect()
+    const x = r.left + px, y = r.top + py
+    const covers = (el: HTMLElement) => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom }
+    if (covers(this.hud) || covers(this.queuebar)) return true
+    if (this.sheetShowing() && covers(this.sheetEl)) return true
+    if (this.audioStrip.classList.contains('open') && covers(this.audioStrip)) return true
+    return false
+  }
+
+  /** Letting go. The route shown at this moment is what happens, unless the release is a cancel:
+   *  over the interface, on the unit's own tile, on a tile that cannot be reached (the card keeps
+   *  saying why), or on an enemy whose odds have not been on the screen for the attack dwell (the
+   *  card says to hold a moment longer). */
+  release(px: number, py: number) {
+    const a = this.aim
+    if (!a) return
+    this.aimAtPoint(px, py)
+    const r = this.route
+    const u = this.state.units.find(x => x.id === a.unit)
+    const held = a.attackOn !== null ? performance.now() - a.attackSince : 0
+    this.endAim()
+    const cancel = (notice: string | null, keepRoute: boolean) => {
+      if (!keepRoute) this.route = null
+      this.aimNotice = notice
+      this.aimFounding()
+      this.paintRoute()
+      this.renderQueueBar()
+      this.renderSheet()
+      this.afterSelect()
+    }
+    if (!u) { cancel(null, false); return }
+    if (this.overInterface(px, py)) { cancel(null, false); return }
+    const t = this.tileUnderFinger(px, py, u)
+    if (t === null || t === u.tile) { cancel(null, false); return }
+    if (!r || !r.ok) { cancel(null, true); return }
+    if (r.kind === 'attack' && held < C.feel.attackDwellMs) { cancel('Hold a moment longer to attack.', false); return }
+    void this.commitRoute()
   }
 
   /** Move a unit of the player's toward a tile: as far as it can this turn, along the path planned
@@ -1155,7 +1288,7 @@ export class App {
       append(this.queuebar, [
         h('div', { class: 'uc-head' },
           h('div', { class: 'uc-text' },
-            h('div', { class: 'uc-title' }, h('span', { class: 't' }, card.title), card.tag ? h('span', { class: 'tag' }, card.tag) : null),
+            h('div', { class: 'uc-title' }, h('span', { class: 't' }, card.title), card.tag ? (card.tagAction ? h('button', { class: 'tag act', type: 'button', onClick: card.tagAction }, card.tag) : h('span', { class: 'tag' }, card.tag)) : null),
             h('div', { class: 'uc-line' + (card.warn ? ' warn' : '') }, card.line),
           ),
           card.more ? button('More', card.more, 'small ghost more') : null,
