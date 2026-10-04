@@ -1,13 +1,13 @@
 // Look at the opening. Setting brief section 7, onboarding brief sections 2 and 6, session brief
 // section 8, art brief section 10a.
 //
-// A fresh game on a fixed seed, sailed the way a player would and with the player's own gestures: a
-// tap on the lander, then the first move by tap and hold on a tile of water on a heading that is
-// sensible but not straight at the coast, which plots a course, and a tap on the course's end, which
-// sails it; then on toward land and two moves along the coast, each a hold on the tile six out,
-// panning to it with a drag when it is off the screen, and the Go control on the card; ending each
-// turn with the button; then a hold on the shore for the founding preview. Each move is drawn travelling with the
-// fog lifting, and a frame is taken part way through the first to see that. Then a recall fleet wave
+// A fresh game on a fixed seed, sailed the way a player would and with the player's own gestures as
+// real touches: a tap on the lander, then the first move by press and hold on a tile of water on a
+// heading that is sensible but not straight at the coast, which shows the course, and letting go,
+// which sails it; then on toward land and two moves along the coast, each a hold on the tile six
+// out, panning to it with a drag when it is off the screen, and let go; ending each turn with the
+// button; then a hold on the shore, let go, for the founding preview. Each move is drawn travelling
+// with the fog lifting, and a frame is taken part way through the first to see that. Then a recall fleet wave
 // approaching through the fog over three turns, and a save from an earlier build turned away. The
 // pictures are for a person to look at; the numbers printed beside them are what can be measured.
 //
@@ -16,6 +16,7 @@
 
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
+import { fingers } from './touch.mjs'
 import { mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 
 const OUT = process.env.OUT || 'shots/opening'
@@ -52,6 +53,9 @@ await page.evaluate(async (seed) => {
 
 const settle = async (ms = 500) => {
   await page.waitForFunction(() => !window.fairholm.scene.moving && !window.fairholm.scene.cam.glideTarget, null, { timeout: 20000 }).catch(() => {})
+  // the camera's spring back from the map's edge is a few frames on a phone and seconds under the
+  // software renderer here, so the rig settles it at once rather than let the map creep under a finger
+  await page.evaluate(() => { const sc = window.fairholm.scene; if (window.fairholm.aim) return; sc.cam.stop(); sc.cam.glideTarget = null; let moved = false; for (let i = 0; i < 400 && sc.cam.tick(); i++) moved = true; if (moved) sc.requestDraw() })
   await page.waitForTimeout(ms)
 }
 // jpeg: these are for looking at, and a dozen at a phone's two times resolution are ten megabytes as png
@@ -74,7 +78,9 @@ const seen = () => page.evaluate(async () => {
 
 // well past the hold in src/ui/theme.ts: a software renderer draws few frames a second, and the
 // hold completes on a frame
-const HOLD_MS = 450 + 1050
+const HOLD_MS = await page.evaluate(async () => (await import('/src/ui/theme.ts')).HOLD_MS)
+// the player's finger, as real touches through the devtools protocol (scripts/touch.mjs)
+const finger = fingers(await ctx.newCDPSession(page), page, { holdMs: HOLD_MS })
 
 /** Where the lander is on the screen, and the free strip of map above the card. */
 const where = () => page.evaluate(() => {
@@ -87,7 +93,7 @@ const where = () => page.evaluate(() => {
 })
 
 /** A tap, as a finger makes one: down and up in the same place, quickly. */
-const tapAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(60); await page.mouse.up(); await page.waitForTimeout(400) }
+const tapAt = async (x, y) => { await finger.tap(x, y, 400) }
 
 /** Select the lander by tapping it, so its card is up in the queue bar's place. */
 const selectLander = async () => {
@@ -124,31 +130,26 @@ const headingEnd = (heading) => page.evaluate((d) => {
 /** Arm the wait for a committed move to be drawn to its end. */
 const armMoveWait = () => page.evaluate(() => { window.__moveDone = false; const a = window.fairholm; const real = a.moveTo.bind(a); a.moveTo = (id, t) => real(id, t).then(r => { window.__moveDone = true; a.moveTo = real; return r }) })
 
-/** Tap and hold a tile, panning to it first with a drag if it is not on the map above the card:
- *  the hold plots a course and nothing moves. What was plotted, and whether anything moved. */
+/** Press and hold a tile, panning to it first with a drag if it is not on the map above the card:
+ *  the hold shows the course and nothing moves. The finger stays down. What was shown, and whether
+ *  anything moved. */
 const holdTile = async (tile) => {
   const before = await where()
   const p = await bringOnScreen(tile)
   const panned = await page.evaluate(() => window.__panned ?? 0)
-  await page.mouse.move(p[0], p[1])
-  await page.mouse.down()
-  await page.waitForTimeout(HOLD_MS)
-  await page.mouse.up()
-  await page.waitForTimeout(500)
+  await finger.press(p[0], p[1])
   const after = await page.evaluate(() => { const a = window.fairholm; const l = a.state.units.find(u => u.owner === 0 && u.kind === 'lander'); return { route: a.route, tile: l?.tile, sheet: document.querySelector('#queuebar .uc-line')?.textContent?.slice(0, 200) ?? '' } })
   return { held: tile, onScreen: p.map(Math.round), panned, plotted: !!after.route?.ok, moved: after.tile !== before.tile, turns: after.route?.ok ? after.route.turnEnds.length : null, preview: after.sheet, id: before.id, from: [before.x, before.z], exploredBefore: before.explored }
 }
 
-/** Commit the plotted course: a tap on its end, or the Go control on the card. */
-const confirm = async (how) => {
+/** Let go: the course shown is sailed. */
+const letGo = async () => {
   await armMoveWait()
-  if (how === 'go') { await page.locator('#queuebar .btn.go').click(); return }
-  const e = await page.evaluate(() => { const a = window.fairholm, w = a.state.world.width, r = a.route; return a.scene.cam.worldToScreen((r.end % w) + 0.5, Math.floor(r.end / w) + 0.5) })
-  await tapAt(e[0], e[1])
+  await finger.release()
 }
 
-/** The first move, by the map's own gesture: tap and hold a tile of water out along a heading, the
- *  furthest one a move reaches that is on the screen above the card, then tap the course's end. */
+/** The first move, by the map's own gesture: press and hold a tile of water out along a heading,
+ *  the furthest one a move reaches that is on the screen above the card, then let go. */
 const holdToward = async (heading) => {
   const p = await where()
   const tile = await page.evaluate(({ heading, p }) => {
@@ -169,13 +170,13 @@ const holdToward = async (heading) => {
 }
 
 /** A turn's sailing along a heading: the tile six out held, after a pan if it is off the screen,
- *  then the course committed with the Go control. */
+ *  then let go. */
 const sailHeading = async (heading) => {
   const end = await headingEnd(heading)
   if (end === null) return { error: 'that heading goes nowhere' }
   const held = await holdTile(end)
-  if (!held.plotted) return { ...held, error: 'the hold plotted nothing' }
-  await confirm('go')
+  if (!held.plotted) { await finger.release(); return { ...held, error: 'the hold showed nothing' } }
+  await letGo()
   return held
 }
 
@@ -195,10 +196,7 @@ const bringOnScreen = async (tile) => {
     // a slow drag, so it pans without a fling
     await page.evaluate(() => { window.__panned = (window.__panned ?? 0) + 1 })
     const dx = Math.max(-150, Math.min(150, cx - p.sx)), dy = Math.max(-150, Math.min(150, cy - p.sy))
-    await page.mouse.move(cx, cy); await page.mouse.down()
-    for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + dx * i / 12, cy + dy * i / 12); await page.waitForTimeout(30) }
-    await page.waitForTimeout(200)
-    await page.mouse.up()
+    await finger.drag([cx, cy], [cx + dx, cy + dy], 12, 30)
     await settle(300)
   }
   const p = await at()
@@ -278,7 +276,7 @@ await page.evaluate(() => { window.fairholm.scene.holdMoveAt = 0.5 })
 const m1 = await holdToward(off)
 note('first move, the hold', { plotted: m1.plotted, moved: m1.moved, preview: m1.preview })
 await shot('02a-first-course-plotted')
-await confirm('tap')
+await letGo()
 const started = await page.waitForFunction(() => { const sc = window.fairholm.scene; return sc.moving && sc.ghostAt(sc.cam.view.activeUnit ?? -1) !== null }, null, { timeout: 10000 }).then(() => true, () => false)
 if (!started) {
   console.log('the hold did not start a move', JSON.stringify(m1), JSON.stringify(await page.evaluate(() => { const a = window.fairholm; return { active: a.scene.cam.view.activeUnit, sheet: a.sheet, view: a.scene.cam.view, moving: a.scene.moving, toast: document.querySelector('#toast')?.textContent, lander: a.state.units.find(u => u.kind === 'lander' && u.owner === 0)?.tile } })))
@@ -405,9 +403,9 @@ else if (near?.site !== undefined) {
   await endTurn()
   await selectLander()
   const held = await holdTile(near.water)
-  await confirm('tap')
+  await letGo()
   await waitMove()
-  note('sailed to the best site seen, by a hold and a tap on its end', { water: near.water, plotted: held.plotted, movedOnHold: held.moved, onScreen: held.onScreen })
+  note('sailed to the best site seen, by a hold, let go', { water: near.water, plotted: held.plotted, movedOnHold: held.moved, onScreen: held.onScreen })
   shoreAt = (await besideShore())?.shore ?? null
 }
 let preview = null
@@ -415,12 +413,10 @@ if (shoreAt !== null) {
   await settle(300)
   await selectLander()
   // a hold on the shore beside the lander looks at founding there: the ring it would work is
-  // painted on the map and Found here is on the card
+  // painted on the map; letting go moves nothing, and Found here is on the card
   const p = await page.evaluate((t) => { const a = window.fairholm, w = a.state.world.width; return a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5) }, shoreAt)
-  await page.mouse.move(p[0], p[1])
-  await page.mouse.down()
-  await page.waitForTimeout(HOLD_MS)
-  await page.mouse.up()
+  await finger.press(p[0], p[1])
+  await finger.release()
   await settle(500)
   preview = await page.evaluate((t) => {
     const a = window.fairholm, w = a.state.world.width

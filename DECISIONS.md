@@ -2614,6 +2614,96 @@ fleet of thirteen spent in three waves by 87 per cent, won, with 49 people in fi
 That seed's coast had no linen to refine early, so its first consignment and price fall came later
 than the pace seed's; the eras came where the design wants them.
 
+### 163. Movement is one gesture: tap selects, hold aims, release moves
+
+**What.** Tested on a phone, hold to plot and then tap to go (127, 128) did not work as an
+interaction. Movement is now one continuous gesture for every unit and every kind of movement:
+press and hold the destination, and after the hold's length the route shows, with its turn markers,
+its stretches through fog and an attack's odds, and the card says it in one line; slide and the
+route follows the finger live; let go and the unit moves along the route shown at release. A quick
+drag before the hold engages is still a pan; once engaged, moving re-aims and never pans. The Go
+control, the tap on the route's end and Clear are gone. `Input` in `src/ui/input.ts` has an
+`aiming` state and three handlers for it (`onAim`, `onRelease`, `onAimCancel`); `hold`, `aimMove`,
+`release`, `cancelAim` and `edgeScroll` in `src/ui/app.ts` are the gesture. The hold now engages on
+a timer rather than on an animation frame, so a phone drawing slowly still engages at the hold's
+length; the ring under the finger is drawn on frames as before.
+
+Changing your mind, each moving nothing and leaving the unit chosen: a release on the chosen unit's
+own tile, or on its own picture, which reads as its tile; a release over the card, the top strip, a
+sheet or the audio strip; a release on a tile that cannot be reached, where the card keeps saying
+why; a second finger, which cancels the hold and becomes a pinch; the pointer being taken away,
+which abandons the aim; and undo, as ever.
+
+Attacks are never accidental. An attack commits on release only if its odds have been on the screen
+for `C.feel.attackDwellMs`, half a second; let go sooner, nothing happens and the card says "Hold a
+moment longer to attack." Sliding across an enemy on the way to somewhere else re-aims past it and
+attacks nothing.
+
+Reach. Holding within `C.feel.edgeScrollPx` of an edge of the free map scrolls it, at up to
+`C.feel.edgeScrollSpeed` pixels a frame and faster the nearer the edge, and re-aims at what comes
+under the still finger; the card and the top strip are not edges. A tile six away is one gesture.
+The hold still works down to `routeHoldFloor` (128).
+
+Felt as well as seen: `navigator.vibrate(C.feel.holdVibrateMs)` once as the hold engages, where the
+device has it, guarded and nowhere else.
+
+Founding is never a release. The lander holding a shore beside it shows the founding preview (141);
+letting go moves nothing and the card offers Found here. Going ashore stops being a button: the
+aboard count on the lander's card is the control that chooses the next passenger off (142), the
+passenger's card says to hold the shore and let go, and the release sends them. Boarding is a
+colonist holding the lander and letting go. The haul circuit planning mode (161) keeps its own taps
+and Save. The feel brief's sections 1, 4 and 5, CLAUDE.md's gesture list, the onboarding brief's
+first queue item and the game's own words say "hold where you want to go, and let go to set off".
+
+**Why.** On a real phone the two-step gesture did not work as an interaction. Press and hold to
+see, let go to go is one motion, with the plan on the screen under the finger before anything is
+committed, which keeps the rule of feel brief section 1 and drops the two-step interface that
+carried it. Sliding to re-aim a held route is not dragging the unit (section 5): the unit stays put,
+the route is what moves, and nothing happens until the release.
+
+**Measured** in `scripts/gesture.mjs`, real touch sequences through the devtools protocol on a fixed
+seed at 390 points wide, a picture mid-gesture and one after release for each case in
+`shots/gesture/`. Eighteen answers, all yes: holding shows the route without moving; a quick drag
+still pans; sliding re-aims live and never pans; the release moves a colonist, a ship, the lander, a
+boarding and a passenger ashore; a multi-turn route moves on release and keeps going; a release on
+the unit, over the interface, on an unreachable tile (the card says why) and a second finger each
+cancel; sliding across an enemy attacks nothing and a release on it inside the dwell cancels with the
+card's word; a deliberate attack after the dwell fires; the lander reaches a tile six away by the
+edge scroll in one gesture; a release on the shore founds nothing and the card offers Found here;
+the vibration fires exactly once at the hold. The smoke test's second check and the routes,
+selection, opening and phase 0 rigs use the same real touches (`scripts/touch.mjs`); the pins in
+`tests/pins.test.ts` did not move, as nothing in the simulation changed but the words of two queue
+items.
+
+**What did not work the way the prompt assumed.**
+
+- Real touches under the software renderer. Touch events through the devtools protocol arrive as
+  pointer events, but each one is handled only when the main thread is free, and a frame under
+  swiftshader at a phone's size takes 400 to 1300 milliseconds, so a drag sent with waits between
+  its moves saw the hold engage before its first move, and a release meant to land within half a
+  second of an attack's odds could not be sent as a separate step. The rig sends a drag's first
+  move at once, and the move onto the enemy and the release together, which the renderer handles
+  back to back (the release landed 3 ms after the odds). On a phone at sixty frames a second none of
+  this arises; the rig notes say which answers rest on it.
+- The camera's spring. `MapCamera.tick` springs the camera back inside the map's bounds a fifth of
+  the way each frame, and `centreOn` leaves it up to the slack outside them for the loop to settle:
+  a few frames on a phone, seconds here. A rig that centred the camera and then held a tile saw the
+  map creep a row under the finger during the gesture, so the finger's later moves landed a tile
+  below where the touch start had. The rigs now settle the spring at once after moving the camera.
+  Not a product change, and not visible at a phone's frame rate.
+- End turn is a no-op once the declaration is won or lost, because the game is over. The gesture
+  rig sets the declaration won so that the Company regular it plants stands still, and so it gives
+  units their moves back directly rather than ending turns.
+- An attack from two tiles away with one move walks the step and waits beside the enemy, as
+  `commitRoute` has always done (128); the deliberate attacks in the rigs are from the tile beside.
+- The tap window (`tapMaxMs` + 200, 460 ms) overlaps the hold's 450 by ten milliseconds (49). A
+  press let go in that band has engaged the hold and is a release, which now commits the route it
+  showed for those milliseconds, where before it plotted. Ten milliseconds; left as it is.
+- A release on the chosen unit's own picture read, before this run's review, as the tile the finger
+  was over rather than the unit's tile, because `tileUnderFinger` only looked up other units'
+  pictures; on a phone a cancel let go on the upper half of a figure would have moved it one tile
+  north. The chosen unit's own picture now reads as its tile.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

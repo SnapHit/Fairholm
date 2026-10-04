@@ -18,6 +18,7 @@
 
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
+import { fingers } from './touch.mjs'
 import { mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 
 const OUT = process.env.OUT || 'shots/selection'
@@ -54,16 +55,19 @@ await page.evaluate(async (seed) => {
   a.opening?.dismiss()
 }, SEED)
 
-// a software renderer draws a few frames a second, and the hold completes on a frame
-const HOLD_MS = 1500
+const HOLD_MS = await page.evaluate(async () => (await import('/src/ui/theme.ts')).HOLD_MS)
+// the player's finger, as real touches through the devtools protocol (scripts/touch.mjs)
+const finger = fingers(await ctx.newCDPSession(page), page, { holdMs: HOLD_MS })
 const settle = async (ms = 500) => {
   await page.waitForFunction(() => !window.fairholm.scene.moving && !window.fairholm.scene.cam.glideTarget, null, { timeout: 20000 }).catch(() => {})
+  // the camera's spring back from the map's edge is a few frames on a phone and seconds under the
+  // software renderer here, so the rig settles it at once rather than let the map creep under a finger
+  await page.evaluate(() => { const sc = window.fairholm.scene; if (window.fairholm.aim) return; sc.cam.stop(); sc.cam.glideTarget = null; let moved = false; for (let i = 0; i < 400 && sc.cam.tick(); i++) moved = true; if (moved) sc.requestDraw() })
   await page.waitForTimeout(ms)
 }
 const shot = (name) => page.screenshot({ path: `${OUT}/${name}.jpg`, type: 'jpeg', quality: 90 })
 const screenOf = (tile) => page.evaluate((t) => { const a = window.fairholm, w = a.state.world.width; return a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5) }, tile)
-const tapAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(60); await page.mouse.up(); await page.waitForTimeout(450); await settle(100) }
-const holdAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(HOLD_MS); await page.mouse.up(); await page.waitForTimeout(300); await settle(300) }
+const tapAt = async (x, y) => { await finger.tap(x, y); await settle(100) }
 /** More on the card, and wait for the sheet to finish sliding in and the camera to come to rest:
  *  a software renderer gliding the camera can hold the slide up well past its own length. */
 const openMore = async () => {
@@ -203,7 +207,7 @@ const dest = await page.evaluate((id) => {
   return null
 }, landerId)
 let p = await screenOf(dest)
-await holdAt(p[0], p[1])
+await finger.press(p[0], p[1])
 await shot('04-route-plotted-with-card')
 const routeCard = await card()
 const routeCover = await covered()
@@ -217,6 +221,13 @@ const routeShown = await page.evaluate(() => {
   return { above: Math.max(...ys) < bottom, below: Math.min(...ys) > top }
 })
 note('a route plotted', { card: routeCard, covered: routeCover, routeOnFreeMap: routeShown })
+// let go over the top strip: the route goes, nothing moves, the lander stays chosen
+const tileBeforeCancel = await unitTile(landerId)
+await finger.slide([p[0], p[1]], [p[0], rest.hud / 2], 6, 30)
+await finger.release()
+await settle(300)
+const afterCancel = await page.evaluate(() => ({ route: window.fairholm.route, active: window.fairholm.scene.cam.view.activeUnit }))
+note('let go over the top strip', { route: afterCancel.route, stillChosen: afterCancel.active === landerId, stayed: (await unitTile(landerId)) === tileBeforeCancel })
 
 // ---- 4: More, and putting it away ----------------------------------------------------------------
 await openMore()
@@ -237,12 +248,19 @@ await page.waitForTimeout(500)
 const afterSwipe = await page.evaluate(() => ({ open: document.getElementById('sheet').classList.contains('open'), active: window.fairholm.scene.cam.view.activeUnit }))
 note('More', { opened: moreOpen, covered: moreCover, afterOneTapOnMap: afterTapAway, afterSwipeDown: afterSwipe })
 
-// Go, from the card
+// hold where to go, and let go: it sails. The camera comes back to where the destination is on the
+// free map first, as it was before More
+await look(landerTile, 44)
+if ((await active()) !== landerId) { pic = await pictureOf(landerId); await tapAt((pic.x0 + pic.x1) / 2, (pic.y0 + pic.y1) / 2) }
 const goFrom = await unitTile(landerId)
+p = await screenOf(dest)
+const goFree = await page.evaluate(() => ({ top: window.fairholm.hud.getBoundingClientRect().height, bottom: window.fairholm.root.clientHeight - window.fairholm.queuebar.offsetHeight }))
 await armMoveWait()
-await clickIf('#queuebar .btn.go')
+await finger.press(p[0], p[1])
+const goAim = await page.evaluate(() => ({ aiming: !!window.fairholm.aim, route: window.fairholm.route ? { ok: window.fairholm.route.ok, end: window.fairholm.route.end } : null }))
+await finger.release()
 await waitDrawn()
-note('Go on the card', { from: goFrom, to: await unitTile(landerId), stillChosen: (await active()) === landerId, card: await card() })
+note('hold and let go', { from: goFrom, to: await unitTile(landerId), sailed: (await unitTile(landerId)) === dest, at: p.map(Math.round), freeMap: goFree, whileHeld: goAim, stillChosen: (await active()) === landerId, card: await card() })
 
 // ---- 5: to the coast, the passenger ashore and back -------------------------------------------
 await page.evaluate(async () => {
@@ -269,11 +287,10 @@ await shot('06-lander-beside-the-shore')
 const shoreCard = await card()
 note('the lander beside the shore', { card: shoreCard, covered: await covered() })
 
-// choose the next one off from its detail, then hold the shore
-await openMore()
-const chooseButton = page.locator('#sheet .btn', { hasText: 'Choose' })
-const canChoose = await chooseButton.count() > 0
-if (canChoose) await chooseButton.first().click()
+// choose the next one off by tapping the aboard count on the card, then hold the shore
+const aboardTag = page.locator('#queuebar .tag.act')
+const canChoose = await aboardTag.count() > 0
+if (canChoose) await aboardTag.first().click()
 await page.waitForTimeout(400)
 const passengerCard = await card()
 const shore = await page.evaluate(async (id) => {
@@ -285,16 +302,16 @@ const shore = await page.evaluate(async (id) => {
 }, landerId)
 p = await screenOf(shore)
 const aboardBefore = await page.evaluate((id) => window.fairholm.state.units.find(u => u.id === id).aboard.length, landerId)
-await holdAt(p[0], p[1])
+await finger.press(p[0], p[1])
 await shot('07-passenger-ashore-plotted')
 const ashoreCard = await card()
 const stillAboard = await page.evaluate((id) => window.fairholm.state.units.find(u => u.id === id).aboard.length, landerId)
-await clickIf('#queuebar .btn.go')
+await finger.release()
 await settle(500)
 const walker = await active()
 const ashore = await page.evaluate(({ id, w }) => ({ aboard: window.fairholm.state.units.find(u => u.id === id).aboard.length, walker: window.fairholm.state.units.find(u => u.id === w) }), { id: landerId, w: walker })
 await shot('08-colonist-ashore-selected-on-land')
-note('a passenger sent ashore by a hold', { canChoose, passengerCard, held: shore, ashoreCard, nothingMovedOnHold: stillAboard === aboardBefore, aboardAfter: ashore.aboard, ashoreUnit: ashore.walker && { kind: ashore.walker.kind, tile: ashore.walker.tile }, card: await card() })
+note('a passenger sent ashore by a hold, let go', { canChoose, passengerCard, held: shore, ashoreCard, nothingMovedOnHold: stillAboard === aboardBefore, aboardAfter: ashore.aboard, ashoreUnit: ashore.walker && { kind: ashore.walker.kind, tile: ashore.walker.tile }, card: await card() })
 
 // back aboard the same way: hold the lander with the colonist chosen. Next turn, when it can move
 await page.evaluate(() => window.fairholm.endTurn())
@@ -302,12 +319,12 @@ await settle(600)
 if ((await active()) !== walker) { const wp = await pictureOf(walker); await tapAt((wp.x0 + wp.x1) / 2, (wp.y0 + wp.y1) / 2) }
 const chosenBeforeBoard = await active()
 pic = await pictureOf(landerId)
-await holdAt((pic.x0 + pic.x1) / 2, (pic.y0 + pic.y1) / 2)
+await finger.press((pic.x0 + pic.x1) / 2, (pic.y0 + pic.y1) / 2)
 const boardCard = await card()
 const boardRoute = await page.evaluate(() => { const r = window.fairholm.route; return r && { ok: r.ok, kind: r.kind, end: r.end, words: r.words } })
-await clickIf('#queuebar .btn.go')
+await finger.release()
 await settle(500)
-note('and back aboard by holding the lander', { chosen: chosenBeforeBoard, walker, route: boardRoute, card: boardCard, aboard: await page.evaluate((id) => window.fairholm.state.units.find(u => u.id === id).aboard.length, landerId), walkerGone: await page.evaluate((w) => !window.fairholm.state.units.some(u => u.id === w), walker) })
+note('and back aboard by holding the lander and letting go', { chosen: chosenBeforeBoard, walker, route: boardRoute, card: boardCard, aboard: await page.evaluate((id) => window.fairholm.state.units.find(u => u.id === id).aboard.length, landerId), walkerGone: await page.evaluate((w) => !window.fairholm.state.units.some(u => u.id === w), walker) })
 
 // found from the card
 pic = await pictureOf(landerId)
@@ -392,12 +409,14 @@ await tapAt((pic.x0 + pic.x1) / 2, (pic.y0 + pic.y1) / 2)
 note('the militia tapped', { picture: pic, active: await active(), sheet: await page.evaluate(() => window.fairholm.sheet.kind), militia: setup.militia, tiles: { mine: setup.mine, foe: setup.foe, stack: setup.stackTile } })
 await shot('10b-militia-tapped')
 p = await screenOf(setup.foe)
-await holdAt(p[0], p[1])
+await finger.press(p[0], p[1])
 await shot('11-attack-plotted-with-card')
 const attackCard = await card()
 note('an attack plotted', { card: attackCard, covered: await covered(), foeStill: await page.evaluate((id) => window.fairholm.state.units.some(u => u.id === id), setup.foeId) })
-// a tap on the map away from the route puts it away and attacks nothing
-await tapAt(30, rest.hud + 40)
+// let go over the top strip: the route goes and nothing is attacked
+await finger.slide([p[0], p[1]], [p[0], rest.hud / 2], 6, 30)
+await finger.release()
+await settle(300)
 note('the attack put away', { route: await page.evaluate(() => window.fairholm.route), foeStill: await page.evaluate((id) => window.fairholm.state.units.some(u => u.id === id), setup.foeId) })
 
 // the Company regular, close, with nothing chosen

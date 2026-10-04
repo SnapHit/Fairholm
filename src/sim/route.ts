@@ -67,7 +67,7 @@ export interface NoRoute {
   problem: RouteProblem
   /** Why, in plain words. */
   words: string
-  /** For the lander holding the shore beside it: that shore, for the founding control. */
+  /** For the lander holding the shore beside it: that shore, for the founding preview and Found here. */
   shore: number | null
 }
 
@@ -138,8 +138,8 @@ export function planRoute(s: GameState, u: Unit, end: number): RoutePlan {
     if (u.kind === 'lander') {
       const beside = neighbours8(w, h, u.tile).includes(end)
       return no('landerAshore', beside
-        ? 'The lander goes ashore by founding. The control below beaches it here.'
-        : 'The lander goes ashore by founding, not by sailing. Sail in beside this shore, then pick it in the lander\'s sheet.', beside ? end : null)
+        ? 'The lander goes ashore by founding. Found here beaches it on this shore.'
+        : 'The lander goes ashore by founding, not by sailing. Sail in beside this shore first.', beside ? end : null)
     }
     if (isAfloat(u.kind)) return no('shipOnLand', 'Ships stay on the water. Hold a tile of water, or one of your ports.')
     if (t.terrain === 'water') return no('landOnWater', `${label(u)} cannot go on the water.`)

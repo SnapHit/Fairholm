@@ -1,14 +1,16 @@
 // Look at two things from the reachability run's housekeeping phase. Feel brief section 3: no unit
 // is ever fully hidden, so a unit standing behind a building shows through it as a faint silhouette
-// in its owner's colour; and the passenger shortcut, where a hold on the shore beside the chosen
-// lander puts Found here and Go ashore on the card, two touches from hold to landing. On a fixed
-// seed, at 390 points wide, with the player's own gestures.
+// in its owner's colour; and the passenger shortcut: a tap on the aboard count of the chosen lander's
+// card chooses the next one off, and a hold on the shore beside it, let go, sends them ashore, two
+// touches from the card to the landing. On a fixed seed, at 390 points wide, with the player's own
+// gestures as real touches.
 //
 // Run with:  node scripts/phase0.mjs
 //            OUT=shots/phase0 SEED=fairholm-opening CHROMIUM=/opt/pw-browsers/chromium node scripts/phase0.mjs
 
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
+import { fingers } from './touch.mjs'
 import { mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 
 const OUT = process.env.OUT || 'shots/phase0'
@@ -44,15 +46,19 @@ await page.evaluate(async (seed) => {
   a.opening?.dismiss()
 }, SEED)
 
-const HOLD_MS = 1500
+const HOLD_MS = await page.evaluate(async () => (await import('/src/ui/theme.ts')).HOLD_MS)
+// the player's finger, as real touches through the devtools protocol (scripts/touch.mjs)
+const finger = fingers(await ctx.newCDPSession(page), page, { holdMs: HOLD_MS })
 const settle = async (ms = 500) => {
   await page.waitForFunction(() => !window.fairholm.scene.moving && !window.fairholm.scene.cam.glideTarget, null, { timeout: 20000 }).catch(() => {})
+  // the camera's spring back from the map's edge is a few frames on a phone and seconds under the
+  // software renderer here, so the rig settles it at once rather than let the map creep under a finger
+  await page.evaluate(() => { const sc = window.fairholm.scene; if (window.fairholm.aim) return; sc.cam.stop(); sc.cam.glideTarget = null; let moved = false; for (let i = 0; i < 400 && sc.cam.tick(); i++) moved = true; if (moved) sc.requestDraw() })
   await page.waitForTimeout(ms)
 }
 const shot = (name) => page.screenshot({ path: `${OUT}/${name}.jpg`, type: 'jpeg', quality: 90 })
 const screenOf = (tile) => page.evaluate((t) => { const a = window.fairholm, w = a.state.world.width; return a.scene.cam.worldToScreen((t % w) + 0.5, Math.floor(t / w) + 0.5) }, tile)
-const tapAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(60); await page.mouse.up(); await page.waitForTimeout(450); await settle(100) }
-const holdAt = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(HOLD_MS); await page.mouse.up(); await page.waitForTimeout(300); await settle(300) }
+const tapAt = async (x, y) => { await finger.tap(x, y); await settle(100) }
 const active = () => page.evaluate(() => window.fairholm.scene.cam.view.activeUnit)
 const card = () => page.evaluate(() => ({
   carded: document.getElementById('queuebar').classList.contains('carded'),
@@ -101,20 +107,27 @@ const shore = await page.evaluate(async (id) => {
 }, landerId)
 const sp = await screenOf(shore)
 const aboardBefore = await page.evaluate((id) => window.fairholm.state.units.find(u => u.id === id).aboard.length, landerId)
-await holdAt(sp[0], sp[1])
+// the aboard count on the card chooses the next one off
+const aboardTag = page.locator('#queuebar .tag.act')
+const offered = await aboardTag.count() > 0
+if (offered) await aboardTag.first().click()
+await page.waitForTimeout(400)
+const chosenCard = await card()
+// then hold the shore: their step ashore shows, and nothing has moved yet
+await finger.press(sp[0], sp[1])
 const heldCard = await card()
-await shot('01-shore-held-with-the-lander-chosen')
-const goAshore = page.locator('#queuebar .btn', { hasText: 'Go ashore' })
-const offered = await goAshore.count() > 0
-if (offered) await goAshore.click()
+const stillAboard = await page.evaluate((id) => window.fairholm.state.units.find(u => u.id === id).aboard.length, landerId)
+await shot('01-shore-held-with-a-passenger-chosen')
+// and let go
+await finger.release()
 await settle(600)
 const walker = await active()
 const after = await page.evaluate(({ id, w }) => {
   const s = window.fairholm.state
   return { aboard: s.units.find(u => u.id === id)?.aboard.length ?? null, walker: s.units.find(u => u.id === w) ? { kind: s.units.find(u => u.id === w).kind, tile: s.units.find(u => u.id === w).tile } : null }
 }, { id: landerId, w: walker })
-await shot('02-after-go-ashore')
-note('the passenger shortcut', { held: shore, card: heldCard, offered, aboardBefore, after, twoTouches: offered && after.aboard === aboardBefore - 1 && after.walker?.tile === shore, cardAfter: await card() })
+await shot('02-after-letting-go')
+note('the passenger shortcut', { held: shore, chosenCard, heldCard, offered, aboardBefore, nothingMovedOnHold: stillAboard === aboardBefore, after, twoTouches: offered && after.aboard === aboardBefore - 1 && after.walker?.tile === shore, cardAfter: await card() })
 
 // ---- 2: a unit standing behind a building ------------------------------------------------------
 // found, then put a militia on the tile just north of the settlement, where the hall's picture

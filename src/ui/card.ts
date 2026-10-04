@@ -109,7 +109,7 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
     actions,
     more: () => app.openMore({ kind: 'unit', id: u.id }, u.tile),
   }
-  // the shore the founding control is looking at, and whether it may be founded on
+  // the shore Found here is looking at, and whether it may be founded on
   const target = lander && app.foundTarget !== null && neighbours8(w, h, u.tile).includes(app.foundTarget) ? app.foundTarget : null
   const canFound = target !== null && foundingProblem(s, target) === null && u.aboard.length > 0
   const found = () => button('Found here', () => { void app.found(u.id, target!) }, 'go')

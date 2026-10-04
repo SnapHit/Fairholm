@@ -870,13 +870,16 @@ export class App {
     return false
   }
 
-  /** The tile the finger is over, as a hold reads it: a finger on another unit's picture is on the
-   *  tile that unit stands on, so the lander held by a colonist is boarding even where its hull
-   *  hangs over the next tile, and a militia holding an enemy's picture is the attack. */
+  /** The tile the finger is over, as a hold reads it: a finger on a unit's picture is on the tile
+   *  that unit stands on, so the lander held by a colonist is boarding even where its hull hangs
+   *  over the next tile, a militia holding an enemy's picture is the attack, and a release on the
+   *  chosen unit's own figure is on its own tile, the cancel, rather than on the tile its picture
+   *  stands in front of. */
   private tileUnderFinger(px: number, py: number, u: Unit): number | null {
     const s = this.state
     const held = pick(s, this.scene.cam, px, py, this.scene.unitPositions, this.picturesForPicking(), 0, false).unit
-    const other = held !== null && held !== u.id ? s.units.find(x => x.id === held) : undefined
+    if (held === u.id) return u.tile
+    const other = held !== null ? s.units.find(x => x.id === held) : undefined
     return other ? other.tile : tileUnderPoint(s, this.scene.cam, px, py)
   }
 
