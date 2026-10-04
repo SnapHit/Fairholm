@@ -610,10 +610,10 @@ export const C = {
     tapMaxPx: 8,
     doubleTapMs: 300,
     tileTapFloor: 44,          // below this many pixels a tile, tiles are not tappable
-    /** A hold plots a route, and nothing commits until the route's end or Go is tapped, so a hold
-     *  reaches tiles below the tap floor: down to this many pixels a tile, the overview zoom, where
-     *  the route and its numbered turn ends can still be read. A slightly wrong tile shows in the
-     *  plot and is put right by holding again. Below it a hold is a tap. */
+    /** A hold shows a route, and nothing commits until the finger lifts, so a hold reaches tiles
+     *  below the tap floor: down to this many pixels a tile, the overview zoom, where the route and
+     *  its numbered turn ends can still be read. A slightly wrong tile shows in the route and is put
+     *  right by sliding. Below it a hold is a tap. */
     routeHoldFloor: 16,
     /** The margin a chosen unit or a plotted route is kept inside the free map by, in pixels: a
      *  thumb's half width, so what the camera keeps in view is not half under the card. */

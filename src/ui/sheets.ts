@@ -633,7 +633,7 @@ function routeBlock(app: App, s: GameState, u: Unit, r: RoutePlan): HTMLElement 
   if (!r.ok) {
     // the shore beside the lander is not a place to sail to but the place to found: the founding
     // control below is already looking at it
-    if (r.shore !== null) return h('div', { class: 'preview' }, h('div', { class: 'big' }, 'Go ashore here'), h('div', {}, r.words))
+    if (r.shore !== null) return h('div', { class: 'preview' }, h('div', { class: 'big' }, 'Found here'), h('div', {}, r.words))
     return h('div', { class: 'preview none' }, h('div', { class: 'big warn' }, 'Not there'), h('div', {}, r.words))
   }
   const t = s.world.tiles[r.end]
@@ -705,9 +705,9 @@ function landerControls(app: App, s: GameState, u: Unit): HTMLElement {
 }
 
 /** Who is aboard the lander, in the order they would step off. Any of them can be chosen, and a hold
- *  on the shore beside the lander then sends them ashore, the way a colonist beside it is sent
- *  aboard by holding the lander. With nobody chosen, a hold on the shore offers Go ashore on the
- *  card for the next one off. Feel brief section 3. */
+ *  on the shore beside the lander, let go, then sends them ashore, the way a colonist beside it is
+ *  sent aboard by holding the lander. With nobody chosen, a hold on the shore is the lander's own:
+ *  the founding preview, and Found here on the card. Feel brief section 3. */
 function aboardSection(app: App, s: GameState, u: Unit): HTMLElement | null {
   if (!u.aboard.length) return null
   const w = s.world.width, h2 = s.world.height

@@ -51,14 +51,19 @@ Built with TypeScript, Vite and three.js; no UI framework; self-hosted on Cloudf
 
 ## The three gestures
 
-Pinch zooms (continuous, anchored on the centroid). Drag pans. Tap selects and inspects. Tap and
-hold plots a route for the selected unit to the tile held, with a filling ring from the first frame;
-moving 14 px cancels it into a pan. Nothing moves until the route's end is tapped or the Go control
-in the bottom third is pressed. **A tap on the map never commits anything, except on the end of a
-route the player has just plotted.** A hold elsewhere plots again; a tap elsewhere puts the route away.
-This is the only way to move any unit, the lander included. No drag and drop. No confirmation dialogs:
-undo instead. Below 44 px a tile, tiles are not tappable; a destination hold still works down to the
-overview zoom, because it commits nothing.
+Pinch zooms (continuous, anchored on the centroid). Drag pans. Tap selects and inspects. Moving a
+unit is one continuous gesture: press and hold the destination, and after the hold threshold the
+route appears (turn markers, fog stretches, attack odds) with a short vibration where supported;
+slide to re-aim and the route follows the finger live, scrolling the map when held near an edge;
+let go to move along the route shown. A quick drag before the hold engages is still a pan; moving
+14 px cancels it into one. **Tap selects; hold aims; release moves; nothing else commits a move.**
+Releasing on the unit's own tile, over the card or the top strip, or on a tile that cannot be
+reached moves nothing, and a second finger cancels into a pinch. An attack commits on release only
+once its odds have been on screen for half a second. A release never founds: the card offers Found
+here. This is the only way to move any unit, the lander included. No Go control, no tap on a route's
+end, no drag and drop. No confirmation dialogs: undo instead. Below 44 px a tile, tiles are not
+tappable; a destination hold still works down to the overview zoom, because it commits nothing until
+the release.
 
 ## Repository layout
 

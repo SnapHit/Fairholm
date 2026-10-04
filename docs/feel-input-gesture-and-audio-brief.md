@@ -1,5 +1,10 @@
 # Feel: input, gesture and audio
 
+**Changed 4 October 2026, for movement again.** Tested on a phone, hold to plot and then tap to go did
+not work as an interaction. Movement is now one continuous gesture: press and hold the destination to
+see the route, slide to re-aim, let go to move. Tap selects; hold aims; release moves; nothing else
+commits a move. The Go control, the tap on a route's end and Clear are gone. Sections 1, 4 and 5 say so.
+
 **Changed 3 October 2026, for choosing a unit.** A tap anywhere on a unit's drawn picture chooses it,
 never on a target under 44 points, and the chosen unit wears a ring and an outline that do not move.
 Section 3 says so.
@@ -26,16 +31,17 @@ Three gestures. There are no others, and nothing in the game may require anythin
 |---|---|---|
 | **Pinch** | Zoom, continuous | Yes |
 | **Drag** | Pan | Yes |
-| **Tap** | Select and inspect | **Yes. Never commits anything**, except on the end of a route the player has just plotted |
-| **Tap and hold** | Plot a route for the selected unit to the tile held. Nothing moves | Yes. A route is a plan |
+| **Tap** | Select and inspect | **Yes. Never commits anything** |
+| **Hold, aim, release** | Press and hold a tile to see the route there for the chosen unit; slide to re-aim; let go to move along it. Nothing moves until the finger lifts | Yes. The route is on the screen before anything happens, and a release on the unit, on the interface or on a tile that cannot be reached moves nothing |
 
-**The rule underneath: tap selects and inspects, tap and hold plots a route, and the route's end or the
-Go control commits.** A tap on the map never commits anything, except on the end of a route the player
-has just plotted, so nothing on the map happens without the player having first seen what it will do.
-That is the "first tap is never destructive" rule from section 2 of the interaction brief, implemented
-as a gesture instead of as a two-step interface. It is one consistent idea across the whole game, and
-it applies to every unit: colonists, soldiers, haulers, ships and the lander. There is no other way to
-move a unit.
+**The rule underneath: tap selects; hold aims; release moves; nothing else commits a move.** A tap on
+the map never commits anything, so nothing on the map happens without the player having first seen
+what it will do: the route is under the finger before the release that commits it. That is the "first
+tap is never destructive" rule from section 2 of the interaction brief, implemented as a gesture
+instead of as a two-step interface. It is one consistent idea across the whole game, and it applies to
+every unit and every kind of movement: colonists, soldiers, haulers, ships and the lander; boarding and
+going ashore; routes of several turns and routes that start next turn. There is no other way to move a
+unit.
 
 ---
 
@@ -118,15 +124,31 @@ is one of the most frequently seen surfaces in the game.
 
 ---
 
-## 4. Tap and hold: plotting a route
+## 4. Hold, aim and release: moving a unit
 
-**With a unit active, tap and hold on a tile plots a route there.** Nothing moves. The player then
-agrees and goes, or picks somewhere else:
+**With a unit chosen, press and hold a tile: the route there appears. Let go: the unit moves along it.**
+One continuous gesture, from the finger landing to the finger lifting:
 
-- **Hold a tile:** the route appears on the map from the unit to that tile
-- **Tap the same tile, the route's end, to go.** The Go control in the bottom third does the same
-- **Hold a different tile** to plot again. **Tap anywhere else** to put the route away; the unit stays
-  selected, ready for another hold
+- **Tap** chooses the unit. A tap never commits a move
+- **Press and hold a tile.** After the hold threshold the route appears on the map from the unit to
+  that tile, with its turn markers, its stretches through fog and, for an attack, the odds, and the
+  card shows it in one line. A short vibration marks the hold engaging, where the device has one
+- **While holding, slide to re-aim.** The route follows the finger live. Holding near an edge of the
+  visible map scrolls it, so a tile six away is reachable in one gesture; the card and the top strip
+  are not scroll edges. A quick drag before the hold engages is still a pan; once the hold has
+  engaged, moving re-aims and never pans
+- **Let go to move**, along the route shown at the moment of release. The unit goes as far as it gets
+  this turn, and a route of several turns keeps going at the start of each turn after
+
+### Changing your mind
+
+Each of these moves nothing, and the unit stays chosen, ready for another hold:
+
+- **Release on the chosen unit's own tile**
+- **Release over any part of the interface**, the card or the top strip
+- **Release on a tile that cannot be reached.** The card says why
+- **A second finger** cancels the hold and becomes a pinch
+- **Undo** stays, for a move that was meant and then regretted
 
 ### What the route shows
 
@@ -136,55 +158,65 @@ agrees and goes, or picks somewhere else:
   there: a course through unseen water stops at any coast it meets
 - **An attack.** If the last step is an attack, the route says so and shows the odds, computed from
   the same best of three resolution the fight uses, and says when it would be a declaration of war.
-  An attack needs a hold and then a tap on the route's end or the Attack control; a hold alone never
-  attacks
+  **An attack commits on release only if its odds have been on the screen for at least half a
+  second.** Released sooner, nothing happens and the card says to hold a moment longer. Sliding
+  across an enemy on the way to somewhere else never attacks
 - **Why not.** If the tile cannot be reached, the route says why instead of drawing a way: a ship
-  holding land, a land unit holding water, a unit with no moves left, terrain or others' units in the
-  way. The lander holding land is pointed at the founding control, which is how it goes ashore
+  holding land, a land unit holding water, terrain or others' units in the way. A unit with no moves
+  left shows its route all the same, marked as starting next turn, and the release sets it off then
+- **Founding is never a release.** With the lander chosen, holding a shore beside it shows the
+  founding preview; letting go moves nothing, and the card offers Found here. Going ashore without
+  founding is a passenger's step: tap the aboard count on the lander's card to choose one, then hold
+  the shore and let go
 
 ### Reach
 
-A move of several tiles can be further than a tappable zoom shows. Two things answer that:
+A move of several tiles can be further than a tappable zoom shows. Three things answer that:
 
-- **The unit stays selected while the map is panned**, so the player can pan to a far tile and hold it
+- **Holding near an edge of the free map scrolls it** under the still finger, and the route follows
+- **The unit stays chosen while the map is panned**, so the player can pan to a far tile and hold it
 - **A destination hold works at zoomed-out levels where ordinary taps do not**, down to the zoom where
   the route can still be read. The 44 point floor in section 5 exists to stop a mis-tap committing the
-  wrong thing; a hold commits nothing, so a slightly wrong tile shows in the plot and is put right by
-  holding again. The tap that commits, on the route's end, answers across at least 44 points
+  wrong thing; a hold commits nothing, so a slightly wrong tile shows in the route and is put right by
+  sliding, and only the release commits
 
 ### What makes it feel right rather than sluggish
 
-- **250 milliseconds**, not the platform default of 500
+- **450 milliseconds to engage**, not the platform default of 500 (decision 49)
 - **Immediate visual feedback from the first frame of contact.** A ring fills under the finger, and the
-  route appears the moment it is full. The player never waits without knowing they are waiting
-- **Moving beyond a small threshold cancels the hold and becomes a pan.** This must be tuned carefully,
-  because thumbs are imprecise
-- **Releasing early cancels with no effect and no penalty**
+  route appears the moment it is full, with a short vibration. The player never waits without knowing
+  they are waiting
+- **Moving beyond a small threshold before the hold engages cancels it and becomes a pan.** This must
+  be tuned carefully, because thumbs are imprecise
+- **Releasing before the hold engages is a tap**, with no effect beyond a tap's and no penalty
 
 ### The discoverable path, which is required
 
-The tap on the route's end is the fast path. It is also invisible to anyone who has not been told, so
-**every plotted route also has an explicit control in the bottom third**, Go, or Attack for an attack,
-which does the same thing.
-
-Both do the same thing. The tap is for the player who has learned it; the control is for everyone else
-and for the first hour. Per section 4.6 of the onboarding brief, the first few queue items teach the
-hold as plotting a course in their wording.
+The gesture is invisible to anyone who has not been told. So the card of an idle unit says it in its
+one line, "hold where to go, and let go to set off", and per section 4.6 of the onboarding brief the
+first queue items teach it in their wording: hold where you want to go, and let go to set off. There
+is no Go control and no tap on the route's end: one gesture, taught in words where the player is
+already looking.
 
 ---
 
 ## 5. What is forbidden
 
-- **Drag and drop, anywhere.** Imprecise, the finger covers the target, no hover state to guide it
+- **Drag and drop, anywhere.** Imprecise, the finger covers the target, no hover state to guide it.
+  Sliding to re-aim a held route is not dragging the unit: the unit stays where it is, the route under
+  the finger is what moves, and nothing happens until the release. Dragging a unit itself is still
+  forbidden
 - **Double-tap for anything except zoom**
 - **Multi-finger gestures beyond pinch**
-- **Any action that is only reachable by hold**, per section 4
-- **A tap on the map that commits anything**, except a tap on the end of a route just plotted
-- **Any way to move a unit other than the plotted route**
-- **Confirmation dialogs.** Undo instead, backed by the action log. The plotted route is not one: it is
-  the plan, shown on the map, and it is where the move is committed
+- **Any action that is only reachable by hold**, per section 4, except movement itself, which is one
+  gesture and is taught in words
+- **A tap on the map that commits anything**
+- **Any way to move a unit other than hold, aim and release.** No Go control, no tap on a route's end,
+  no confirming step
+- **Confirmation dialogs.** Undo instead, backed by the action log. The route under the finger is not
+  one: it is the plan, shown on the map, and letting go is where the move is committed
 - **Anything requiring precision below 44 pixels**, except the destination hold of section 4, which
-  commits nothing and is put right by holding again
+  commits nothing until the release and is put right by sliding
 
 ---
 

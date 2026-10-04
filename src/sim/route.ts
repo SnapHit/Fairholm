@@ -1,7 +1,7 @@
 // A route: where a unit of the player's would go if told to go to a tile, planned before anything
-// moves. Feel brief sections 1 and 4: a hold plots, and only a tap on the route's end or the Go
-// control commits. This is the plan the interface draws and the words it says; committing it is the
-// ordinary move, attack or boarding action, so what is drawn is what happens.
+// moves. Feel brief sections 1 and 4: a hold shows the route, and only letting go commits it. This is
+// the plan the interface draws and the words it says; committing it is the ordinary move, attack or
+// boarding action, so what is drawn is what happens.
 //
 // Planned on what the player knows: water and ground nobody has seen are taken as open (findPath's
 // blind planning), units are seen only in sight, settlements only once seen. Where a tile cannot be

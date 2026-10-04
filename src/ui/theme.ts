@@ -24,9 +24,9 @@ export const SHEET_DISMISS_PX = 72
 /** Nothing the player must hit is ever smaller than this. Feel brief section 5. */
 export const TAP_MIN_PX = 44
 
-/** The plotted route (src/ui/route.ts). Its end is a ring the size of the tile and never smaller
- *  than this radius, so it reads as something to tap; each turn's end is a numbered disc of this
- *  radius; an attack's odds sit in a pill this tall above the end. */
+/** The route under the finger (src/ui/route.ts). Its end is a ring the size of the tile and never
+ *  smaller than this radius, so it reads from under a thumb; each turn's end is a numbered disc of
+ *  this radius; an attack's odds sit in a pill this tall above the end. */
 export const ROUTE_END_TILE = 0.42
 export const ROUTE_END_MIN_PX = 15
 export const ROUTE_TURN_PX = 11

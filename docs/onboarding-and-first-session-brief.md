@@ -1,5 +1,9 @@
 # Onboarding and the first session
 
+**Changed 4 October 2026, for movement again.** Hold to plot and then tap to go did not work on a
+phone. Movement is one gesture: hold where you want to go, and let go to set off (feel brief section
+4). The lander's queue item in section 4.6 and the sentences in sections 2 and 6 teach it that way.
+
 **Changed 2 October 2026, for movement.** A hold now plots a course and moves nothing; a tap on the
 course's end, or Go, sails it (feel brief section 4). The lander's queue item teaches the hold that
 way, in section 4.6, and the sentences in sections 2 and 6 that said a hold sails, or named a compass
@@ -65,9 +69,9 @@ known yet. You are already here, and you do not know where here is.
 - **Then you sail until you sight land, and look for your ground.** The lander moves wherever boats can
   go, open water and major rivers, six tiles a turn, and sees three tiles around it. It comes down out
   of sight of land but near enough that sailing in any sensible direction sights land within the first
-  move or two. A hold on a destination plots a course there and moves nothing; a tap on the course's
-  end, or Go, sails it, as far as it gets this turn, drawn travelling with the fog lifting along the
-  way and the view following. A destination off the screen is reached by panning to it, or by holding
+  move or two. Hold a destination and the course there shows, moving nothing; let go and the lander
+  sails it, as far as it gets this turn, drawn travelling with the fog lifting along the way and the
+  view following. A destination off the screen is reached by panning to it, or by holding
   at a wider zoom. A course through water nobody has seen stops at any coast it meets. Where you go ashore is up to you: beach the lander beside any
   land tile that is not mountain and not too close to someone else's settlement, and everyone aboard
   becomes the settlement
@@ -173,10 +177,11 @@ wording. **So the tutorial is the wording of the first six queue items.**
 
 > *Put someone to work on a tile near the landing.*
 
-The first of them is the lander's, and it teaches the hold as plotting a course:
+The first of them is the lander's, and it teaches the hold as showing a course and the release as
+sailing it:
 
-> *Tap the lander, then tap and hold where you want to go. That plots a course, and nothing moves
-> yet; tap the course's end, or Go, to sail.*
+> *Tap the lander, then press and hold where you want to go. The course shows while you hold, and
+> nothing moves yet; let go to sail.*
 
 That is a tutorial step and a queue item at once, and it costs nothing to build. From the seventh item
 the wording reverts to normal.
@@ -223,7 +228,7 @@ timber accumulate, build the first thing, see the settlement change.
 
 The five minutes count from founding, as the curriculum does. The voyage before it is quick, and it is
 the first pleasure rather than a cost: land is in sight within a move or two, a move is a hold on a
-destination and a tap on the course's end, and the fog lifting along the lander's way is its own
+destination and a release, and the fog lifting along the lander's way is its own
 reward.
 
 That requires early turns to be genuinely fast, five to ten seconds each, which the one-decision queue

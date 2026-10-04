@@ -65,8 +65,8 @@ export class App {
   sheet: SheetSpec = { kind: 'queue' }
   sheetHistory: SheetSpec[] = []
   undoStack: { snapshot: GameState; label: string }[] = []
-  /** The route the player has plotted for the active unit with a hold, or the reason there is none:
-   *  nothing has moved, and a tap on its end or the Go control commits it. Feel brief section 4. */
+  /** The route the active unit's hold is aiming, or the reason there is none: nothing has moved,
+   *  and letting go commits it. Feel brief section 4. */
   route: UiRoute | null = null
   /** The tile looked at with a tap when no unit is selected: its card shows in the queue bar's place. */
   focusTile: number | null = null
@@ -1353,7 +1353,7 @@ export class App {
   }
 
   renderSheet() {
-    // held while a move is drawn, and not touchable either, so a second tap on Go does nothing
+    // held while a move is drawn, and not touchable either, so nothing in it acts twice
     if (this.sheetHeld()) { this.sheetEl.classList.add('held'); return }
     this.sheetEl.classList.remove('held')
     const showing = this.sheetShowing()
