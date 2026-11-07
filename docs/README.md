@@ -24,4 +24,6 @@ The briefs, by filename:
 - legal-distinguishability-constraint.md
 - colonization-mechanics-brief.md (background only: the 1994 game we depart from, never a source of mechanics)
 
-Copy them in from the project. Nothing else lives here.
+Copy them in from the project. Nothing else lives here, except `builds/`: briefs for a single build
+session, which say how to build what the design briefs decide. They are instructions rather than
+design, and where one disagrees with a design brief the design brief wins.
