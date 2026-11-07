@@ -11,6 +11,7 @@
 import * as THREE from 'three'
 import { SELECTION, hexRgb } from './look'
 import type { AtlasPiece } from './billboards'
+import { displayColour } from './shading'
 
 /** A picture as the outline needs it: where its box lies on the ground, which drawing and how. */
 export interface OutlinedPicture {
@@ -131,9 +132,10 @@ export class SelectionMark {
     const r = Math.max(SELECTION.ringMin, Math.min(SELECTION.ringMax, ringWidth * SELECTION.ringShare))
     if (r !== this.radius || colour !== this.colour) {
       for (const c of [...this.ring.children]) { this.ring.remove(c); const m = c as THREE.Mesh; m.geometry.dispose(); (m.material as THREE.Material).dispose() }
-      // a material's colour is read as sRGB from a string, as every other colour on the map is
-      const h = flatRing(r - SELECTION.haloWidth, r + SELECTION.ringWidth + SELECTION.haloWidth, new THREE.Color(SELECTION.halo), SELECTION.haloAlpha)
-      const b = flatRing(r, r + SELECTION.ringWidth, new THREE.Color(colour), 1)
+      // a material's colour is read as sRGB from a string, as every other colour on the map is, and
+      // given to the built-in material as it is to be shown (displayColour in shading.ts)
+      const h = flatRing(r - SELECTION.haloWidth, r + SELECTION.ringWidth + SELECTION.haloWidth, displayColour(new THREE.Color(SELECTION.halo)), SELECTION.haloAlpha)
+      const b = flatRing(r, r + SELECTION.ringWidth, displayColour(new THREE.Color(colour)), 1)
       const own = hexRgb(colour)
       h.renderOrder = -1.6
       b.renderOrder = -1.5

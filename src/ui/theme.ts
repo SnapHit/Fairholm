@@ -6,6 +6,8 @@
 // Art direction brief section 9 for the palette the map already uses; settlement screen brief
 // section 6 for "no chrome, no borders, no frames"; feel brief section 4 for the hold.
 
+import { GRID, hexRgb } from '../render/look'
+
 // ---- numbers the interface code needs by name ---------------------------------------------------
 // These are the same values the custom properties below are built from, so there is one source.
 
@@ -42,6 +44,16 @@ export const OPENING_FADE_MS = 900
 export const RING_CELL_PX = 88
 export const SLOT_W_PX = 56
 export const SLOT_H_PX = 56
+
+/** How many ring pictures are kept drawn, so that going to the next settlement and back draws
+ *  nothing. Each is a canvas of up to about two megabytes at the picture's largest. */
+export const RING_PICTURES_KEPT = 4
+
+/** A colour from the map's look as a CSS colour at some opacity. */
+function rgba(hex: string, alpha: number): string {
+  const [r, g, b] = hexRgb(hex).map(v => Math.round(v * 255))
+  return `rgba(${r},${g},${b},${alpha})`
+}
 
 /** Below this width the flanking columns move below the ring rather than squeezing it. The brief's
  *  arithmetic (264 + 56 + 56 = 376 in 390) left nothing for gaps or padding, so the pivot is here.
@@ -172,6 +184,10 @@ export const TOKENS: Record<string, string> = {
   '--ring-radius': '5px',
   '--worker-dot': '14px',
   '--furrow': 'rgba(0,0,0,0.14)',
+  /** The ring over the map's picture: hairlines in the map's own grid colour, and the veil over a
+   *  tile that cannot be worked. */
+  '--ring-hairline': rgba(GRID.colour, 0.42),
+  '--ring-veil': 'rgba(23,24,26,0.58)',
 
   // Motion
   '--hold-ms': `${HOLD_MS}ms`,

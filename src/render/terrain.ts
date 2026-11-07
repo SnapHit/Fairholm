@@ -16,7 +16,7 @@
 import * as THREE from 'three'
 import type { GameState, Tile, TerrainId } from '../sim/state'
 import { tileColour, terrainHeight, waterColours, shoreColour, snowColour, type RGB } from './palette'
-import { seasonLook, hexRgb, SURFACE, SHADOW, LIGHT, CLOUD, PROPS } from './look'
+import { seasonLook, hexRgb, SURFACE, SHADOW, LIGHT, CLOUD, PROPS, GRID } from './look'
 import { LIGHT_GLSL, type LightUniforms } from './shading'
 import type { DetailTextures } from './textures'
 import { groundCover } from './props'
@@ -129,7 +129,7 @@ void main() {
   float edge = min(min(cell.x, 1.0 - cell.x), min(cell.y, 1.0 - cell.y));
   float here = floor(vWorld.z) * uMapSize.x + floor(vWorld.x);
   float isSel = step(abs(here - selected), 0.5) * gridMix;
-  c = mix(c, vec3(1.0, 0.97, 0.85), isSel * (1.0 - smoothstep(0.02, 0.06, edge)) * 0.9);
+  c = mix(c, vec3(${hexRgb(GRID.colour).map(v => v.toFixed(3)).join(', ')}), isSel * (1.0 - smoothstep(0.02, 0.06, edge)) * 0.9);
   gl_FragColor = vec4(c, 1.0);
 }`
 
@@ -187,6 +187,9 @@ export interface TerrainBuild {
   heightAt: (x: number, z: number) => number
   /** Re-colour the surface for a season. A per-turn bake, never per frame. */
   recolour: (s: GameState, season: number) => void
+  /** The span of the mesh's index that draws the tile rows from z0 up to but not including z1, for
+   *  `geometry.setDrawRange`: the index runs row by row, so a band of rows is one span of it. */
+  rowRange: (z0: number, z1: number) => { start: number; count: number }
 }
 
 export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms, detail: DetailTextures, season: number): TerrainBuild {
@@ -463,7 +466,12 @@ export function buildTerrain(s: GameState, seedNum: number, light: LightUniforms
     ;(waterMaterial.uniforms.sky.value as THREE.Vector3).set(...c.sky)
   }
 
-  return { mesh, water, material, waterMaterial, overlay, heightAt, recolour }
+  const perRow = S * (gw - 1) * 6
+  const rowRange = (z0: number, z1: number) => {
+    const a = Math.max(0, Math.min(h, Math.floor(z0))), b = Math.max(a, Math.min(h, Math.ceil(z1)))
+    return { start: a * perRow, count: (b - a) * perRow }
+  }
+  return { mesh, water, material, waterMaterial, overlay, heightAt, recolour, rowRange }
 }
 
 /** Distance in tiles from every tile to the nearest tile matching a test. */

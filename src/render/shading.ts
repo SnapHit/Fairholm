@@ -267,9 +267,19 @@ export function surfaceMaterial(light: LightUniforms, ao = 1, vertexColors = fal
   })
 }
 
+/** A colour given to three.js where three.js itself would convert it on the way to the screen (the
+ *  clear colour, a built-in material), turned into the colour it is to be shown as. The renderer
+ *  writes linear output (scene.ts), so that the canvas and a render target share every program;
+ *  three.js used to take these few colours to sRGB for the canvas, and this does the same once,
+ *  here, so the screen shows exactly what it showed before. Every other colour on the map is a
+ *  uniform of one of our own shaders, which three.js never converts. */
+export function displayColour(c: THREE.Color): THREE.Color {
+  return c.convertLinearToSRGB()
+}
+
 /** A flat, unlit material, for the few things that must not take light: the selection ring, a wake. */
 export function flatMaterial(colour: THREE.ColorRepresentation, opacity = 1): THREE.Material {
-  return new THREE.MeshBasicMaterial({ color: colour, transparent: opacity < 1, opacity })
+  return new THREE.MeshBasicMaterial({ color: displayColour(new THREE.Color(colour)), transparent: opacity < 1, opacity })
 }
 
 export { SHADOW, seasonLook }

@@ -33,14 +33,14 @@ import { workableTiles, tileYield, tileOffers } from '../sim/labour'
 import { neighbours8 } from '../sim/worldgen'
 import { sightMask, unitVisible, settlementKnown } from '../sim/fog'
 import { seedNumber } from './seed'
-import { makeLightUniforms, applyLook, type LightUniforms } from './shading'
+import { makeLightUniforms, applyLook, surfaceMaterial, displayColour, type LightUniforms } from './shading'
 import { ShadowBake, type Occluder } from './shadow'
 import { detailTextures, type DetailTextures } from './textures'
 import { spriteSheet, buildBillboards, buildSilhouettes, setBillboardFade, placeBillboard, manifestFrom, pictureBox, pictureCover, type AtlasManifest, type BillboardTag, type Billboard } from './billboards'
 import { SelectionMark } from './selection'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
-import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL, WAVE_COAST, MOVE } from './look'
+import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL, WAVE_COAST, MOVE, RING_PICTURE } from './look'
 import { sightOf } from '../sim/fog'
 import { waveCandidates } from './selectors'
 
@@ -192,8 +192,15 @@ export class Scene {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', alpha: false, stencil: false })
-    this.renderer.setClearColor(new THREE.Color(...hex(C.art.palette.deepWater)))
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace
+    // every material on the map is a shader of ours that writes the colour it means straight out, so
+    // nothing is converted on the way to the screen. Linear rather than sRGB here is what makes the
+    // canvas and a render target the same to three.js, so the settlement screen's ring is drawn with
+    // the very programs the map is drawn with: no shader is compiled a second time for it, and its
+    // colours cannot drift from the map's. The few colours three.js would itself convert (the clear
+    // colour, the two built-in materials of the selection marks) are given as they are to be shown;
+    // see displayColour and DECISIONS.md
+    this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace
+    this.renderer.setClearColor(displayColour(new THREE.Color(...hex(C.art.palette.deepWater))))
     this.cam = new MapCamera(1, 1)
     this.detail = detailTextures(() => this.requestDraw())
     this.sheetManifests = [SETTLEMENT_ATLAS, UNITS_ATLAS]
@@ -253,9 +260,12 @@ export class Scene {
 
   private buildPropLayers(s: GameState, sn: number) {
     if (!this.terrain) return
+    this.epoch++
+    this.dropRingProps()
     if (this.props) { this.scene.remove(this.props); disposeGroup(this.props) }
     if (this.propsFine) { this.scene.remove(this.propsFine); disposeGroup(this.propsFine) }
     const pb = buildProps(s, this.terrain.heightAt, this.light, sn)
+    this.propMaterials = pb.materials
     this.props = pb.coarse
     this.propsFine = pb.fine
     this.propCount = pb.count
@@ -279,7 +289,7 @@ export class Scene {
    *  beyond the map is known either; off, the season's own. */
   private setClear(sn: number) {
     const c = C.flags.fogOfWar ? hexRgb(seasonLook(sn).hazeDeep) : clearColour(sn)
-    this.renderer.setClearColor(new THREE.Color(c[0], c[1], c[2]))
+    this.renderer.setClearColor(displayColour(new THREE.Color(c[0], c[1], c[2])))
   }
 
   /** Write what is known into the fog's texture: red where the ground has been seen, green where it
@@ -432,6 +442,7 @@ export class Scene {
   }
 
   private disposeWorld() {
+    this.dropRingProps()
     if (this.vis) { this.vis.dispose(); this.vis = null; this.light.uVis.value = null }
     if (this.terrain) {
       this.scene.remove(this.terrain.mesh, this.terrain.water)
@@ -997,6 +1008,149 @@ export class Scene {
 
   /** Whether the map is at a zoom where a unit is a drawing rather than a mark. */
   get drawnClose(): boolean { return this.propsVisible }
+
+  /** The nine tiles around `tile`, drawn by this renderer into a 2D canvas `px` pixels square, for
+   *  the settlement screen's ring (settlement screen brief section 2, version 3). Its own orthographic
+   *  camera looks straight down, turned as the map's is (`up` is minus z, so the screen's top is the
+   *  map's north), and frames the three by three with RING_PICTURE.margin of tile beyond it, which
+   *  fades out so the place is not cut out with scissors. For that one draw the full detail tier is
+   *  on (props, fine props, the close settlements and units, the pictures) and the selection marks,
+   *  the overlays and the chosen tile's grid are off; every one of those is put back as it was. The
+   *  player's camera is never touched and there is never a second context: this is one draw into a
+   *  render target on the map's own renderer and one read back, rows flipped, the GPU giving them
+   *  bottom first.
+   *
+   *  The canvas is written in linear space, as a render target always is (see the constructor), so
+   *  the draw uses the map's own compiled programs and its colours are the map's to the level.
+   *
+   *  Null when the renderer cannot draw (a lost context, no world yet) or the draw fails; the screen
+   *  then shows its swatches. `ringStats` keeps the last draw's cost and size for the rigs. */
+  drawRing(tile: number, px: number): HTMLCanvasElement | null {
+    const s = this.lastState
+    if (this.contextLost || !this.terrain || !s || px < 1) return null
+    const start = performance.now()
+    const w = s.world.width
+    const cx = (tile % w) + 0.5, cz = Math.floor(tile / w) + 0.5
+    const half = 1.5 + RING_PICTURE.margin
+    const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 100)
+    cam.position.set(cx, 20, cz)
+    cam.up.set(0, 0, -1)
+    cam.lookAt(cx, 0, cz)
+    cam.updateProjectionMatrix()
+    cam.updateMatrixWorld()
+    // the props of the tiles in the picture only, from the same placement as the map's, and the
+    // terrain's band of rows under it: the whole map's geometry is most of what a draw of a corner
+    // of it costs. One row more each side, for the coast's vertices that wander off their row
+    const terrainGeo = this.terrain.mesh.geometry
+    const band = this.terrain.rowRange(cz - half - 1, cz + half + 1)
+    const drawRange = { start: terrainGeo.drawRange.start, count: terrainGeo.drawRange.count }
+    // everything this one draw changes, so that it can be put back exactly
+    const shown: [THREE.Object3D | null, boolean][] = [
+      [this.props, false], [this.propsFine, false],
+      [this.settlementClose, true], [this.settlementFar, false],
+      [this.unitClose, true], [this.unitFar, false],
+      [this.billboards, true], [this.silhouettes, true],
+      [this.selRing, false], [this.selMark.ring, false], [this.selMark.outline, false],
+    ]
+    const was = shown.map(([o]) => o ? o.visible : false)
+    const u = this.terrain.material.uniforms
+    const uniforms: [string, number][] = [['uCover', 0], ['overlayMix', 0], ['selected', -1], ['gridMix', 0]]
+    const uniformWas = uniforms.map(([k]) => u[k].value as number)
+    const prevTarget = this.renderer.getRenderTarget()
+    const rt = new THREE.WebGLRenderTarget(px, px, { samples: RING_PICTURE.samples })
+    let out: HTMLCanvasElement | null = null
+    let own: { coarse: THREE.Group; fine: THREE.Group } | null = null
+    try {
+      own = this.ringPropsFor(tile)
+      this.scene.add(own.coarse, own.fine)
+      terrainGeo.setDrawRange(band.start, band.count)
+      shown.forEach(([o, v]) => { if (o) o.visible = v })
+      uniforms.forEach(([k, v]) => { u[k].value = v })
+      this.renderer.setRenderTarget(rt)
+      this.renderer.render(this.scene, cam)
+      const buf = new Uint8Array(px * px * 4)
+      this.renderer.readRenderTargetPixels(rt, 0, 0, px, px, buf)
+      const canvas = document.createElement('canvas')
+      canvas.width = px
+      canvas.height = px
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        const img = ctx.createImageData(px, px)
+        const row = px * 4
+        for (let y = 0; y < px; y++) img.data.set(buf.subarray((px - 1 - y) * row, (px - y) * row), y * row)
+        for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255
+        ctx.putImageData(img, 0, 0)
+        // the soft edge: across the margin, from nothing at the picture's edge to whole at the nine
+        // tiles' boundary, along both axes, which multiply where they cross at the corners
+        const edge = RING_PICTURE.margin / (3 + 2 * RING_PICTURE.margin)
+        ctx.globalCompositeOperation = 'destination-in'
+        for (const [x1, y1] of [[px, 0], [0, px]]) {
+          const g = ctx.createLinearGradient(0, 0, x1, y1)
+          g.addColorStop(0, 'rgba(0,0,0,0)')
+          g.addColorStop(edge, 'rgba(0,0,0,1)')
+          g.addColorStop(1 - edge, 'rgba(0,0,0,1)')
+          g.addColorStop(1, 'rgba(0,0,0,0)')
+          ctx.fillStyle = g
+          ctx.fillRect(0, 0, px, px)
+        }
+        ctx.globalCompositeOperation = 'source-over'
+        out = canvas
+      }
+    } catch (e) {
+      console.warn('The ring could not be drawn', e)
+      out = null
+    } finally {
+      this.renderer.setRenderTarget(prevTarget)
+      shown.forEach(([o], i) => { if (o) o.visible = was[i] })
+      uniforms.forEach(([k], i) => { u[k].value = uniformWas[i] })
+      terrainGeo.setDrawRange(drawRange.start, drawRange.count)
+      if (own) this.scene.remove(own.coarse, own.fine)
+      rt.dispose()
+    }
+    this.ringStats = { ms: Math.round(performance.now() - start), px, samples: RING_PICTURE.samples, draws: this.ringStats.draws + 1 }
+    return out
+  }
+
+  /** The last ring picture's cost and size, and how many have been drawn, for the rigs. */
+  ringStats = { ms: 0, px: 0, samples: 0, draws: 0 }
+
+  /** The two materials the map's props are drawn with, which the ring's own props share. */
+  private propMaterials: [THREE.Material, THREE.Material] | null = null
+  /** The props of the tiles round a settlement, for its ring's picture, by the settlement's tile.
+   *  Kept until the map's props are laid again, which is the only time they could differ. */
+  private ringProps = new Map<number, { coarse: THREE.Group; fine: THREE.Group }>()
+
+  private ringPropsFor(tile: number): { coarse: THREE.Group; fine: THREE.Group } {
+    const had = this.ringProps.get(tile)
+    if (had) return had
+    const s = this.lastState!, w = s.world.width
+    const x = tile % w, z = Math.floor(tile / w)
+    const materials = this.propMaterials ?? [surfaceMaterial(this.light, 1), surfaceMaterial(this.light, 0.9)]
+    const pb = buildProps(s, this.terrain!.heightAt, this.light, this.lastSeason >= 0 ? this.lastSeason : season(s.turn),
+      { x0: x - 2, z0: z - 2, x1: x + 3, z1: z + 3, materials })
+    const own = { coarse: pb.coarse, fine: pb.fine }
+    this.ringProps.set(tile, own)
+    return own
+  }
+
+  /** Forget the ring's props: their geometry, not the materials, which are the map's. */
+  private dropRingProps() {
+    for (const own of this.ringProps.values()) {
+      for (const g of [own.coarse, own.fine]) g.traverse((o) => {
+        const m = o as THREE.InstancedMesh
+        if (m.isInstancedMesh) { m.geometry.dispose(); m.dispose() }
+      })
+    }
+    this.ringProps.clear()
+  }
+
+  /** Bumped whenever what the map draws changes underneath a turn: the world built, the props laid
+   *  again because a settlement was founded or the season turned. A ring picture keyed on it is
+   *  never shown after the ground under it has changed. */
+  epoch = 0
+
+  /** Whether the renderer can draw at all just now. */
+  get canDraw(): boolean { return !this.contextLost && !!this.terrain }
 
   /** Read the frame back as RGBA pixels, bottom row first. For verification: a WebGL canvas is
    *  cleared once it has been presented, so looking at what was drawn needs a render target. */

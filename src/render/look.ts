@@ -613,6 +613,25 @@ export const WAVE_COAST = {
   alphaTo: 0.42,
 }
 
+/** The settlement screen's ring, settlement screen brief section 2, version 3: the nine tiles drawn by
+ *  this renderer rather than painted as swatches. `margin` is how far past the nine tiles the picture
+ *  runs, in tiles; across it the picture fades from nothing at its outer edge to whole at the nine
+ *  tiles' boundary, so the place does not look cut out with scissors and every working tile is drawn
+ *  whole. `dprCap` is the most device pixels a CSS pixel is drawn at, whatever the screen: the
+ *  picture is drawn rarely and looked at for a long time, but a phone at three would be nine times
+ *  the pixels of one. `samples` smooths the edges of the pictures standing on it, the way the
+ *  canvas's own antialiasing smooths the map's. */
+export const RING_PICTURE = {
+  margin: 0.25,
+  dprCap: 2,
+  samples: 4,
+}
+
+/** The map's grid colour: the light lines round a chosen tile, and the hairlines over the ring. */
+export const GRID = {
+  colour: '#fff7d9',
+}
+
 /** The founding preview on the map: the nine tiles a settlement would work, in bone where it may be
  *  founded and in the loss colour where it may not, the centre stronger than the ring. */
 export const FOUND_PREVIEW = {

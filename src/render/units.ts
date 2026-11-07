@@ -30,7 +30,7 @@ import * as THREE from 'three'
 import type { GameState, Unit, UnitKind } from '../sim/state'
 import { hex, type RGB } from './palette'
 import { UNITS, UNIT_SPRITE, LIGHT, ARRIVAL, hexRgb } from './look'
-import { surfaceMaterial, type LightUniforms } from './shading'
+import { surfaceMaterial, displayColour, type LightUniforms } from './shading'
 import type { Occluder } from './shadow'
 import { buildBillboards, quadGeometry, type AtlasManifest, type AtlasPiece, type Billboard } from './billboards'
 import { C } from '../sim/constants'
@@ -626,7 +626,7 @@ export function makeRing(colour: number, r: number): THREE.Mesh {
   g.rotateX(-Math.PI / 2)
   // over everything, including the billboards, because a selection has to be visible wherever it
   // lands
-  const ring = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colour, transparent: true, depthTest: false }))
+  const ring = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: displayColour(new THREE.Color(colour)), transparent: true, depthTest: false }))
   ring.renderOrder = 10
   ring.visible = false
   return ring

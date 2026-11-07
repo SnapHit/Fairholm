@@ -404,11 +404,47 @@ input[type=text] {
   align-items: stretch;
 }
 .st-flank { display: grid; grid-template-rows: repeat(3, 1fr); gap: var(--cell-gap); min-width: 0; }
-.st-ring {
+/* the ring: the map's own picture of the nine tiles, and over it hairlines, veils and nine tap
+   targets. The picture runs a quarter tile past the nine on every side and fades out there; the
+   tiles sit inside that margin, which is --ring-inset of the width, set from the renderer's look */
+.settlement .st-ring {
+  position: relative; aspect-ratio: 1; width: 100%; margin: 0 auto; touch-action: pan-y;
+  max-width: calc(var(--ring-cell) * 3.5);
+}
+.st-ring .picture { position: absolute; inset: 0; }
+.st-ring .picture canvas { display: block; width: 100%; height: 100%; }
+.st-ring .swatches {
+  position: absolute; inset: var(--ring-inset);
   display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
-  gap: var(--cell-gap); aspect-ratio: 1;
-  max-width: calc(var(--ring-cell) * 3 + var(--cell-gap) * 2);
-  margin: 0 auto; width: 100%; touch-action: pan-y;
+}
+.st-ring .swatches .cell { border-radius: 0; }
+.st-ring .swatches .cell.off { background: none; }
+.st-ring .hairlines { position: absolute; inset: var(--ring-inset); pointer-events: none; }
+.st-ring .hairlines i { position: absolute; display: block; background: var(--ring-hairline); }
+.st-ring .hairlines .v { top: 0; bottom: 0; width: var(--line-hair); }
+.st-ring .hairlines .h { left: 0; right: 0; height: var(--line-hair); }
+.st-ring .hairlines .v.a { left: calc(100% / 3); }
+.st-ring .hairlines .v.b { left: calc(200% / 3); }
+.st-ring .hairlines .h.a { top: calc(100% / 3); }
+.st-ring .hairlines .h.b { top: calc(200% / 3); }
+.st-ring .tiles {
+  position: absolute; inset: var(--ring-inset);
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+}
+.st-ring .tile {
+  position: relative; min-width: 0; min-height: 0; overflow: hidden;
+  border: none; padding: 0; margin: 0; background: none; font: inherit; color: var(--ink);
+  cursor: pointer; text-align: left;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.st-ring .tile:active { background: var(--surface-tint); }
+.st-ring .tile.off { cursor: default; }
+.st-ring .tile.veiled::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--ring-veil);
+}
+.st-ring .tile.can-take::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border: calc(var(--line-hair) * 2) solid var(--accent);
 }
 
 /* on a narrow screen, or under a large system font, the flanks move below the ring rather than
@@ -441,33 +477,38 @@ input[type=text] {
 /* ring cells carry real terrain, drawn from the map's own palette and tile data */
 .cell .terrain { position: absolute; inset: 0; }
 .cell .feature { position: absolute; inset: 0; pointer-events: none; }
-.cell .label {
+.cell .label, .tile .label {
   position: relative; z-index: 1;
   font-size: var(--text-micro); line-height: 1.15; font-weight: var(--weight-medium);
   padding: var(--space-1) var(--space-2);
   text-shadow: var(--shadow-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.cell .worker {
+.cell .worker, .tile .worker {
   position: absolute; z-index: 1; top: var(--space-2); left: var(--space-2);
   width: var(--worker-dot); height: var(--worker-dot); border-radius: var(--radius-pill);
   background: var(--ink); color: var(--surface-base);
   font-size: var(--text-micro); line-height: var(--worker-dot); text-align: center;
   font-weight: var(--weight-strong);
 }
-.cell .prime {
+.cell .prime, .tile .prime {
   position: absolute; z-index: 1; top: var(--space-2); right: var(--space-2);
   width: var(--space-4); height: var(--space-4); border-radius: var(--radius-pill);
   background: var(--accent); box-shadow: var(--shadow-text);
 }
-.cell .centre {
+.cell .centre, .tile .centre {
   position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center;
   font-size: var(--text-tiny); font-weight: var(--weight-strong); text-shadow: var(--shadow-text);
 }
 
 /* the founding preview in a sheet: the ring the settlement would work, at the slot's size rather
    than the ring's, so it fits the bottom third with its words beside it */
-.st-ring.compact { max-width: calc(var(--slot-w) * 3 + var(--cell-gap) * 2); margin: var(--space-3) 0; }
+/* the founding preview keeps version 2's swatches in a grid: decision 108, left as it was */
+.st-ring.compact {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+  gap: var(--cell-gap); aspect-ratio: 1; width: 100%;
+  max-width: calc(var(--slot-w) * 3 + var(--cell-gap) * 2); margin: var(--space-3) 0;
+}
 .st-ring.compact .cell { cursor: default; }
 .st-ring.compact .cell.bad { opacity: 0.45; }
 .found { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; }

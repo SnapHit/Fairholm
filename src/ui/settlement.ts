@@ -3,8 +3,8 @@
 // control. A ring of nine in the middle, three building slots down each flank, an overflow row that
 // scrolls sideways, the idle row and the goods strip.
 //
-// Ring cells draw real terrain from the map's own palette and tile data, through src/render/tiles.ts,
-// so the ring improves whenever the map does. There is no second art pipeline and no icon set.
+// The ring is the map's own picture of the nine tiles, drawn by the renderer (src/ui/ring.ts and
+// Scene.drawRing), so it improves whenever the map does. There is no second art pipeline.
 //
 // Nothing here writes to the state: every change goes through app.dispatch and is undoable.
 
@@ -13,8 +13,7 @@ import { C } from '../sim/constants'
 import { foodBalance, clerksRequired, buildingWorkers, tileYield } from '../sim/labour'
 import { storageCapacity } from '../sim/settlement'
 import { h, button, muted, fmt, plural, signed } from './dom'
-import { SWIPE_PX, SWIPE_SLOP_PX } from './theme'
-import type { TileLook } from '../render/tiles'
+import { ringView, terrainLayers, type TileContent } from './ring'
 import {
   ringCells, buildingSlots, goodsStrip, destinationsFor, ownSettlements, consignable,
   standingWords, standingMark, goodWord,
@@ -22,51 +21,19 @@ import {
 } from './selectors'
 import type { App } from './app'
 
-/** The ring cell's ground: the tile's own colour, then its features drawn over it. Every colour comes
- *  from the renderer's palette; every size and tint comes from the theme. */
-export function terrainLayers(look: TileLook): HTMLElement[] {
-  const ground = h('div', { class: 'terrain', style: { background: look.colour } })
-  const bits: string[] = []
-  if (look.canopy) {
-    bits.push(`radial-gradient(circle at 28% 32%, ${look.canopy} 0 20%, transparent 21%)`)
-    bits.push(`radial-gradient(circle at 68% 52%, ${look.canopy} 0 17%, transparent 18%)`)
-    bits.push(`radial-gradient(circle at 44% 76%, ${look.canopy} 0 14%, transparent 15%)`)
-    bits.push(`radial-gradient(circle at 80% 82%, ${look.canopy} 0 11%, transparent 12%)`)
-  }
-  if (look.river) {
-    const half = look.river === 2 ? 9 : 5
-    bits.push(`linear-gradient(102deg, transparent ${50 - half}%, ${look.riverColour} ${50 - half}% ${50 + half}%, transparent ${50 + half}%)`)
-  }
-  if (look.road) bits.push(`repeating-linear-gradient(90deg, ${look.roadColour} 0 5px, transparent 5px 11px)`)
-  if (look.improved) bits.push('repeating-linear-gradient(0deg, var(--furrow) 0 2px, transparent 2px 7px)')
-  const layers: HTMLElement[] = [ground]
-  if (bits.length) {
-    const style: Record<string, string> = { backgroundImage: bits.join(', ') }
-    // the road reads as a track across the middle rather than over the whole cell
-    if (look.road) { style.backgroundSize = 'auto'; style.backgroundRepeat = 'repeat-x'; style.backgroundPosition = 'center' }
-    layers.push(h('div', { class: 'feature', style }))
-  }
-  return layers
-}
+export { terrainLayers }
 
-function ringCell(app: App, st: Settlement, cell: RingCell, highlighted: boolean): HTMLElement {
-  if (cell.tile === null) return h('div', { class: 'cell' })
-  const look = cell.look!
-  const el = h('button', {
-    class: 'cell' + (cell.centre || cell.available || cell.worker ? '' : ' dim') + (highlighted ? ' can-take' : ''),
-    type: 'button',
-    'aria-label': cell.words,
-    onClick: () => app.settlementTapTile(st, cell),
-  }, ...terrainLayers(look))
-  if (cell.centre) {
-    el.append(h('div', { class: 'centre' }, st.name))
-  } else {
+/** What a tile carries over the picture, as the screen has always marked it: who works it, a prime,
+ *  what it yields, and the settlement's name at the centre. */
+function tileMarks(st: Settlement): TileContent {
+  return (cell: RingCell, el: HTMLElement) => {
+    if (cell.centre) { el.append(h('div', { class: 'centre' }, st.name)); return }
+    const look = cell.look!
     if (cell.worker) el.append(h('div', { class: 'worker' }, standingMark(cell.worker.colonist)))
     if (look.prime) el.append(h('div', { class: 'prime' }))
     const shown = cell.worker ? { good: cell.worker.good as TileGood, yield: cell.worker.yield } : cell.best
     if (shown) el.append(h('div', { class: 'label' }, `${goodWord(shown.good as GoodId)} ${shown.yield}`))
   }
-  return el
 }
 
 function buildingSlotEl(app: App, st: Settlement, slot: BuildingSlot, highlighted: boolean): HTMLElement {
@@ -125,8 +92,7 @@ export function settlementScreen(app: App, s: GameState, st: Settlement): HTMLEl
   const flankRight = built.slice(3, 6)
   const overflow = [...built.slice(6), ...options]
 
-  const ring = h('div', { class: 'st-ring' }, cells.map(c => ringCell(app, st, c, c.tile !== null && dests.tiles.has(c.tile))))
-  attachRingSwipe(app, ring)
+  const ring = ringView(app, s, st, cells, dests.tiles, tileMarks(st))
 
   // only a building that exists and has room can take the colonist being held
   const lit = (b: BuildingSlot) => b.built && dests.lines.has(b.line)
@@ -196,21 +162,6 @@ export function settlementScreen(app: App, s: GameState, st: Settlement): HTMLEl
   if (notes.length) body.append(h('div', { class: 'st-note' }, notes.join(' ')))
 
   return h('div', { class: 'settlement' }, head, body)
-}
-
-/** A horizontal drag across the ring moves to the previous or the next settlement, the same as the
- *  header's arrows. Section 5 of the brief: in a large empire, going back to the map is a chore. */
-function attachRingSwipe(app: App, ring: HTMLElement) {
-  let x0 = 0, y0 = 0, id: number | null = null
-  ring.addEventListener('pointerdown', (e: PointerEvent) => { id = e.pointerId; x0 = e.clientX; y0 = e.clientY })
-  const end = (e: PointerEvent) => {
-    if (id !== e.pointerId) return
-    id = null
-    const dx = e.clientX - x0, dy = e.clientY - y0
-    if (Math.abs(dx) >= SWIPE_PX && Math.abs(dy) <= SWIPE_SLOP_PX) app.gotoSettlement(dx < 0 ? 1 : -1)
-  }
-  ring.addEventListener('pointerup', end)
-  ring.addEventListener('pointercancel', () => { id = null })
 }
 
 /** Which goods a tile could be worked for, best first, for the assignment sheet's chips. */

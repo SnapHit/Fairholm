@@ -37,6 +37,22 @@ export interface PropBuild {
   /** Everything worth casting a shadow, for the bake. */
   occluders: Occluder[]
   count: number
+  /** The two materials the tiers are drawn with, coarse then fine. */
+  materials: [THREE.Material, THREE.Material]
+}
+
+/** A corner of the map to place props on, in tiles, from (x0, z0) up to but not including (x1, z1),
+ *  and the two materials to draw them with. The settlement screen's ring draws the tiles around a
+ *  settlement with the map's own props, prop for prop, and every prop is placed from its own tile's
+ *  seed, so placing only these tiles gives exactly the props the map has on them. Drawing the whole
+ *  map's to show a corner of it was most of what the ring's picture cost. The map's own materials,
+ *  so the ring is lit by the same uniforms and needs no shader of its own. */
+export interface PropWindow {
+  x0: number
+  z0: number
+  x1: number
+  z1: number
+  materials: [THREE.Material, THREE.Material]
 }
 
 /** A canopy: a low dome of two rings, open underneath because nothing ever sees under it. */
@@ -76,8 +92,13 @@ function slot(geo: THREE.BufferGeometry, mat: THREE.Material, capacity: number):
   return { mesh, n: 0 }
 }
 
-export function buildProps(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, season: number): PropBuild {
+export function buildProps(s: GameState, heightAt: (x: number, z: number) => number, light: LightUniforms, season: number, only: PropWindow | null = null): PropBuild {
   const w = s.world.width, hgt = s.world.height, tiles = s.world.tiles
+  const inside = (i: number) => {
+    if (!only) return true
+    const x = i % w, z = Math.floor(i / w)
+    return x >= only.x0 && x < only.x1 && z >= only.z0 && z < only.z1
+  }
   // a settlement clears its own ground and thins what stands around it. Without this the roofs are
   // simply hidden under a wood, and a place people live reads as a place they do not
   const clearance = new Float32Array(tiles.length).fill(1)
@@ -95,8 +116,8 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
   for (const pr of s.predecessors) clear(pr.tile)
   const look = seasonLook(season)
   const coarse = new THREE.Group(), fine = new THREE.Group()
-  const matCoarse = surfaceMaterial(light, 1)
-  const matFine = surfaceMaterial(light, 0.9)
+  const matCoarse = only ? only.materials[0] : surfaceMaterial(light, 1)
+  const matFine = only ? only.materials[1] : surfaceMaterial(light, 0.9)
   const occluders: Occluder[] = []
 
   // ---- count first, so every instanced mesh is exactly the size it needs ------------------------
@@ -114,7 +135,7 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
   }
   for (let i = 0; i < tiles.length; i++) {
     const t = tiles[i]
-    if (clearance[i] <= 0) continue
+    if (clearance[i] <= 0 || !inside(i)) continue
     if (t.forest) { trees += PROPS.trees[t.forest]; small += PROPS.undergrowth }
     else trees += PROPS.scrub[t.terrain] ?? 0
     rocks += PROPS.rocks[t.terrain] ?? 0
@@ -158,7 +179,7 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
   for (let i = 0; i < tiles.length; i++) {
     const t = tiles[i]
     const thin = clearance[i]
-    if (t.terrain === 'water' || thin <= 0) continue
+    if (t.terrain === 'water' || thin <= 0 || !inside(i)) continue
     const x0 = i % w, z0 = Math.floor(i / w)
 
     // ---- trees: dense inside a wood, thinning where it meets open ground -----------------------
@@ -293,7 +314,7 @@ export function buildProps(s: GameState, heightAt: (x: number, z: number) => num
     if (sl.n > 0) group.add(sl.mesh)
   }
   void SHADOW
-  return { coarse, fine, occluders, count: treeSlot.n + rockSlot.n + tuftSlot.n + shardSlot.n }
+  return { coarse, fine, occluders, count: treeSlot.n + rockSlot.n + tuftSlot.n + shardSlot.n, materials: [matCoarse, matFine] }
 }
 
 /** What the props standing on a tile do to the colour of it: how much of the ground they cover, and
