@@ -49,6 +49,10 @@ export const SLOT_H_PX = 56
  *  nothing. Each is a canvas of up to about two megabytes at the picture's largest. */
 export const RING_PICTURES_KEPT = 4
 
+/** A figure sent somewhere settles in over this long, settlement screen brief section 3: under two
+ *  hundred milliseconds, once, and then nothing on the screen moves. */
+export const SETTLE_MS = 160
+
 /** A colour from the map's look as a CSS colour at some opacity. */
 function rgba(hex: string, alpha: number): string {
   const [r, g, b] = hexRgb(hex).map(v => Math.round(v * 255))
@@ -188,6 +192,20 @@ export const TOKENS: Record<string, string> = {
    *  tile that cannot be worked. */
   '--ring-hairline': rgba(GRID.colour, 0.42),
   '--ring-veil': 'rgba(23,24,26,0.58)',
+  /** A figure on a ring tile: its height as a share of the tile, and where its feet stand. */
+  '--ring-figure': '46cqh',
+  '--ring-feet-x': '40%',
+  '--ring-feet-y': '87%',
+  /** Under a figure's feet, and the chevrons of its standing: bone on a dark halo, in the chevron
+   *  drawing's own units. */
+  '--foot-shadow': 'rgba(0,0,0,0.42)',
+  '--chev-halo': 'rgba(23,24,26,0.9)',
+  '--chev-halo-w': '3.6',
+  '--chev-ink-w': '1.7',
+  /** The small pills that say what something makes, and the faint one for what it could. */
+  '--pill-bg': 'rgba(23,24,26,0.82)',
+  '--pill-faint-bg': 'rgba(23,24,26,0.55)',
+  '--settle-ms': `${SETTLE_MS}ms`,
 
   // Motion
   '--hold-ms': `${HOLD_MS}ms`,

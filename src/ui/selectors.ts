@@ -108,6 +108,25 @@ export function ringCells(s: GameState, st: Settlement): RingCell[] {
   return out
 }
 
+/** What the settlement's own tile makes for nothing each turn: its food, and half its best other
+ *  yield, rounded down, gold aside. Mirrors `produce` in src/sim/settlement.ts, which credits both;
+ *  `previewProduction` counts only the food, so this is derived here rather than read from it, and
+ *  the two must move together. */
+export function centreYield(s: GameState, st: Settlement): { good: TileGood; yield: number }[] {
+  const out: { good: TileGood; yield: number }[] = []
+  const food = tileYield(s, st.tile, 'food', null)
+  if (food > 0) out.push({ good: 'food', yield: food })
+  let bestG: TileGood | null = null, bestV = 0
+  for (const g of tileOffers(s.world.tiles[st.tile])) {
+    if (g === 'food' || g === 'gold') continue
+    const v = tileYield(s, st.tile, g, null)
+    if (v > bestV) { bestV = v; bestG = g }
+  }
+  const half = Math.floor(bestV / 2)
+  if (bestG && half > 0) out.push({ good: bestG, yield: half })
+  return out
+}
+
 /** One tile of a ring that does not exist yet: what a settlement founded at `centre` would have to
  *  work. For the founding control, interaction brief section 8. */
 export interface PreviewCell {
@@ -319,6 +338,12 @@ export function standingWords(c: Colonist): string {
   if (c.standing !== 'master' || !c.speciality) return c.standing
   const sp = (GOOD_WORDS[c.speciality as GoodId] ?? buildingName({ line: c.speciality as BuildingLine, tier: 1 })).toLowerCase()
   return `master of ${sp}`
+}
+
+/** How many chevrons a colonist's standing is drawn with: none for a debtor, one contracted, two
+ *  free, three a master. */
+export function standingLevel(c: Colonist): 0 | 1 | 2 | 3 {
+  return c.standing === 'master' ? 3 : c.standing === 'free' ? 2 : c.standing === 'contracted' ? 1 : 0
 }
 
 /** One letter for the ring's worker mark. */

@@ -272,7 +272,7 @@ for (const view of VIEWS) {
       })
       await page.waitForTimeout(600)
       await page.screenshot({ path: shot(`mature-${view.name}-picked`) })
-      // and placed on the first tile marked for them
+      // and placed on the first tile marked for them: the figure settles in, the picture is not drawn again
       const placed = await page.evaluate(async () => {
         const a = window.fairholm
         const sel = await import('/src/ui/selectors.ts')
@@ -281,12 +281,14 @@ for (const view of VIEWS) {
         const d = sel.destinationsFor(a.state, st, who)
         const cell = sel.ringCells(a.state, st).find(c => c.tile !== null && d.tiles.has(c.tile))
         if (!cell) return null
+        const before = a.scene.ringStats?.draws ?? 0
         a.settlementTapTile(st, cell)
-        return { who, tile: cell.tile, job: a.state.settlements.find(x => x.owner === 0).colonists[who].job }
+        return { who, tile: cell.tile, job: a.state.settlements.find(x => x.owner === 0).colonists[who].job, redrawn: (a.scene.ringStats?.draws ?? 0) - before, settling: document.querySelectorAll('.stand.settle').length }
       })
       await page.waitForTimeout(150)
       await page.screenshot({ path: shot(`mature-${view.name}-assigned`) })
       note(`  picked and placed: ${JSON.stringify(placed)}`)
+      if (placed && placed.redrawn !== undefined) check('an assignment moves a figure and draws no picture', placed.redrawn === 0, `${placed.redrawn} pictures drawn, ${placed.settling} figure settling in`)
     }
   }
   await ctx.close()

@@ -8,12 +8,13 @@
 //
 // Nothing here writes to the state: every change goes through app.dispatch and is undoable.
 
-import type { GameState, Settlement, GoodId, TileGood, BuildingLine } from '../sim/state'
+import type { GameState, Settlement, Colonist, GoodId, TileGood, BuildingLine } from '../sim/state'
 import { C } from '../sim/constants'
 import { foodBalance, clerksRequired, buildingWorkers, tileYield } from '../sim/labour'
 import { storageCapacity } from '../sim/settlement'
 import { h, button, muted, fmt, plural, signed } from './dom'
-import { ringView, terrainLayers, type TileContent } from './ring'
+import { SETTLE_MS } from './theme'
+import { ringView, terrainLayers, tileFigures } from './ring'
 import {
   ringCells, buildingSlots, goodsStrip, destinationsFor, ownSettlements, consignable,
   standingWords, standingMark, goodWord,
@@ -23,16 +24,30 @@ import type { App } from './app'
 
 export { terrainLayers }
 
-/** What a tile carries over the picture, as the screen has always marked it: who works it, a prime,
- *  what it yields, and the settlement's name at the centre. */
-function tileMarks(st: Settlement): TileContent {
-  return (cell: RingCell, el: HTMLElement) => {
-    if (cell.centre) { el.append(h('div', { class: 'centre' }, st.name)); return }
-    const look = cell.look!
-    if (cell.worker) el.append(h('div', { class: 'worker' }, standingMark(cell.worker.colonist)))
-    if (look.prime) el.append(h('div', { class: 'prime' }))
-    const shown = cell.worker ? { good: cell.worker.good as TileGood, yield: cell.worker.yield } : cell.best
-    if (shown) el.append(h('div', { class: 'label' }, `${goodWord(shown.good as GoodId)} ${shown.yield}`))
+/** Where everyone stood when this screen was last drawn, and who has just been sent somewhere and
+ *  when, so that their figure settles in where it now stands. Within one settlement and one turn: a
+ *  screen opened on another settlement, or on a new turn, shows everyone where they are, still. The
+ *  screen is drawn again after most taps, sometimes twice in one, so a figure settling in carries on
+ *  from where it had got to rather than starting again. */
+let lastPlaces: { settlement: number; turn: number; places: Map<number, string> } | null = null
+const arrivals = new Map<number, { place: string; at: number }>()
+
+function placeOf(c: Colonist): string {
+  return c.job.kind === 'tile' ? `tile ${c.job.tile}` : c.job.kind === 'building' ? `building ${c.job.line}` : 'idle'
+}
+
+/** For each colonist, how long ago they arrived where they stand, in milliseconds, if that was within
+ *  the settling time; null for everyone else. Remembers where everyone is now. */
+function settlingSince(s: GameState, st: Settlement): (c: Colonist) => number | null {
+  const at = performance.now()
+  const prev = lastPlaces && lastPlaces.settlement === st.id && lastPlaces.turn === s.turn ? lastPlaces.places : null
+  const now = new Map(st.colonists.map(c => [c.id, placeOf(c)]))
+  lastPlaces = { settlement: st.id, turn: s.turn, places: now }
+  if (prev) for (const [id, place] of now) if (prev.get(id) !== place) arrivals.set(id, { place, at })
+  for (const [id, m] of arrivals) if (at - m.at >= SETTLE_MS) arrivals.delete(id)
+  return (c) => {
+    const m = arrivals.get(c.id)
+    return m && m.place === now.get(c.id) ? at - m.at : null
   }
 }
 
@@ -92,7 +107,8 @@ export function settlementScreen(app: App, s: GameState, st: Settlement): HTMLEl
   const flankRight = built.slice(3, 6)
   const overflow = [...built.slice(6), ...options]
 
-  const ring = ringView(app, s, st, cells, dests.tiles, tileMarks(st))
+  const settling = settlingSince(s, st)
+  const ring = ringView(app, s, st, cells, dests.tiles, tileFigures(s, st, settling))
 
   // only a building that exists and has room can take the colonist being held
   const lit = (b: BuildingSlot) => b.built && dests.lines.has(b.line)

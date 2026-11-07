@@ -14,14 +14,15 @@
 // picture can see them. Assigning a worker changes none of those, so it moves a figure in the DOM and
 // draws nothing.
 
-import type { GameState, Settlement } from '../sim/state'
+import type { GameState, Settlement, Colonist } from '../sim/state'
 import { neighbours8 } from '../sim/worldgen'
 import type { TileLook } from '../render/tiles'
 import { RING_PICTURE } from '../render/look'
 import { piecesFor, pieceCount } from '../render/sprites'
 import { h } from './dom'
 import { RING_PICTURES_KEPT, SWIPE_PX, SWIPE_SLOP_PX } from './theme'
-import type { RingCell } from './selectors'
+import { centreYield, goodWord, standingWords, type RingCell } from './selectors'
+import { standingFigure, yieldPill } from './pictures'
 import type { App } from './app'
 
 /** The ring cell's ground: the tile's own colour, then its features drawn over it. Every colour comes
@@ -128,6 +129,43 @@ function attachPicture(app: App, s: GameState, st: Settlement, ring: HTMLElement
 /** What a tile carries over the picture: the caller decides, so the ring is only the ring. */
 export type TileContent = (cell: RingCell, el: HTMLElement) => void
 
+/** Who works each tile and what it makes, over the picture: a figure standing on each worked tile
+ *  with its standing beside its feet and its yield in a pill beside it; on each tile that could be
+ *  worked and is not, its best yield in a faint pill; at the centre, what the settlement's own ground
+ *  makes for nothing. `settling` says whether a colonist has just been sent where they now stand. */
+export function tileFigures(s: GameState, st: Settlement, settling: (c: Colonist) => number | null): TileContent {
+  const own = centreYield(s, st)
+  return (cell, el) => {
+    if (cell.centre) {
+      if (own.length) el.append(h('span', { class: 'pills' }, own.map(y => yieldPill(y.yield, y.good))))
+      return
+    }
+    if (cell.worker) {
+      const c = cell.worker.colonist
+      el.append(settled(standingFigure(c, 'var(--ring-figure)'), settling(c)))
+      el.append(h('span', { class: 'pills' }, yieldPill(cell.worker.yield, cell.worker.good)))
+    } else if (cell.available && cell.best) {
+      el.append(h('span', { class: 'pills' }, yieldPill(cell.best.yield, cell.best.good, true)))
+    }
+  }
+}
+
+/** A figure that arrived `ms` ago settles in, carrying on from where it had got to. */
+export function settled(stand: HTMLElement, ms: number | null): HTMLElement {
+  if (ms === null) return stand
+  stand.classList.add('settle')
+  stand.style.animationDelay = `${-Math.round(ms)}ms`
+  return stand
+}
+
+/** A tile in words, for a reader that cannot see the picture. */
+function tileLabel(cell: RingCell): string {
+  if (cell.worker) return `${cell.words}. A ${standingWords(cell.worker.colonist)} colonist works it for ${cell.worker.yield} ${goodWord(cell.worker.good).toLowerCase()}.`
+  if (cell.centre) return `${cell.words}. The settlement.`
+  if (cell.available && cell.best) return `${cell.words}. Could make ${cell.best.yield} ${goodWord(cell.best.good).toLowerCase()}.`
+  return `${cell.words}. ${cell.reason ?? ''}`
+}
+
 /** The ring: the picture, the hairlines, and nine tap targets. `marked` are the tiles that can take
  *  the colonist being held. */
 export function ringView(app: App, s: GameState, st: Settlement, cells: RingCell[], marked: Set<number>, content: TileContent): HTMLElement {
@@ -144,7 +182,7 @@ export function ringView(app: App, s: GameState, st: Settlement, cells: RingCell
     const el = h('button', {
       class: 'tile' + (cell.centre ? ' centre' : '') + (veiled ? ' veiled' : '') + (lit ? ' can-take' : ''),
       type: 'button',
-      'aria-label': cell.words,
+      'aria-label': tileLabel(cell),
       onClick: () => app.settlementTapTile(st, cell),
     })
     content(cell, el)
