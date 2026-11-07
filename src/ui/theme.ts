@@ -39,15 +39,24 @@ export const ROUTE_ODDS_H_PX = 22
 export const OPENING_LINE_MS = 2000
 export const OPENING_FADE_MS = 900
 
-/** Settlement screen brief section 2. The ring wants 88 and the flanks 56; the ring gives way
- *  first on a narrow screen because it has the most to give and stays furthest above the floor. */
+/** Version 2's ring cell and building slot. The settlement screen no longer uses them (version 3
+ *  sizes its ring from the space it has); the founding preview's ring and the full screens still
+ *  measure by them. */
 export const RING_CELL_PX = 88
 export const SLOT_W_PX = 56
-export const SLOT_H_PX = 56
 
 /** How many ring pictures are kept drawn, so that going to the next settlement and back draws
  *  nothing. Each is a canvas of up to about two megabytes at the picture's largest. */
 export const RING_PICTURES_KEPT = 4
+
+/** The town, settlement screen brief section 2: how many pixels of the settlement sheet the street's
+ *  height stands for, so every building is drawn at one scale (the tallest, the hall, is 214 of them
+ *  from the ground to its ridge), and where in that height the ground line is, as a share of it. */
+export const STREET_SHEET_PX = 240
+export const STREET_GROUND = 0.9
+
+/** The goods on the settlement screen: a store this full, or about to be, is drawn warm. */
+export const STORE_WARM = 0.8
 
 /** A figure sent somewhere settles in over this long, settlement screen brief section 3: under two
  *  hundred milliseconds, once, and then nothing on the screen moves. */
@@ -57,20 +66,6 @@ export const SETTLE_MS = 160
 function rgba(hex: string, alpha: number): string {
   const [r, g, b] = hexRgb(hex).map(v => Math.round(v * 255))
   return `rgba(${r},${g},${b},${alpha})`
-}
-
-/** Below this width the flanking columns move below the ring rather than squeezing it. The brief's
- *  arithmetic (264 + 56 + 56 = 376 in 390) left nothing for gaps or padding, so the pivot is here.
- *  It is measured against the reader's own font size rather than a bare pixel count, because a
- *  larger font needs the wider stacked slots sooner. A media query cannot see the root font size,
- *  so App.layout works it out and sets the `narrow` class; the stylesheet keys off that. */
-export const REFLOW_PX = 380
-export const BASE_FONT_PX = 16
-
-/** Whether the flanks should sit below the ring rather than beside it, at this width and this
- *  root font size. */
-export function shouldReflow(width: number, rootFontPx: number): boolean {
-  return width < REFLOW_PX * (Math.max(1, rootFontPx) / BASE_FONT_PX)
 }
 
 // ---- the tokens ---------------------------------------------------------------------------------
@@ -161,6 +156,7 @@ export const TOKENS: Record<string, string> = {
   '--weight-medium': '600',
   '--weight-strong': '650',
   '--leading': '1.35',
+  '--leading-tight': '1.1',
   '--tracking-caps': '0.06em',
 
   // Shadow and depth
@@ -180,10 +176,41 @@ export const TOKENS: Record<string, string> = {
   '--sheet-handle-h': '22px',
   '--strip-fade': '64px',
 
-  // The settlement screen's grid
+  // The settlement screen, version 3. The ring is a square between --ring-min and --ring-max, as
+  // wide as the screen allows unless that would push the town or the goods off it; the town is at
+  // least --town-min tall, its buildings standing in --lot-art-min to --lot-art-max of it.
   '--ring-cell': `${RING_CELL_PX}px`,
   '--slot-w': `${SLOT_W_PX}px`,
-  '--slot-h': `${SLOT_H_PX}px`,
+  '--st-gap': '6px',
+  /** The settlement's name in the header shrinks with the header's width on a narrow screen. */
+  '--name-cqw': '4.4cqw',
+  '--ring-min': '216px',
+  '--ring-max': '420px',
+  '--lot-art-min': '68px',
+  '--lot-art-max': '120px',
+  '--lot-name-h': 'calc(var(--text-micro) * var(--leading) * 2)',
+  '--town-min': 'calc(var(--lot-art-min) + var(--lot-name-h) + var(--space-4))',
+  '--lot-ground-share': String(STREET_GROUND),
+  /** How far the street's stagger lifts a building at most, the gap between buildings, how much of a
+   *  building's height the ground shows behind, and over how much of that the ground fades in. */
+  '--lot-stagger': '6px',
+  '--street-gap': '10px',
+  '--street-band': '0.3',
+  '--street-fade': '45%',
+  '--street-hold': '78%',
+  /** A plot that could be built on: its width and height as shares of the street's height. */
+  '--plot-w': '0.62',
+  '--plot-h': '0.3',
+  '--plot-line': 'rgba(233,226,204,0.4)',
+  '--plot-fill': 'rgba(233,226,204,0.05)',
+  /** A good on the shelf, and the bar for how full its store is: plain, warm, spoiling. */
+  '--goods-h': '3.25rem',
+  '--good-w': '3.5rem',
+  '--fill-h': '4px',
+  '--fill-track': 'rgba(233,226,204,0.14)',
+  '--fill-plain': 'var(--ink-dim)',
+  '--fill-warm': 'var(--warn)',
+  '--fill-spoils': 'var(--loss)',
   '--cell-gap': '4px',
   '--ring-radius': '5px',
   '--worker-dot': '14px',
@@ -225,9 +252,6 @@ export const TOKENS: Record<string, string> = {
   '--safe-left': 'env(safe-area-inset-left, 0px)',
   '--safe-right': 'env(safe-area-inset-right, 0px)',
 
-  // Kept for the record: the width the layout reflows at, at the usual root font size. The
-  // stylesheet does not read it, because the decision needs the font size as well as the width.
-  '--reflow': `${REFLOW_PX}px`,
 }
 
 /** Write the tokens onto the document root. Called once, before anything renders. */

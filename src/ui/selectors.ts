@@ -8,7 +8,7 @@ import type {
 import { GOODS, BUILDING_LINES } from '../sim/state'
 import { C } from '../sim/constants'
 import {
-  workableTiles, tileOffers, tileYield, workerOutput, buildingWorkers,
+  workableTiles, tileOffers, tileYield, workerOutput, buildingWorkers, foodBalance,
 } from '../sim/labour'
 import {
   previewProduction, buildable, buildingName, storageCapacity, outputModifier, effectiveTier, canStart, surplusRuleFor,
@@ -386,6 +386,59 @@ export function goodsStrip(s: GameState, st: Settlement): GoodChip[] {
     })
   }
   out.sort((a, b) => (b.spoiling ? 1 : 0) - (a.spoiling ? 1 : 0) || b.stock - a.stock)
+  return out
+}
+
+/** One good on the settlement screen's shelf: what is held, what the store holds, what this turn
+ *  will add or take away, and how full that leaves it. */
+export interface GoodFill {
+  good: GoodId
+  /** What is held. For food, the bank: what is put by toward the next colonist. */
+  stock: number
+  /** What the store holds before the rest spoils; for food, what the bank holds before it becomes
+   *  a colonist, which is the granary threshold. */
+  capacity: number
+  /** What this turn adds or takes away: what is made, less what the buildings work up and, for food,
+   *  what is eaten. */
+  change: number
+  /** How full, nought to one. */
+  fill: number
+  /** Plain when there is room; warm as it nears capacity; spoils when it is over and the excess will
+   *  be lost at the end of the turn; short when food will run out this turn. */
+  state: 'plain' | 'warm' | 'spoils' | 'short'
+}
+
+/** Every good the settlement holds or touches this turn, food first, then in the order of the goods.
+ *  The change mirrors the turn: production as `previewProduction` has it, the half of its best yield
+ *  the settlement's own ground gives (`centreYield`), and each building's input used one for one. */
+export function goodsShelf(s: GameState, st: Settlement, warmAt: number): GoodFill[] {
+  const cap = storageCapacity(st)
+  const made = previewProduction(s, st)
+  const outputs = buildingOutputs(s, st)
+  const used: Partial<Record<GoodId, number>> = {}
+  for (const line of BUILDING_LINES) {
+    const def = C.buildings.lines[line]
+    const amount = outputs[line] ?? 0
+    if (!def.input || amount <= 0) continue
+    used[def.input] = (used[def.input] ?? 0) + amount
+    if (def.secondInput) used[def.secondInput] = (used[def.secondInput] ?? 0) + amount
+  }
+  const free: Partial<Record<GoodId, number>> = {}
+  for (const y of centreYield(s, st)) if (y.good !== 'food') free[y.good] = (free[y.good] ?? 0) + y.yield
+  const out: GoodFill[] = []
+  for (const g of GOODS) {
+    if (g === 'food') {
+      const stock = st.foodStore, capacity = C.labour.granaryThreshold
+      const change = foodBalance(s, st)
+      out.push({ good: g, stock, capacity, change, fill: Math.max(0, Math.min(1, stock / capacity)), state: stock + change < 0 ? 'short' : 'plain' })
+      continue
+    }
+    const stock = st.stock[g]
+    const change = (made[g] ?? 0) + (free[g] ?? 0) - (used[g] ?? 0)
+    if (stock <= 0 && change === 0) continue
+    const state = stock > cap ? 'spoils' : Math.max(stock, stock + change) >= warmAt * cap ? 'warm' : 'plain'
+    out.push({ good: g, stock, capacity: cap, change, fill: Math.max(0, Math.min(1, stock / cap)), state })
+  }
   return out
 }
 

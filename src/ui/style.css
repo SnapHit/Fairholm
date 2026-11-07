@@ -355,61 +355,87 @@ input[type=text] {
 }
 
 /* ---- the settlement screen --------------------------------------------------------------------
-   Everything at once: a ring of nine, three building slots down each flank, an overflow row that
-   scrolls sideways, the idle row and the goods strip. No frames: tiles and slots on the background,
-   per section 6 of the brief. */
-.settlement { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+   Settlement screen and layout brief, version 3, section 2: the place, in pictures. Portrait stacks
+   the header, the ring, the town and the goods; landscape puts the ring on the left and the town over
+   the goods on the right. The ring takes the full width less the margins unless that would push the
+   town or the goods off the screen, and the town takes the height that is left; on a narrow screen or
+   under a large system font the body scrolls rather than anything being cut off. The sizes are worked
+   out against the body's own box (container units), so nothing here measures the screen in code.
+   No frames: pictures and small pills on the background, per section 6 of the brief. */
+.settlement { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
+/* the header is a container for its name's size, which makes it a stacking context of its own: it
+   sits above the body so that its menu drops down over the ring */
 .st-head {
-  flex: none; display: flex; align-items: center; gap: var(--space-2);
-  padding: calc(var(--space-4) + var(--safe-top)) var(--space-4) var(--space-4);
+  position: relative; z-index: 2; flex: none; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-2);
+  container-type: inline-size;
+  padding: calc(var(--space-2) + var(--safe-top)) var(--space-4) var(--space-3);
   padding-left: calc(var(--space-4) + var(--safe-left));
   padding-right: calc(var(--space-4) + var(--safe-right));
 }
-.st-head .nav, .st-head .close, .st-head .orders {
+.st-head .nav, .st-head .close, .st-head .orders, .st-head .more {
   flex: none; width: var(--tap-min); height: var(--tap-min); padding: 0;
   display: flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--ink); font: inherit; font-size: var(--text-head);
   border-radius: var(--radius-pill); cursor: pointer;
 }
-.st-head .nav:disabled { color: var(--ink-faint); }
 .st-head .orders.unread { color: var(--accent); }
-.st-head .nav:active, .st-head .close:active, .st-head .orders:active { background: var(--surface-tint); }
+.st-head .nav:active, .st-head .close:active, .st-head .orders:active, .st-head .more:active,
+.st-head .more.on { background: var(--surface-tint); }
 .st-head .who { flex: 1; min-width: 0; text-align: center; }
-.st-head .who .name { font-size: var(--text-title); font-weight: var(--weight-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.st-head .who .sub { font-size: var(--text-tiny); color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the name takes a second line rather than being cut off when the controls leave it little room */
+.st-head .who .name {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  width: 100%; padding: 0; border: none; background: none; color: var(--ink); font: inherit;
+  font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-tight);
+  overflow-wrap: break-word; cursor: pointer;
+}
+/* on a narrow screen the name gives up a little size before it gives up a letter */
+@supports (width: 1cqw) {
+  .st-head .who .name { font-size: clamp(var(--text-small), var(--name-cqw), var(--text-title)); }
+}
+.st-head .sub {
+  flex: 0 0 100%; margin-top: calc(var(--space-2) * -1);
+  font-size: var(--text-tiny); color: var(--ink-dim); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* the more control's menu: Build order, Equip, School, Hulls, Everything here */
+.st-more {
+  position: absolute; z-index: 4; top: calc(100% - var(--space-2)); right: calc(var(--space-4) + var(--safe-right));
+  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1);
+  padding: var(--space-2); background: var(--surface-raised); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sheet);
+}
+.st-more .btn { border: none; text-align: left; }
+
+/* the notes: one line under the header, the whole of it a tap away */
+.st-note {
+  flex: none; display: block; width: 100%; min-height: 0; margin: 0;
+  padding: 0 calc(var(--space-6) + var(--safe-right)) var(--space-3) calc(var(--space-6) + var(--safe-left));
+  border: none; background: none; color: var(--ink-dim); font: inherit; font-size: var(--text-tiny);
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.st-note.placing { color: var(--accent); }
 
 .st-body {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  padding: 0 var(--space-4) calc(var(--space-6) + var(--safe-bottom));
-  padding-left: calc(var(--space-4) + var(--safe-left));
-  padding-right: calc(var(--space-4) + var(--safe-right));
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+  container-type: size;
+  display: flex; flex-direction: column; align-items: center; gap: var(--st-gap);
+  padding: 0 calc(var(--space-4) + var(--safe-right)) var(--space-3) calc(var(--space-4) + var(--safe-left));
 }
 
-/* everything in the body shares one column, centred, so a wide screen does not fling the flanks
-   out to the edges away from the ring */
-.st-core, .st-overflow, .st-strip, .st-note {
-  max-width: calc(var(--ring-cell) * 3 + var(--slot-w) * 2 + var(--cell-gap) * 4);
-  margin-left: auto; margin-right: auto;
-}
-
-/* the core: flank, ring, flank */
-/* the flanks are exactly as tall as the ring, so each slot lines up with a row of it, as the
-   brief's diagram has them: B1 beside the first row, B2 the second, B3 the third */
-.st-core {
-  display: grid;
-  grid-template-columns: var(--slot-w) minmax(0, 1fr) var(--slot-w);
-  gap: var(--cell-gap);
-  align-items: stretch;
-}
-.st-flank { display: grid; grid-template-rows: repeat(3, 1fr); gap: var(--cell-gap); min-width: 0; }
 /* the ring: the map's own picture of the nine tiles, and over it hairlines, veils and nine tap
    targets. The picture runs a quarter tile past the nine on every side and fades out there; the
    tiles sit inside that margin, which is --ring-inset of the width, set from the renderer's look */
 .settlement .st-ring {
-  position: relative; aspect-ratio: 1; width: 100%; margin: 0 auto; touch-action: pan-y;
-  max-width: calc(var(--ring-cell) * 3.5);
+  flex: none; position: relative; touch-action: pan-y;
+  width: 100%; max-width: var(--ring-max); aspect-ratio: 1;
+}
+@supports (width: 1cqw) {
+  .settlement .st-ring {
+    max-width: 100%;
+    width: clamp(var(--ring-min), min(100cqw, 100cqh - var(--town-min) - var(--goods-h) - 2 * var(--st-gap)), var(--ring-max));
+  }
 }
 .st-ring .picture { position: absolute; inset: 0; }
 .st-ring .picture canvas { display: block; width: 100%; height: 100%; }
@@ -447,62 +473,190 @@ input[type=text] {
   border: calc(var(--line-hair) * 2) solid var(--accent);
 }
 
-/* on a narrow screen, or under a large system font, the flanks move below the ring rather than
-   squeezing it, and their slots get the width their names need. App.layout decides, because a media
-   query cannot see the reader's font size; shouldReflow in src/ui/theme.ts is the rule. */
-#app.narrow .st-core { grid-template-columns: minmax(0, 1fr); }
-#app.narrow .st-core .st-ring { order: -1; }
-#app.narrow .st-core .st-flank {
-  grid-template-rows: none; grid-auto-rows: var(--slot-h);
-  grid-template-columns: repeat(auto-fit, minmax(var(--slot-w), 1fr));
-  grid-auto-flow: row;
-}
 
-.cell, .slot {
+/* ---- the town: a street of the buildings, scrolling sideways ------------------------------------
+   Every size is a share of the street's height: --lot-art-h is the height a building stands in, the
+   ground line is a share of that, and a person at the door is the building's own scale (town.ts). */
+.st-town {
+  flex: 1 0 var(--town-min); min-height: var(--town-min); width: 100%;
+  container-type: size;
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+  overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.st-town::-webkit-scrollbar { display: none; }
+.st-town .street {
+  --lot-art-h: clamp(var(--lot-art-min), 100cqh - var(--lot-name-h) - var(--space-4), var(--lot-art-max));
+  --lot-ground: calc(var(--lot-art-h) * var(--lot-ground-share));
+  --lot-figure-h: calc(var(--lot-art-h) * var(--lot-person));
+  flex: none; display: flex; align-items: flex-start; gap: var(--street-gap);
+  width: max-content; min-width: 100%; padding: 0 var(--space-4);
+}
+.lot {
+  flex: none; position: relative; display: flex; flex-direction: column; align-items: center;
+  min-width: var(--tap-min); padding: 0; margin: 0; border: none; background: none;
+  color: var(--ink); font: inherit; cursor: pointer;
+}
+.lot .art { position: relative; display: block; height: var(--lot-art-h); width: calc(var(--lot-art-h) * var(--w)); }
+/* the street itself: the settlement's own ground under the buildings, running on between them */
+.lot::before {
+  content: ''; position: absolute; z-index: 0; pointer-events: none;
+  left: calc(var(--street-gap) / -2 - var(--line-hair)); right: calc(var(--street-gap) / -2 - var(--line-hair));
+  top: calc(var(--lot-ground) - var(--lot-art-h) * var(--street-band));
+  height: calc(var(--lot-art-h) * (1 - var(--lot-ground-share) + var(--street-band)));
+  background: linear-gradient(to bottom, transparent, var(--ground) var(--street-fade), var(--ground) var(--street-hold), transparent);
+}
+/* a sign over the drawing: what it makes and the warning mark, in a row of no height */
+.lot .sign {
+  position: relative; z-index: 3; height: 0; display: flex; align-items: flex-start; justify-content: center;
+  gap: var(--space-2); white-space: nowrap; transform: translateY(var(--space-1));
+}
+.lot .house {
+  position: absolute; z-index: 1; left: 0; top: var(--lot-ground);
+  transform: translateY(calc(-1 * var(--ay) - var(--lot-stagger) * var(--lift)));
+}
+.lot .door { position: absolute; z-index: 2; left: 0; right: 0; top: var(--lot-ground); height: 0; }
+.lot .door .stand { top: 0; }
+.lot .flag {
+  color: var(--warn); font-size: var(--text-small); font-weight: var(--weight-strong); line-height: var(--leading);
+  padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--pill-bg);
+}
+/* the name wraps under its building; it never widens the lot (inline-size containment) */
+.lot .name {
+  position: relative; z-index: 1; align-self: stretch; contain: inline-size;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  margin: var(--space-1) calc(var(--street-gap) / -2) 0;
+  font-size: var(--text-micro); line-height: var(--leading); color: var(--ink-dim); text-align: center;
+}
+.lot:active .art { filter: brightness(1.12); }
+/* a building that can take the colonist being placed */
+.lot.can-take .art::after {
+  content: ''; position: absolute; z-index: 4; inset: calc(var(--space-1) * -1); pointer-events: none;
+  border: calc(var(--line-hair) * 2) solid var(--accent); border-radius: var(--radius-md);
+}
+/* the building going up: its frame, and what it still needs */
+.lot.building-up .name { display: block; }
+.lot .progress {
+  display: block; width: calc(var(--lot-art-h) * var(--w) * 0.7); height: var(--fill-h); margin: var(--space-1) auto;
+  border-radius: var(--radius-pill); background: var(--fill-track); overflow: hidden;
+}
+.lot .progress i { display: block; height: 100%; background: var(--accent); }
+.lot .needs { display: block; color: var(--ink-faint); white-space: nowrap; }
+/* what could be built: a faint staked plot with its cost */
+.lot.plot { --w: var(--plot-w); }
+.lot.plot .art { width: calc(var(--lot-art-h) * var(--plot-w)); }
+/* the plot stands on the ground line and grows upward if its cost needs a second line */
+.lot.plot .ground {
+  position: absolute; z-index: 1; left: 0; right: 0;
+  bottom: calc(var(--lot-art-h) - var(--lot-ground)); min-height: calc(var(--lot-art-h) * var(--plot-h));
+  display: flex; align-items: center; justify-content: center; padding: var(--space-1) var(--space-2);
+  border: var(--line-hair) dashed var(--plot-line); border-radius: var(--radius-sm); background: var(--plot-fill);
+  font-size: var(--text-micro); line-height: var(--leading-tight); color: var(--ink-dim); text-align: center;
+}
+.lot.plot .art.gated .ground { color: var(--ink-faint); border-color: var(--line-soft); }
+.lot.plot .name { color: var(--ink-faint); }
+/* the idle at the head of the street, and units at its far end: one figure to a tap */
+.lot.idle, .lot.units { cursor: default; }
+.lot .art.idlers { display: flex; justify-content: center; width: auto; align-self: stretch; }
+.idler, .unit-here {
+  position: relative; flex: none; width: var(--tap-min); height: 100%;
+  padding: 0; margin: 0; border: none; background: none; cursor: pointer;
+}
+.idler .stand, .unit-here .stand { left: 50%; top: var(--lot-ground); }
+.idler.picked .foot-shadow { background: radial-gradient(closest-side, var(--accent), transparent); }
+.idler.picked::after {
+  content: ''; position: absolute; z-index: 4; inset: 0; pointer-events: none;
+  border: calc(var(--line-hair) * 2) solid var(--accent); border-radius: var(--radius-md);
+}
+.lot.idle .name, .lot.units .name { contain: none; display: block; margin-left: 0; margin-right: 0; white-space: nowrap; }
+.lot.idle .name .btn { margin-top: 0; }
+
+/* ---- the goods: each its mark and stock, the change small, and how full its store is ----------- */
+.st-goods { flex: none; width: 100%; }
+.st-goods .rail {
+  display: flex; gap: var(--space-2); overflow-x: auto; overflow-y: hidden;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.st-goods .rail::-webkit-scrollbar { display: none; }
+.st-goods .market {
+  flex: none; height: var(--goods-h); min-height: 0; padding: 0 var(--space-4);
+  border: none; background: var(--surface-tint); color: var(--ink); font-size: var(--text-small);
+}
+.good {
+  flex: none; height: var(--goods-h); min-width: var(--good-w);
+  display: flex; flex-direction: column; justify-content: center; gap: var(--space-1);
+  padding: 0 var(--space-3); border: none; border-radius: var(--radius-md); background: none;
+  color: var(--ink); font: inherit; cursor: pointer; text-align: left;
+}
+.good:active { background: var(--surface-tint); }
+.good .mark { font-size: var(--text-micro); line-height: var(--leading); color: var(--ink-dim); white-space: nowrap; }
+.good .n { font-size: var(--text-small); line-height: var(--leading); font-weight: var(--weight-strong); white-space: nowrap; }
+.good .n small { margin-left: var(--space-2); font-size: var(--text-micro); font-weight: var(--weight-normal); color: var(--ink-dim); }
+.good .fill { display: block; height: var(--fill-h); border-radius: var(--radius-pill); background: var(--fill-track); overflow: hidden; }
+.good .fill i { display: block; height: 100%; border-radius: inherit; background: var(--fill-plain); }
+.good.warm .fill i { background: var(--fill-warm); }
+.good.spoils .fill i, .good.short .fill i { background: var(--fill-spoils); }
+.good.spoils .n, .good.short .n small { color: var(--loss); }
+
+/* ---- landscape: the ring on the left, square and as tall as the space allows; the town over the
+   goods on the right. The ring comes first because the eye goes to it first. */
+#app.landscape .st-head { flex-wrap: nowrap; }
+#app.landscape .st-head .who { flex: 0 1 auto; }
+#app.landscape .st-head .sub { order: 1; flex: 1 1 auto; min-width: 0; margin-top: 0; text-align: left; }
+#app.landscape .st-head .orders { order: 2; }
+#app.landscape .st-head .more { order: 3; }
+#app.landscape .st-head .close { order: 4; }
+#app.landscape .st-head .next { order: 5; }
+#app.landscape .st-head .st-more { order: 6; }
+#app.landscape .st-body {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  align-items: stretch; justify-items: stretch; column-gap: var(--space-6); row-gap: var(--st-gap);
+}
+#app.landscape .settlement .st-ring { grid-column: 1; grid-row: 1 / span 2; align-self: start; width: min(100%, 50vw); }
+@supports (width: 1cqw) {
+  #app.landscape .settlement .st-ring { width: clamp(var(--ring-min), min(100cqh, 50cqw), var(--ring-max)); }
+}
+#app.landscape .st-town { grid-column: 2; grid-row: 1; flex: none; height: auto; min-height: var(--town-min); }
+#app.landscape .st-goods { grid-column: 2; grid-row: 2; }
+
+.cell {
   position: relative; overflow: hidden; min-width: 0;
   border: none; padding: 0; margin: 0; font: inherit; color: var(--ink);
   border-radius: var(--ring-radius); cursor: pointer; text-align: left;
   display: flex; flex-direction: column; justify-content: flex-end;
 }
-.cell:active, .slot:active { filter: brightness(1.15); }
+.cell:active { filter: brightness(1.15); }
 .cell.dim { opacity: 0.4; }
 /* the highlight is a layer over the cell's own contents, because a ring cell's terrain is an
    absolutely positioned child and would paint over an outline */
-.cell.can-take::after, .slot.can-take::after, .cell.picked::after, .slot.picked::after {
-  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
-  border-radius: inherit; border: calc(var(--line-hair) * 2) solid var(--accent);
-}
-.cell.picked::after, .slot.picked::after { border-color: var(--ink); }
 
-/* ring cells carry real terrain, drawn from the map's own palette and tile data */
+/* swatch cells carry the ground drawn from the map's own palette and tile data: the founding
+   preview's ring, and the settlement ring's fallback when the renderer cannot draw */
 .cell .terrain { position: absolute; inset: 0; }
 .cell .feature { position: absolute; inset: 0; pointer-events: none; }
-.cell .label, .tile .label {
+.cell .label {
   position: relative; z-index: 1;
   font-size: var(--text-micro); line-height: 1.15; font-weight: var(--weight-medium);
   padding: var(--space-1) var(--space-2);
   text-shadow: var(--shadow-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.cell .worker, .tile .worker {
+.cell .worker {
   position: absolute; z-index: 1; top: var(--space-2); left: var(--space-2);
   width: var(--worker-dot); height: var(--worker-dot); border-radius: var(--radius-pill);
   background: var(--ink); color: var(--surface-base);
   font-size: var(--text-micro); line-height: var(--worker-dot); text-align: center;
   font-weight: var(--weight-strong);
 }
-.cell .prime, .tile .prime {
+.cell .prime {
   position: absolute; z-index: 1; top: var(--space-2); right: var(--space-2);
   width: var(--space-4); height: var(--space-4); border-radius: var(--radius-pill);
   background: var(--accent); box-shadow: var(--shadow-text);
 }
-.cell .centre, .tile .centre {
+.cell .centre {
   position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center;
   font-size: var(--text-tiny); font-weight: var(--weight-strong); text-shadow: var(--shadow-text);
 }
 
-/* the founding preview in a sheet: the ring the settlement would work, at the slot's size rather
-   than the ring's, so it fits the bottom third with its words beside it */
 /* ---- pictures from the sheets, people standing, and what things make --------------------------
    A drawing is cropped from its sheet by src/ui/pictures.ts in percentages of its own box, so the
    layout sets its height and nothing else. A stand is the point someone's feet are on. */
@@ -566,81 +720,6 @@ input[type=text] {
 .found { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
 .found .about { flex: 1; min-width: 9rem; }
 .found .about .big { font-size: var(--text-head); font-weight: var(--weight-strong); }
-
-/* building slots */
-.slot {
-  background: var(--surface-raised);
-  padding: var(--space-2); justify-content: space-between; gap: var(--space-1);
-  font-size: var(--text-micro); line-height: 1.1;
-}
-.slot.empty { background: var(--surface-sunk); color: var(--ink-dim); }
-/* 56pt is not wide enough for a building's full name on one line, so it wraps and hyphenates
-   rather than being cut off. The whole of it is on the slot's label and in the sheet behind it. */
-.slot .name, .slot .conv {
-  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2; line-clamp: 2;
-  -webkit-hyphens: auto; hyphens: auto;
-}
-.slot .name { font-weight: var(--weight-medium); }
-.slot .conv { color: var(--ink-dim); }
-.slot .foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); }
-.slot .crew { display: flex; gap: var(--space-1); }
-.slot .crew i {
-  width: var(--space-4); height: var(--space-4); border-radius: var(--radius-pill);
-  background: var(--ink-faint); display: block;
-}
-.slot .crew i.on { background: var(--ink); }
-.slot .out { color: var(--accent); font-weight: var(--weight-strong); }
-.slot .out.none { color: var(--ink-faint); font-weight: var(--weight-normal); }
-.slot .flag { position: absolute; top: var(--space-1); right: var(--space-1); color: var(--warn); font-size: var(--text-micro); }
-
-.st-overflow {
-  display: flex; gap: var(--cell-gap); margin-top: var(--cell-gap);
-  overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; padding-bottom: var(--space-1);
-}
-.st-overflow::-webkit-scrollbar { display: none; }
-.st-overflow .slot { flex: none; width: calc(var(--slot-w) * 1.6); height: var(--slot-h); }
-
-.st-strip { margin-top: var(--space-4); }
-.st-strip .head {
-  font-size: var(--text-tiny); letter-spacing: var(--tracking-caps); text-transform: uppercase;
-  color: var(--ink-dim); margin-bottom: var(--space-2);
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
-}
-.st-strip .head .plain { text-transform: none; letter-spacing: normal; }
-.st-strip .head .l { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
-.st-strip .rail {
-  display: flex; gap: var(--space-3); overflow-x: auto; overflow-y: hidden;
-  -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: var(--space-2);
-}
-.st-strip .rail::-webkit-scrollbar { display: none; }
-
-.person {
-  flex: none; display: flex; align-items: center; gap: var(--space-2);
-  min-height: var(--tap-min); padding: var(--space-2) var(--space-4);
-  background: var(--surface-raised); border: none; border-radius: var(--radius-pill);
-  color: var(--ink); font: inherit; font-size: var(--text-tiny); cursor: pointer;
-}
-.person.picked { background: var(--ink); color: var(--surface-base); }
-.person .dot {
-  width: var(--worker-dot); height: var(--worker-dot); border-radius: var(--radius-pill);
-  background: var(--idle); flex: none;
-}
-.person.picked .dot { background: var(--accent); }
-
-.good {
-  flex: none; min-width: 0; min-height: var(--tap-min);
-  display: flex; flex-direction: column; justify-content: center; gap: var(--space-1);
-  padding: var(--space-2) var(--space-5);
-  background: var(--surface-raised); border: none; border-radius: var(--radius-md);
-  color: var(--ink); font: inherit; font-size: var(--text-micro); cursor: pointer; text-align: left;
-}
-.good .n { font-weight: var(--weight-medium); white-space: nowrap; }
-.good .v { color: var(--ink-dim); white-space: nowrap; }
-.good.spoiling .v { color: var(--warn); }
-
-.st-note { font-size: var(--text-tiny); color: var(--ink-dim); margin-top: var(--space-4); }
 
 /* ---- the hold ring, the toast and the full screens ---------------------------------------------- */
 #holdring {

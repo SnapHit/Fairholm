@@ -39,7 +39,7 @@ import { unitCard, passengerCard, tileCard, type Card } from './card'
 import { h, clear, append, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
-import { SHEET_DISMISS_PX, TAP_MIN_PX, installTheme, shouldReflow } from './theme'
+import { SHEET_DISMISS_PX, TAP_MIN_PX, installTheme } from './theme'
 import { mountOpening, type Opening } from './opening'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
@@ -167,10 +167,6 @@ export class App {
   layout() {
     const w = this.root.clientWidth, hh = this.root.clientHeight
     this.root.classList.toggle('landscape', w > hh * 1.2)
-    // the settlement screen's flanks move below the ring when the screen is narrow for the reader's
-    // own font size, so nothing is ever squeezed to the point of being cut off
-    const base = parseFloat(getComputedStyle(document.documentElement).fontSize)
-    this.root.classList.toggle('narrow', shouldReflow(w, isFinite(base) ? base : 16))
     this.canvas.style.width = w + 'px'
     this.canvas.style.height = hh + 'px'
     this.scene.resize(w, hh)

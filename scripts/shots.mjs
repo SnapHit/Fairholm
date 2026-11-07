@@ -45,8 +45,9 @@ async function overflow(page) {
     for (const el of document.querySelectorAll('#app *')) {
       const r = el.getBoundingClientRect()
       if (r.width === 0 && r.height === 0) continue
-      // a rail that scrolls sideways is meant to be wider than its box; its box is what must fit
-      const scroller = el.closest('.rail, .st-overflow')
+      // a rail or a street that scrolls sideways is meant to be wider than its box; its box is what
+      // must fit
+      const scroller = el.closest('.rail, .st-town')
       if (scroller && scroller !== el) continue
       if (r.right > w + 1 || r.left < -1) bad.push(`${el.className || el.id || el.tagName} ${Math.round(r.left)}..${Math.round(r.right)} of ${w}`)
     }
@@ -128,17 +129,18 @@ for (const width of [320, 390, 430]) {
   const over = await overflow(page)
   check(`no overflow at ${width}`, !over.page && over.bad.length === 0, over.bad.join('; '))
   const ring = await page.evaluate(() => {
-    const cells = [...document.querySelectorAll('.st-ring .cell')]
+    const cells = [...document.querySelectorAll('.st-ring .tile')]
     const r = cells.map(c => c.getBoundingClientRect())
-    const slot = document.querySelector('.st-flank .slot')?.getBoundingClientRect()
+    const ringBox = document.querySelector('.settlement .st-ring').getBoundingClientRect()
+    const town = document.querySelector('.st-town').getBoundingClientRect()
+    const lots = document.querySelectorAll('.st-town .lot').length
     return {
       cells: cells.length,
       cell: r.length ? Math.round(Math.min(...r.map(x => x.width))) : 0,
-      slot: slot ? Math.round(slot.width) : 0,
-      stacked: getComputedStyle(document.querySelector('.st-core')).gridTemplateColumns.split(' ').length,
+      lots, below: town.top >= ringBox.bottom - 1, picture: !!document.querySelector('.st-ring .picture canvas'),
     }
   })
-  check(`the ring is nine tappable cells at ${width}`, ring.cells === 9 && ring.cell >= 44, `cell ${ring.cell}pt, slot ${ring.slot}pt, ${ring.stacked === 1 ? 'flanks below the ring' : 'flanks beside the ring'}`)
+  check(`the ring is nine tappable tiles at ${width}`, ring.cells === 9 && ring.cell >= 44, `tile ${ring.cell}pt, ${ring.picture ? 'the map\'s picture' : 'swatches'}, ${ring.lots} on the street ${ring.below ? 'below the ring' : 'beside the ring'}`)
   await ctx.close()
 }
 
@@ -161,8 +163,8 @@ for (const width of [320, 390, 430]) {
   const before = await page.evaluate(() => window.fairholm.state.settlements.find(x => x.owner === 0).colonists.map(c => c.job.kind))
   await page.evaluate(() => {
     const a = window.fairholm
-    const cells = [...document.querySelectorAll('.st-ring .cell')]
-    const target = cells.find((c, i) => i !== 4 && !c.classList.contains('dim'))
+    const cells = [...document.querySelectorAll('.st-ring .tile')]
+    const target = cells.find((c, i) => i !== 4 && !c.classList.contains('veiled') && !c.classList.contains('off'))
     target.click()
   })
   await page.waitForTimeout(250)
@@ -172,10 +174,10 @@ for (const width of [320, 390, 430]) {
   const afterTile = await page.evaluate(() => window.fairholm.state.settlements.find(x => x.owner === 0).colonists.map(c => c.job.kind))
   check('a colonist can be put on a tile', afterTile.filter(k => k === 'tile').length > before.filter(k => k === 'tile').length, afterTile.join(','))
 
-  // path two: tap an idle person, the useful places light up, tap one
+  // path two: tap an idle figure at the head of the street, the useful places light up, tap one
   const lit = await page.evaluate(() => {
     const a = window.fairholm
-    const person = document.querySelector('.person')
+    const person = document.querySelector('.idler')
     if (!person) return { lit: 0 }
     person.click()
     return { lit: document.querySelectorAll('.can-take').length }
@@ -185,7 +187,7 @@ for (const width of [320, 390, 430]) {
   check('holding a colonist lights every useful destination', lit.lit > 0, `${lit.lit} places lit`)
   const afterBuilding = await page.evaluate(() => {
     const a = window.fairholm
-    const slot = [...document.querySelectorAll('.slot.can-take')][0]
+    const slot = [...document.querySelectorAll('.lot.can-take')][0]
     if (!slot) return null
     slot.click()
     return a.state.settlements.find(x => x.owner === 0).colonists.map(c => c.job.kind)
@@ -282,12 +284,19 @@ for (const width of [320, 390, 430]) {
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${OUT}/09-large-type.png` })
   const over = await overflow(page)
-  const shape = await page.evaluate(() => ({
-    stacked: document.getElementById('app').classList.contains('narrow'),
-    slot: Math.round(document.querySelector('.st-flank .slot').getBoundingClientRect().width),
-    body: Math.round(parseFloat(getComputedStyle(document.body).fontSize)),
-  }))
-  check('a larger system font grows the type and reflows the flanks below the ring', shape.stacked && shape.body > 15, `body ${shape.body}px, slot ${shape.slot}pt, ${shape.stacked ? 'stacked' : 'still beside the ring'}`)
+  const shape = await page.evaluate(() => {
+    const ring = document.querySelector('.settlement .st-ring').getBoundingClientRect()
+    const town = document.querySelector('.st-town').getBoundingClientRect()
+    const body = document.querySelector('.st-body')
+    return {
+      stacked: town.top >= ring.bottom - 1,
+      ring: Math.round(ring.width),
+      name: Math.round(parseFloat(getComputedStyle(document.querySelector('.st-town .lot .name')).fontSize)),
+      body: Math.round(parseFloat(getComputedStyle(document.body).fontSize)),
+      scrolls: body.scrollHeight > body.clientHeight + 1,
+    }
+  })
+  check('a larger system font grows the type and the screen reflows, the town under the ring', shape.stacked && shape.body > 15, `body ${shape.body}px, names ${shape.name}px, ring ${shape.ring}pt, ${shape.scrolls ? 'scrolls' : 'fits'}`)
   check('a much larger type size still does not overflow', !over.page && over.bad.length === 0, over.bad.join('; '))
   await ctx.close()
 }

@@ -23,8 +23,52 @@
 
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
+import { inflateSync } from 'node:zlib'
 import { fingers } from './touch.mjs'
+
+/** Just enough png to read back a screenshot: eight bit truecolour, not interlaced. */
+function readPng(path) {
+  const buf = readFileSync(path)
+  let p = 8, w = 0, h = 0, ctype = 0
+  const idat = []
+  while (p < buf.length) {
+    const len = buf.readUInt32BE(p)
+    const type = buf.toString('ascii', p + 4, p + 8)
+    const data = buf.subarray(p + 8, p + 8 + len)
+    if (type === 'IHDR') { w = data.readUInt32BE(0); h = data.readUInt32BE(4); ctype = data[9] }
+    else if (type === 'IDAT') idat.push(Buffer.from(data))
+    else if (type === 'IEND') break
+    p += 12 + len
+  }
+  const ch = ctype === 6 ? 4 : 3
+  const raw = inflateSync(Buffer.concat(idat))
+  const stride = w * ch
+  const out = Buffer.alloc(h * stride)
+  let q = 0
+  for (let y = 0; y < h; y++) {
+    const f = raw[q++]
+    const row = raw.subarray(q, q + stride); q += stride
+    const cur = out.subarray(y * stride, y * stride + stride)
+    const prev = y > 0 ? out.subarray((y - 1) * stride, (y - 1) * stride + stride) : null
+    for (let x = 0; x < stride; x++) {
+      const a = x >= ch ? cur[x - ch] : 0
+      const b = prev ? prev[x] : 0
+      const c = prev && x >= ch ? prev[x - ch] : 0
+      let v = row[x]
+      if (f === 1) v += a
+      else if (f === 2) v += b
+      else if (f === 3) v += (a + b) >> 1
+      else if (f === 4) {
+        const g = a + b - c
+        const pa = Math.abs(g - a), pb = Math.abs(g - b), pc = Math.abs(g - c)
+        v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+      }
+      cur[x] = v & 255
+    }
+  }
+  return { w, h, px: out, ch }
+}
 
 const OUT = process.env.OUT || 'shots/settlement-view'
 const PREFIX = process.env.PREFIX || ''
@@ -241,6 +285,190 @@ async function drawsWhileOpen(page, ms = 4000) {
 
 const shot = (name) => `${OUT}/${PREFIX}${name}.png`
 
+/** The ring's cost and its colours (questions one and five of the build brief), at a device pixel
+ *  ratio of 1, which is where the brief draws its line of 150 milliseconds. The cost: the picture the
+ *  screen draws as it opens, the same picture drawn again three times straight through the
+ *  renderer, and the picture drawn for a new turn with the screen open. The colours: three tiles of
+ *  the ring's own picture against the same tiles of the map on the screen at detail zoom, the middle
+ *  half of each, averaged, per channel. */
+async function ringMeasures() {
+  const view = { name: 'measure-393x742', width: 393, height: 742 }
+  const { ctx, page } = await open(view, 1)
+  await settle(page, 'mature')
+  await openScreen(page)
+  const opened = await ringStats(page)
+  const again = await page.evaluate(() => {
+    const a = window.fairholm, st = a.state.settlements.find(x => x.owner === 0)
+    const px = a.scene.ringStats.px, ms = []
+    for (let k = 0; k < 3; k++) { a.scene.drawRing(st.tile, px); ms.push(a.scene.ringStats.ms) }
+    return ms
+  })
+  // the map at detail zoom, as the screen shows it, and the ring's picture of the same place
+  await page.evaluate(() => {
+    const a = window.fairholm, st = a.state.settlements.find(x => x.owner === 0)
+    a.closeSheet()
+    a.scene.cam.view.selectedTile = null
+    a.scene.cam.glideTarget = null
+    a.scene.cam.centreOn(st.tile, 72)
+    a.scene.requestDraw()
+  })
+  await idle(page)
+  await page.screenshot({ path: `${OUT}/${PREFIX}measure-map-detail.png` })
+  const tiles = await page.evaluate(() => {
+    const a = window.fairholm, sc = a.scene, s = a.state, w = s.world.width
+    const st = s.settlements.find(x => x.owner === 0)
+    const px = sc.ringStats.px || 377
+    const canvas = sc.drawRing(st.tile, px)
+    const g = canvas.getContext('2d')
+    const half = 1.5 + 0.25, perTile = px / (2 * half)
+    const cx = (st.tile % w) + 0.5, cz = Math.floor(st.tile / w) + 0.5
+    // one of each kind of ground the ring has, nearest the top left first
+    const picked = [], kinds = new Set()
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dz) continue
+      const t = st.tile + dz * w + dx, tile = s.world.tiles[t]
+      const kind = tile.terrain + (tile.forest ? ' under ' + tile.forest : '')
+      if (kinds.has(kind) || picked.length >= 3) continue
+      kinds.add(kind)
+      const x0 = (t % w) + 0.25, z0 = Math.floor(t / w) + 0.25
+      const rx = Math.round((x0 - (cx - half)) * perTile), rz = Math.round((z0 - (cz - half)) * perTile), n = Math.round(0.5 * perTile)
+      const d = g.getImageData(rx, rz, n, n).data
+      let r = 0, gg = 0, b = 0
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2] }
+      const m = d.length / 4
+      const [sx, sy] = sc.cam.worldToScreen(x0, z0)
+      picked.push({ kind, at: [dx, dz], ring: [r / m, gg / m, b / m], screen: [sx, sy, 0.5 * sc.cam.view.zoom] })
+    }
+    return picked
+  })
+  const png = readPng(`${OUT}/${PREFIX}measure-map-detail.png`)
+  const dpr = png.w / view.width
+  const diffs = tiles.map(t => {
+    const [sx, sy, size] = t.screen
+    const x0 = Math.round(sx * dpr), y0 = Math.round(sy * dpr), n = Math.round(size * dpr)
+    let r = 0, g = 0, b = 0, m = 0
+    for (let y = y0; y < y0 + n; y++) for (let x = x0; x < x0 + n; x++) { const i = (y * png.w + x) * png.ch; r += png.px[i]; g += png.px[i + 1]; b += png.px[i + 2]; m++ }
+    const map = [r / m, g / m, b / m]
+    const d = t.ring.map((v, i) => +(v - map[i]).toFixed(1))
+    note(`  colour, ${t.kind} at ${t.at.join(',')}: ring ${t.ring.map(v => v.toFixed(1)).join(' ')}, map ${map.map(v => v.toFixed(1)).join(' ')}, difference ${d.join(' ')}`)
+    return Math.max(...d.map(Math.abs))
+  })
+  check('the ring\'s colours match the map within a few levels a channel', diffs.length === 3 && Math.max(...diffs) <= 3, `largest difference ${Math.max(...diffs)}`)
+  // a new turn with the screen open: the picture is drawn again for it, once
+  await page.evaluate(() => { const a = window.fairholm; a.open({ kind: 'settlement', id: a.state.settlements.find(x => x.owner === 0).id }) })
+  await page.waitForTimeout(2500)
+  await idle(page)
+  const before = await ringStats(page)
+  await page.evaluate(() => window.fairholm.endTurn())
+  await page.waitForTimeout(4000)
+  await idle(page)
+  const turned = await ringStats(page)
+  note(`ring at a device pixel ratio of 1, ${opened.px} pixels square: ${opened.ms} ms as the screen opened, ${again.join(', ')} ms drawn again, ${turned.ms} ms for a new turn (${turned.draws - before.draws} drawn)`)
+  check('the ring draws in under 150 ms at a device pixel ratio of 1 on the rig, once it has drawn before', Math.max(...again) < 150, `${again.join(', ')} ms`)
+  await ctx.close()
+}
+
+/** Assigning, reassigning and picking an idle colonist by taps alone, as real touches on the new
+ *  screen (question six of the build brief): every step is a tap where a player's thumb would land,
+ *  and every answer is read back from the state. */
+async function tapChecks(page, ctx, view) {
+  if (!(await page.evaluate(() => !!document.querySelector('.st-town')))) { note('  taps: not the new screen, skipped'); return }
+  const holdMs = await page.evaluate(async () => (await import('/src/ui/theme.ts')).HOLD_MS)
+  const finger = fingers(await ctx.newCDPSession(page), page, { holdMs })
+  const tapOn = async (selector, index = 0) => {
+    const at = await page.evaluate(([sel, i]) => {
+      const el = document.querySelectorAll(sel)[i]
+      if (!el) return null
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      const b = el.getBoundingClientRect()
+      return [b.left + b.width / 2, b.top + b.height / 2]
+    }, [selector, index])
+    if (!at) return false
+    await finger.tap(at[0], at[1], 700)
+    return true
+  }
+  const state = () => page.evaluate(() => {
+    const a = window.fairholm, st = a.state.settlements.find(x => x.owner === 0)
+    return { sheet: a.sheet.kind, pick: a.pick ? a.pick.colonist : null, jobs: st.colonists.map(c => c.job.kind === 'tile' ? `tile ${c.job.tile}` : c.job.kind === 'building' ? `building ${c.job.line}` : 'idle'), lit: document.querySelectorAll('.can-take').length, settling: document.querySelectorAll('.stand.settle').length, draws: a.scene.ringStats?.draws ?? 0, active: a.scene.cam.view.activeUnit }
+  })
+  await settle(page, 'mature')
+  await openScreen(page)
+  const s0 = await state()
+  // pick the idle colonist at the head of the street: the useful places are marked
+  await tapOn('.idler')
+  const s1 = await state()
+  check('taps: an idle colonist is picked by a tap, and the places that can take them are marked', s1.pick !== null && s1.lit > 1, `picked ${s1.pick}, ${s1.lit} marked`)
+  // a tap on a marked tile puts them there
+  const target = await page.evaluate(() => { const el = document.querySelector('.st-ring .tile.can-take'); return el ? [...document.querySelectorAll('.st-ring .tile')].indexOf(el) : -1 })
+  await tapOn('.st-ring .tile', target)
+  const s2 = await state()
+  const moved = s1.pick !== null ? s2.jobs[s1.pick] : null
+  check('taps: a tap on a marked tile assigns them, the figure settles in and no picture is drawn', !!moved && moved.startsWith('tile') && s2.pick === null && s2.draws === s1.draws, `${moved}; ${s2.settling} settling; pictures ${s1.draws} then ${s2.draws}`)
+  await page.screenshot({ path: shot(`mature-${view.name}-tapped`) })
+  // reassign: a tap on that tile offers who else could work it, best first; a tap on the first
+  // swaps the two of them
+  await tapOn('.st-ring .tile', target)
+  const s3 = await state()
+  const swap = await page.evaluate(() => [...document.querySelectorAll('#sheet .btn')].findIndex(b => /^(Swap with|Take|Put here)/.test(b.textContent)))
+  if (swap >= 0) await tapOn('#sheet .btn', swap)
+  const s4 = await state()
+  const swapped = s4.jobs.filter((j, i) => j !== s2.jobs[i]).length
+  check('taps: tapping a worked tile offers the others, and one more tap swaps two of them', s3.sheet === 'assignTile' && s4.sheet === 'settlement' && swapped === 2 && !s4.jobs.includes('idle'), `sheet ${s3.sheet} then ${s4.sheet}; ${swapped} jobs changed`)
+  // stand someone down from a tile, pick them, and put them in a building with room
+  const worked = await page.evaluate(() => { const tiles = [...document.querySelectorAll('.st-ring .tile')]; return tiles.findIndex(t => t.querySelector('.stand') && !t.classList.contains('centre')) })
+  await tapOn('.st-ring .tile', worked)
+  const leave = await page.evaluate(() => { const b = [...document.querySelectorAll('#sheet .btn')].find(x => /Leave it empty/.test(x.textContent)); if (!b) return -1; return [...document.querySelectorAll('#sheet .btn')].indexOf(b) })
+  if (leave >= 0) await tapOn('#sheet .btn', leave)
+  const s5 = await state()
+  await page.evaluate(() => { const a = window.fairholm; if (a.sheet.kind !== 'settlement') a.back() })
+  await page.waitForTimeout(300)
+  await tapOn('.idler')
+  const s6 = await state()
+  const lot = await page.evaluate(() => { const el = document.querySelector('.lot.can-take'); return el ? [...document.querySelectorAll('.lot')].indexOf(el) : -1 })
+  if (lot >= 0) await tapOn('.lot', lot)
+  const s7 = await state()
+  const housed = s6.pick !== null ? s7.jobs[s6.pick] : null
+  check('taps: a colonist stood down, picked and tapped into a marked building works there', s5.jobs.includes('idle') && !!housed && housed.startsWith('building'), `${s5.jobs.filter(j => j === 'idle').length} idle, then ${housed}`)
+  // the header's more control: everything that used to sit in its own row, two taps away
+  await tapOn('.st-head .more')
+  await page.screenshot({ path: shot(`mature-${view.name}-more`) })
+  const menu = await page.evaluate(() => [...document.querySelectorAll('.st-more .btn')].map(b => b.textContent))
+  const detail = menu.findIndex(t => /Everything here/.test(t))
+  if (detail >= 0) await tapOn('.st-more .btn', detail)
+  const s8 = await state()
+  check('taps: Build order, Equip and Everything here are two taps away', menu.some(t => /Build order/.test(t)) && menu.includes('Equip') && s8.sheet === 'settlementDetail', `${menu.join(', ')}; then ${s8.sheet}`)
+  await page.evaluate(() => window.fairholm.back())
+  await page.waitForTimeout(300)
+  // the frame opens the build order; a plot queues itself or says what gates it
+  await tapOn('.lot.building-up')
+  const s9 = await state()
+  await page.evaluate(() => window.fairholm.back())
+  await page.waitForTimeout(300)
+  const queued = await page.evaluate(() => window.fairholm.state.settlements.find(x => x.owner === 0).buildQueue.length)
+  await tapOn('.lot.plot')
+  const after = await page.evaluate(() => ({ queue: window.fairholm.state.settlements.find(x => x.owner === 0).buildQueue.length, toast: document.querySelector('#toast')?.textContent }))
+  check('taps: the frame opens the build order, and a plot queues or gives its gate', s9.sheet === 'build' && (after.queue > queued || !!after.toast), `${s9.sheet}; queue ${queued} then ${after.queue}; "${after.toast}"`)
+  // a unit in the settlement stands at the far end of the street; a tap chooses it on the map
+  const unit = await page.evaluate(async () => {
+    const a = window.fairholm, actions = await import('/src/sim/actions.ts')
+    const st = a.state.settlements.find(x => x.owner === 0)
+    st.stock.arms = Math.max(st.stock.arms, 100)
+    const i = st.colonists.findIndex(c => c.job.kind !== 'idle')
+    try { actions.applyAction(a.state, { t: 'equip', settlement: st.id, colonist: i, as: 'militia' }) } catch (e) { return { error: e.message } }
+    a.scene.rebuild(a.state, 'dynamic')
+    a.refresh()
+    return { id: a.state.units.find(u => u.tile === st.tile && u.owner === 0)?.id ?? null }
+  })
+  await page.waitForTimeout(1500)
+  // the far end of the street, where the unit stands
+  await page.evaluate(() => { const t = document.querySelector('.st-town'); if (t) t.scrollLeft = t.scrollWidth })
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: shot(`mature-${view.name}-unit`) })
+  if (unit.id !== null && unit.id !== undefined) await tapOn('.unit-here')
+  const s10 = await state()
+  check('taps: a unit at the far end of the street is chosen on the map with one tap', s10.sheet === 'queue' && s10.active === unit.id, `unit ${unit.id ?? unit.error}; sheet ${s10.sheet}, chosen ${s10.active}`)
+}
+
 for (const view of VIEWS) {
   const { ctx, page } = await open(view)
   for (const which of ['early', 'mature']) {
@@ -291,8 +519,11 @@ for (const view of VIEWS) {
       if (placed && placed.redrawn !== undefined) check('an assignment moves a figure and draws no picture', placed.redrawn === 0, `${placed.redrawn} pictures drawn, ${placed.settling} figure settling in`)
     }
   }
+  if (view.picks) await tapChecks(page, ctx, view)
   await ctx.close()
 }
+
+if (!ONLY || 'measure'.includes(ONLY)) await ringMeasures()
 
 console.log('\n' + results.join('\n'))
 console.log(problems.length ? '\nPROBLEMS:\n' + problems.join('\n').slice(0, 3000) : '\nno page errors')
