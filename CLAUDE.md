@@ -48,6 +48,10 @@ Built with TypeScript, Vite and three.js; no UI framework; self-hosted on Cloudf
 - Saves are seed plus deltas; the world is regenerated on load. `schemaVersion` and
   `worldgenVersion` are separate and both checked.
 - TypeScript is stripped by esbuild; a type error never blocks a build. `npm run typecheck` checks.
+- The renderer writes linear output, so the map and the settlement screen's ring (drawn into a
+  render target) share every shader program and every colour. A colour three.js would itself
+  convert, the clear colour or a built-in material's, goes through `displayColour` in
+  `src/render/shading.ts`. `DECISIONS.md` 165.
 
 ## The three gestures
 
@@ -73,7 +77,8 @@ the release.
             grievance, military, fleet, rivals, predecessors, naval, orders, queue, systems,
             autopilot (the voyage), policy (three machine players for whole games)
   /render   scene, terrain (with water), props, settlements, units, ribbons, camera, picking, palette
-  /ui       app (store, hud, queue, landing, undo), sheets, input, audio, glossary, dom, style.css
+  /ui       app (store, hud, queue, landing, undo), sheets, input, audio, glossary, dom, style.css,
+            settlement with ring, town and pictures (the settlement screen and its art seams)
   /io       save (with export and import), telemetry
   main.ts   wiring only
 /public/audio   the four tracks, streamed, never in the initial payload
@@ -81,7 +86,8 @@ the release.
 /scripts        smoke.mjs, a headless-browser run of the acceptance checks; the shot rigs;
                 playthrough.ts, a whole game by the competent policy written to /reports
 /reports        playthrough-small.txt, the dispatch of a whole small game, for reading
-/docs           the seventeen design briefs (see docs/README.md)
+/docs           the seventeen design briefs (see docs/README.md); /docs/builds holds briefs for a
+                single build session, which the design briefs outrank
 ```
 
 ## Commands
