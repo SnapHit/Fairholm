@@ -61,6 +61,30 @@ map in a few seconds.
 | The ring under a chosen hull is too big or too small | Ring sized from the picture's width | `SELECTION.ringShare`, `ringMin`, `ringMax` | Lower or raise | Every unit's ring |
 | The frame loop runs too long after the opening | Steam rises too long | `ARRIVAL.steamSeconds`, `steamFadeSeconds` | Lower | The opening shot is still while the lines read |
 
+## The settlement screen is cramped, slow to open, or hard to read
+
+Settlement screen and layout brief, version 3, and `DECISIONS.md` 164 to 175. Every interface number
+here is in `src/ui/theme.ts`; every render number is in `src/render/look.ts`. Rerun
+`CHROMIUM=/opt/pw-browsers/chromium node scripts/settlement-view.mjs` after any change and look at
+the pictures: its measures print the share of the height each part takes and what the ring costs.
+
+| Symptom | Likely cause | Constant | Direction | Also affects |
+|---|---|---|---|---|
+| The ring takes too much of a tall phone and the street too little | The ring may grow too wide | `--ring-max` | Lower | The tiles shrink with it; the town takes the height given up |
+| On a short phone the body scrolls, or the ring shrinks below comfort | The town's floor is too high | `--lot-art-min` (and with it `--town-min`) | Lower | How small a building can be drawn |
+| A mature street needs a lot of sideways scrolling to see, or on a tall phone it floats in empty space | The buildings' largest size | `--lot-art-max` | Lower for the first, raise for the second | How much of each drawing reads; 120 shows about four on a phone, and at 390 by 844 leaves about 120 points of the town's height unused |
+| A landscape phone, or a large font, scrolls the screen | The ring's floor is too high | `--ring-min` | Lower, not below about 160 | Below that a tile is under the 44 point tap floor |
+| The figures on the ring are hard to see, or crowd the pills | Their share of a tile | `--ring-figure`, `--ring-feet-x`, `--ring-feet-y` | Raise or lower | Keep the feet in the lower part of the tile |
+| Opening the settlement screen stutters on a cheap phone | The ring's picture has too many pixels | `RING_PICTURE.dprCap` in `src/render/look.ts` | Lower to 1.5 or 1 | How sharp the ring is |
+| The ring's buildings and trees have stepped edges, or the draw is slow | Multisampling | `RING_PICTURE.samples` | 4 or 0 | Measured at about 30 ms of a 115 ms draw at 377 pixels in software |
+| The ring looks cut out, or its tiles too small for the box | The soft edge's width | `RING_PICTURE.margin` | Raise or lower | The tiles are 3 of 3 plus twice this, of the box |
+| Swiping back to a settlement draws its ring again | Too few pictures kept | `RING_PICTURES_KEPT` | Raise | About two megabytes a picture at the largest |
+| A store reads as filling too early or too late | Where the bar warms | `STORE_WARM` | Raise or lower | Only the colour; spoiling is the simulation's capacity |
+| An assignment reads as a jump, or as a lag | The settle-in | `SETTLE_MS` | Keep under 200 | Nothing else; it runs once and stops |
+| The street reads as a shelf | Too little stagger | `--lot-stagger` | Raise | The ground line stays put; only the drawings lift |
+| A worker at a door looks too large or too small for the building | The street's scale | `STREET_SHEET_PX`, `STREET_GROUND` | Raise to shrink everything | People follow the buildings through `SPRITE.eave` |
+| The ground under the street is a heavy band | Its height and fades | `--street-band`, `--street-fade`, `--street-hold` | Lower the band | Nothing else |
+
 ## Immigration stalls
 
 | Symptom | Likely cause | Constant | Direction | Also affects |

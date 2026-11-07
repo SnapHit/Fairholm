@@ -230,6 +230,36 @@ Places where a change in one file breaks something in a distant file without the
   length per turn" metric is the queue the player saw, not the one produced. That is the right
   metric, but it is the opposite of what the name suggests.
 
+- **The canvas writes linear output, and three.js's own conversions are compensated by hand**
+  (decision 165). Every material on the map is one of our shaders, which write display values
+  straight out and are never converted; the clear colour and the two built-in materials of the
+  selection marks are passed through `displayColour` in `src/render/shading.ts`. A new built-in
+  material, a scene background or a three.js fog added without it comes out darker on the map than
+  its hex. The ring and the map would still agree with each other, which is the point of the switch,
+  but both would be wrong.
+- **The ring's props are the map's props only because every prop is placed from its own tile's
+  seed** (decision 166). `buildProps` with a window places the twenty-five tiles round a settlement
+  and gets exactly the map's props on them; a sequential random stream inside `buildProps`, or a
+  prop whose placement depends on a tile outside the window, would make the ring's trees differ
+  from the map's without any error.
+- **The ring's terrain band assumes the index runs row by row** (`rowRange` in
+  `src/render/terrain.ts`). Chunking or reordering the terrain's index without updating `rowRange`
+  leaves the ring with holes in its ground.
+- **Three interface mirrors of the turn's arithmetic.** `buildingOutputs` mirrors
+  `previewProduction` (decision 42); `centreYield` mirrors the free yield of a settlement's own tile
+  in `produce` (decision 169), which `previewProduction` leaves out; `goodsShelf` mirrors production
+  less what the buildings work up (decision 173). A change to the turn's production must move all
+  three, or the pills and the bars say something the turn does not do.
+- **The ring picture's cache key** (decision 168) is everything found that changes the picture
+  within a turn: the settlement, the turn, the size, the buildings drawn, the population, the units
+  in view and the renderer's epoch. Anything missing shows a picture a turn stale. Known and left:
+  which way a unit faces, and the drift of the cloud shadow, both cosmetic.
+- **The map draws no frame while the settlement screen covers it** (`Scene.setCovered`, decision
+  174). Work that waits for the next frame waits until the screen closes. The first shadow bake does,
+  so a ring drawn after a context was restored behind the screen would have had no shadows, found by
+  reading rather than seen; `drawRing` now does the bake itself. Anything new hung on `draw` needs
+  the same thought.
+
 ## 4. Invariants held by convention, not by types or tests
 
 A future agent could violate any of these and neither the compiler nor the suite would notice.
@@ -332,6 +362,12 @@ Including the simplifications. Decisions with a number are explained in `DECISIO
 - **Overlays** are territory, yields and threat; the routes overlay named in `ViewState` is not
   drawn.
 
+- **The settlement screen's far end shows land units only.** The brief names "a hull at the wharf"
+  among the units standing there; hulls never stand on a settlement's tile (decision 101), so none
+  is drawn. The brief carries a dated correction.
+- **Food on the goods strip is the bank toward the next colonist**, not `stock.food`, which the
+  simulation never fills (decision 173).
+
 ## 6. What the tests do not cover
 
 Honestly: most of the product surface.
@@ -370,3 +406,7 @@ Honestly: most of the product surface.
   action's effect on subsequent turns.
 - **Any balance claim whatsoever.** The pins say the formulas do what they did on this build; they
   say nothing about whether those numbers make a good game.
+- **The settlement screen** has no unit test: `scripts/settlement-view.mjs` is its test, in a
+  headless browser, with real touches for assigning, reassigning and picking, and its pictures are
+  the evidence. It measures the ring's cost under a software renderer only; nothing has measured it
+  on a cheap phone (decision 166).

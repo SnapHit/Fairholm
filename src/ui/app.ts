@@ -1357,6 +1357,8 @@ export class App {
     this.sheetEl.classList.remove('held')
     const showing = this.sheetShowing()
     const full = showing && isFullScreenSheet(this.sheet)
+    // a sheet over the whole display hides the map, so the map draws nothing until it goes
+    this.scene.setCovered(full)
     this.sheetEl.classList.toggle('open', showing)
     this.sheetEl.classList.toggle('full', full)
     // every sheet over the map, a unit's full detail included, goes away with a tap on the map: the

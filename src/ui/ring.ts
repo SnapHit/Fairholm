@@ -160,7 +160,7 @@ export function settled(stand: HTMLElement, ms: number | null): HTMLElement {
 
 /** A tile in words, for a reader that cannot see the picture. */
 function tileLabel(cell: RingCell): string {
-  if (cell.worker) return `${cell.words}. A ${standingWords(cell.worker.colonist)} colonist works it for ${cell.worker.yield} ${goodWord(cell.worker.good).toLowerCase()}.`
+  if (cell.worker) return `${cell.words}. Worked for ${cell.worker.yield} ${goodWord(cell.worker.good).toLowerCase()} by a colonist, standing ${standingWords(cell.worker.colonist)}.`
   if (cell.centre) return `${cell.words}. The settlement.`
   if (cell.available && cell.best) return `${cell.words}. Could make ${cell.best.yield} ${goodWord(cell.best.good).toLowerCase()}.`
   return `${cell.words}. ${cell.reason ?? ''}`

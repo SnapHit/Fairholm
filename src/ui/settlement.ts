@@ -22,7 +22,7 @@ import { ringView, terrainLayers, tileFigures } from './ring'
 import { townView } from './town'
 import { goodMark } from './pictures'
 import {
-  ringCells, goodsShelf, destinationsFor, ownSettlements, consignable, standingWords, type GoodFill,
+  ringCells, goodsShelf, destinationsFor, ownSettlements, consignable, type GoodFill,
 } from './selectors'
 import type { App } from './app'
 
@@ -106,11 +106,12 @@ function moreMenu(app: App, st: Settlement): HTMLElement {
   )
 }
 
-/** The notes, on one line under the header: who is being placed, hunger, why nothing can be
- *  consigned, the clerks the size needs. The whole of it is a tap away when it does not fit. */
+/** The notes, on one line under the header: how to place the colonist being held, hunger, why
+ *  nothing can be consigned, the clerks the size needs. The whole of it is a tap away when it does
+ *  not fit. The held colonist's standing is on their figure, as chevrons, so the note need not say it. */
 function notesLine(app: App, s: GameState, st: Settlement, pick: number | null): HTMLElement | null {
   const notes: string[] = []
-  if (pick !== null && st.colonists[pick]) notes.push(`Tap a marked tile or building for the ${standingWords(st.colonists[pick])} colonist.`)
+  if (pick !== null && st.colonists[pick]) notes.push('Tap a marked tile or building to put them to work.')
   if (st.hunger > 0) notes.push(`Short of food for ${plural(st.hunger, 'turn')}.`)
   const ok = consignable(s, st)
   if (!ok.ok && ok.reason) notes.push(ok.reason)

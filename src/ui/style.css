@@ -536,7 +536,7 @@ input[type=text] {
 /* the building going up: its frame, and what it still needs */
 .lot.building-up .name { display: block; }
 .lot .progress {
-  display: block; width: calc(var(--lot-art-h) * var(--w) * 0.7); height: var(--fill-h); margin: var(--space-1) auto;
+  display: block; width: calc(var(--lot-art-h) * var(--w) * var(--progress-w)); height: var(--fill-h); margin: var(--space-1) auto;
   border-radius: var(--radius-pill); background: var(--fill-track); overflow: hidden;
 }
 .lot .progress i { display: block; height: 100%; background: var(--accent); }
@@ -668,15 +668,15 @@ input[type=text] {
 }
 .stand .foot-shadow {
   position: absolute; display: block;
-  width: calc(var(--fig-h) * 0.5); height: calc(var(--fig-h) * 0.14);
-  left: calc(var(--fig-h) * -0.25); top: calc(var(--fig-h) * -0.07);
+  width: calc(var(--fig-h) * var(--foot-w)); height: calc(var(--fig-h) * var(--foot-h));
+  left: calc(var(--fig-h) * var(--foot-w) / -2); top: calc(var(--fig-h) * var(--foot-h) / -2);
   border-radius: var(--radius-pill);
   background: radial-gradient(closest-side, var(--foot-shadow), transparent);
 }
 .stand .chev {
   position: absolute; overflow: visible;
-  left: calc(var(--fig-h) * 0.2); bottom: 0;
-  height: calc(var(--fig-h) * 0.34); width: calc(var(--fig-h) * 0.2125);
+  left: calc(var(--fig-h) * var(--chev-x)); bottom: 0;
+  height: calc(var(--fig-h) * var(--chev-h)); width: calc(var(--fig-h) * var(--chev-w));
 }
 .stand .chev polyline { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .stand .chev .halo { stroke: var(--chev-halo); stroke-width: var(--chev-halo-w); }
@@ -686,7 +686,7 @@ input[type=text] {
 /* a figure just sent somewhere settles in, once */
 .stand.settle { animation: settle var(--settle-ms) var(--ease) both; }
 @keyframes settle {
-  from { opacity: 0.2; transform: translateY(calc(var(--fig-h) * -0.22)); }
+  from { opacity: 0.2; transform: translateY(calc(var(--fig-h) * var(--settle-drop) * -1)); }
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) { .stand.settle { animation: none; } }
@@ -741,6 +741,9 @@ input[type=text] {
   display: flex; gap: var(--space-5); align-items: center;
   opacity: 0; transition: opacity var(--fade-ms), transform var(--fade-ms);
   pointer-events: none; z-index: 9; max-width: 92vw; font-size: var(--text-body);
+  /* as wide as what it says, up to the cap: left at the middle, it would otherwise wrap at half the
+     screen, and the settlement screen's notes line shows its whole text here */
+  width: max-content;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 

@@ -147,7 +147,7 @@ function idleLot(app: App, st: Settlement, idle: { c: Colonist; i: number }[], p
     const stand = settled(standingFigure(c, 'var(--lot-figure-h)'), settling(c))
     return h('button', {
       class: 'idler' + (picked ? ' picked' : ''), type: 'button',
-      'aria-label': `${picked ? 'Picked: ' : ''}an idle ${standingWords(c)} colonist. Tap a marked tile or building to put them to work.`,
+      'aria-label': `${picked ? 'Picked. ' : ''}Idle colonist, standing ${standingWords(c)}. Tap a marked tile or building to put them to work.`,
       'aria-pressed': picked ? 'true' : 'false',
       onClick: () => app.pickColonist(st, i),
     }, stand)

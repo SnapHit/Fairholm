@@ -951,8 +951,20 @@ export class Scene {
     requestAnimationFrame(frame)
   }
 
+  /** True while something covers the whole map (the settlement screen): nothing is drawn then,
+   *  because nothing drawn could be seen, and a frame drawn behind the screen is a frame the ring's
+   *  picture has to wait for. The loop still runs, so a move being drawn still finishes and the
+   *  camera still follows; uncovering draws the map as it is. */
+  private covered = false
+
+  setCovered(covered: boolean) {
+    if (covered === this.covered) return
+    this.covered = covered
+    if (!covered) this.requestDraw()
+  }
+
   draw(moving: boolean) {
-    if (this.contextLost) return
+    if (this.contextLost || this.covered) return
     const want = Math.min(window.devicePixelRatio || 1, moving ? C.feel.dprMoving : C.feel.dprSettled)
     if (Math.abs(this.renderer.getPixelRatio() - want) > 0.01) {
       this.renderer.setPixelRatio(want)
@@ -973,12 +985,18 @@ export class Scene {
     this.renderer.render(this.scene, this.cam.camera)
     if (this.onFrame) this.onFrame()
     // the deferred first bake, now that there is a coastline on the screen
-    if (this.bakePending && this.lastState && this.terrain && this.shadow) {
-      this.bakePending = false
-      this.bakeShadowBase(this.lastState)
-      this.shadow.stampDynamic(sunVector(seasonLook(this.lastSeason)), this.dynamicOccluders)
-      this.requestDraw()
-    }
+    if (this.bakeIfPending()) this.requestDraw()
+  }
+
+  /** The first shadow bake after the world is built, which waits for the first frame so that the
+   *  coastline shows sooner. The ring's picture does it too, because while the settlement screen
+   *  covers the map (a context restored under it, say) the map draws no frame to do it. */
+  private bakeIfPending(): boolean {
+    if (!this.bakePending || !this.lastState || !this.terrain || !this.shadow) return false
+    this.bakePending = false
+    this.bakeShadowBase(this.lastState)
+    this.shadow.stampDynamic(sunVector(seasonLook(this.lastSeason)), this.dynamicOccluders)
+    return true
   }
 
   /** How much of a picture is drawn at a point on the ground, with its foot at (fx, fz): nought
@@ -1028,6 +1046,7 @@ export class Scene {
   drawRing(tile: number, px: number): HTMLCanvasElement | null {
     const s = this.lastState
     if (this.contextLost || !this.terrain || !s || px < 1) return null
+    if (this.bakeIfPending()) this.requestDraw()
     const start = performance.now()
     const w = s.world.width
     const cx = (tile % w) + 0.5, cz = Math.floor(tile / w) + 0.5

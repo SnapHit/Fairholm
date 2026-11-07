@@ -354,6 +354,12 @@ async function ringMeasures() {
     return Math.max(...d.map(Math.abs))
   })
   check('the ring\'s colours match the map within a few levels a channel', diffs.length === 3 && Math.max(...diffs) <= 3, `largest difference ${Math.max(...diffs)}`)
+  // the same picture at the size a phone at a device pixel ratio of two draws it, three times
+  const sharp = await page.evaluate((px) => {
+    const a = window.fairholm, st = a.state.settlements.find(x => x.owner === 0), ms = []
+    for (let k = 0; k < 3; k++) { a.scene.drawRing(st.tile, px); ms.push(a.scene.ringStats.ms) }
+    return ms
+  }, 2 * opened.px)
   // a new turn with the screen open: the picture is drawn again for it, once
   await page.evaluate(() => { const a = window.fairholm; a.open({ kind: 'settlement', id: a.state.settlements.find(x => x.owner === 0).id }) })
   await page.waitForTimeout(2500)
@@ -363,7 +369,7 @@ async function ringMeasures() {
   await page.waitForTimeout(4000)
   await idle(page)
   const turned = await ringStats(page)
-  note(`ring at a device pixel ratio of 1, ${opened.px} pixels square: ${opened.ms} ms as the screen opened, ${again.join(', ')} ms drawn again, ${turned.ms} ms for a new turn (${turned.draws - before.draws} drawn)`)
+  note(`ring at a device pixel ratio of 1, ${opened.px} pixels square: ${opened.ms} ms as the screen opened, ${again.join(', ')} ms drawn again, ${turned.ms} ms for a new turn (${turned.draws - before.draws} drawn); at ${2 * opened.px} pixels, a ratio of two: ${sharp.join(', ')} ms`)
   check('the ring draws in under 150 ms at a device pixel ratio of 1 on the rig, once it has drawn before', Math.max(...again) < 150, `${again.join(', ')} ms`)
   await ctx.close()
 }
@@ -398,6 +404,14 @@ async function tapChecks(page, ctx, view) {
   await tapOn('.idler')
   const s1 = await state()
   check('taps: an idle colonist is picked by a tap, and the places that can take them are marked', s1.pick !== null && s1.lit > 1, `picked ${s1.pick}, ${s1.lit} marked`)
+  // the notes take one line; a tap on it shows the whole of it, and the colonist stays picked
+  const noteText = await page.evaluate(() => document.querySelector('.st-note')?.textContent ?? '')
+  await tapOn('.st-note')
+  await page.waitForTimeout(300)
+  const shown = await page.evaluate(() => ({ text: document.querySelector('#toast.show')?.textContent ?? '', width: Math.round(document.querySelector('#toast').getBoundingClientRect().width) }))
+  await page.screenshot({ path: shot(`mature-${view.name}-note`) })
+  const s1b = await state()
+  check('taps: the notes line shows its whole text with a tap, and the pick stays', !!noteText && shown.text === noteText && s1b.pick === s1.pick, `${noteText.length} characters, shown ${shown.width} wide; picked ${s1b.pick}`)
   // a tap on a marked tile puts them there
   const target = await page.evaluate(() => { const el = document.querySelector('.st-ring .tile.can-take'); return el ? [...document.querySelectorAll('.st-ring .tile')].indexOf(el) : -1 })
   await tapOn('.st-ring .tile', target)

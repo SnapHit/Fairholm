@@ -229,6 +229,16 @@ export const TOKENS: Record<string, string> = {
   '--chev-halo': 'rgba(23,24,26,0.9)',
   '--chev-halo-w': '3.6',
   '--chev-ink-w': '1.7',
+  /** The shadow under a figure's feet, the chevrons beside them (a 10 by 16 drawing), how far a
+   *  figure drops as it settles in, all as shares of the figure's height; and a frame's progress bar
+   *  as a share of the frame's width. */
+  '--foot-w': '0.5',
+  '--foot-h': '0.14',
+  '--chev-x': '0.2',
+  '--chev-h': '0.34',
+  '--chev-w': '0.2125',
+  '--settle-drop': '0.22',
+  '--progress-w': '0.7',
   /** The small pills that say what something makes, and the faint one for what it could. */
   '--pill-bg': 'rgba(23,24,26,0.82)',
   '--pill-faint-bg': 'rgba(23,24,26,0.55)',

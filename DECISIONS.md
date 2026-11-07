@@ -505,6 +505,9 @@ content at that point.
 
 ### 37. The type scale is in rem, and the reflow is decided in code, not in a media query
 
+**The reflow is superseded by 171.** The type scale is still in rem; the settlement screen now
+reflows by container units against its own box, and `shouldReflow` and the `narrow` class are gone.
+
 **What.** `--text-*` are rem, so all text follows the reader's own font size. Whether the flanking
 building columns sit beside the ring or below it is decided by `shouldReflow(width, rootFontPx)` in
 `src/ui/theme.ts`, called from `App.layout`, which sets a `narrow` class on `#app`.
@@ -519,6 +522,8 @@ on a large phone. **Change:** `REFLOW_PX`. **Confidence: medium.**
 
 ### 38. The ring gives way before the flanks; 88 points is a ceiling, not a floor
 
+**Superseded by 171.** There are no flanks; the ring is as wide as the screen allows.
+
 **What.** The flanks are a fixed `--slot-w` (56) and the ring takes what is left, capped at
 `88 * 3`. At 390 points the ring cell comes out at 82 rather than 88; at 430 and at every stacked
 width it is 88.
@@ -532,6 +537,8 @@ this exact split as a thing to tune by playing. 82 is still nearly double the 44
 
 ### 39. A flanking slot is as tall as a row of the ring, not 56 points square
 
+**Superseded by 172.** The buildings are a street of pictures under the ring.
+
 **What.** `.st-flank` is `grid-template-rows: repeat(3, 1fr)` inside a row whose height the ring
 sets, so B1 lines up with the ring's first row, B2 with the second and B3 with the third.
 
@@ -541,6 +548,9 @@ of the flank empty and gave the names one line instead of two.
 **Confidence: high.**
 
 ### 40. Ring cells draw the map's own ground, as colour and gradients, not as an image
+
+**Superseded by 164.** The ring is the renderer's own picture of the nine tiles. The swatches
+survive as its fallback when the renderer cannot draw, and in the founding preview (108).
 
 **What.** `src/render/tiles.ts` is a read-only helper returning a tile's season-graded colour and its
 features. The ring paints the colour as a background and the features as CSS gradients built from the
@@ -556,6 +566,9 @@ change. **Change:** `graded()` in `src/render/tiles.ts` is the only place the tw
 **Confidence: medium.** The lighting constant is a stand-in for a real surface normal.
 
 ### 41. A 56 point slot cannot carry everything the brief asks of it
+
+**Superseded by 172.** No slot any more: each building is a picture with its name under it, its
+workers at the door and a pill for what it makes.
 
 **What.** The brief asks a building slot for its name, its tier, two worker slots, what it converts,
 its output this turn and a warning mark. At 56 points wide and 11px type that is about six characters
@@ -2704,6 +2717,290 @@ items.
   pictures; on a phone a cancel let go on the upper half of a figure would have moved it one tile
   north. The chosen unit's own picture now reads as its tile.
 
+## The settlement view uplift, session of 7 November 2026
+
+Version 3 of the settlement screen and layout brief, built from
+`docs/builds/settlement-view-uplift.md` in five phases, each committed on its own: the screen
+carries its information in pictures. The rig is `scripts/settlement-view.mjs`. It plays the
+competent policy inside the page to an early settlement and a mature one, shoots both at six screens
+into `shots/settlement-view/` (the `before-*` pictures there were taken before anything changed),
+measures what a picture cannot say, and assigns, reassigns and picks by real touches. The numbered
+settlement pictures in `shots/` (03 and 05 to 09) are retaken by `scripts/shots.mjs`. Nothing under
+`/src/sim` changed, nor the save format, and no pin moved.
+
+### 164. The ring is the renderer's own picture of the nine tiles
+
+**Supersedes 40.**
+
+**What.** `Scene.drawRing(tile, px)` in `src/render/scene.ts` draws the three by three round a
+settlement into a 2D canvas `px` pixels square. Its own orthographic camera looks straight down,
+turned as the map's is, and frames the nine tiles with `RING_PICTURE.margin` of a tile beyond them
+on every side, a quarter. One draw into a multisampled render target on the map's own renderer, one
+read back, rows flipped, `putImageData`; then the margin fades to nothing under two `destination-in`
+gradients, so the place is not cut out with scissors. For that draw the close tiers are on (the
+settlement and unit drawings, the pictures and their silhouettes) and the far tiers, the selection
+marks, the overlays and the far tier's painted cover are off; all of it is put back in a `finally`.
+Never a second context, never the player's camera. The picture is its CSS size times
+`min(devicePixelRatio, RING_PICTURE.dprCap)`, the cap 2. `src/ui/ring.ts` puts it into the ring from
+a `ResizeObserver`, which reports the laid-out size before the first paint, so the ring is never
+shown empty or at a guessed size. Over it, in the DOM: hairlines in the map's grid colour
+(`GRID.colour` in `src/render/look.ts`, which the terrain's shader now reads too), a veil on the
+tiles that cannot be worked, nine transparent tap targets that call `settlementTapTile` as the cells
+did, and the swipe for previous and next. Where the renderer cannot draw (a lost context, no world
+yet, a draw that throws) the ring shows version 2's swatches and says nothing; `terrainLayers` moved
+to `ring.ts` for that and still draws the founding preview (108).
+
+**Why.** Sections 2 and 6 of the brief: version 2 painted the renderer's colours as CSS and lost the
+trees, the light and the buildings. The map draws grid lines only round the chosen tile, so the
+picture has none and the hairlines are the grid; they stop at the nine tiles and stay one CSS pixel
+at any size.
+
+**Symptom if wrong.** The ring shows swatches on a phone that can draw. **Change:** `pictureFor` in
+`src/ui/ring.ts` and `Scene.canDraw`. **Confidence: high.**
+
+### 165. The canvas writes linear output, so the ring draws with the map's own programs
+
+**What.** The renderer's `outputColorSpace` is `LinearSRGBColorSpace`, where it was sRGB. Every
+material on the map is a shader of ours that writes the colour it means and was never converted, so
+the map does not change. The few colours three.js converts itself, the clear colour and the built-in
+materials of the two selection marks, go through `displayColour` in `src/render/shading.ts`, which
+gives three.js the value it will write. three.js treats a render target as linear, so the canvas and
+the ring's target now share every compiled program.
+
+**Why.** Measured. three.js keys a compiled program on the output colour space, so with an sRGB
+canvas every material the ring drew was compiled a second time for the target, and again after every
+rebuild of the props, because three.js frees a program with the last material that used it: about
+310 ms on the rig, added to the first ring drawn after a season turned. The brief warned about a
+render target's colour space; the colours were never off, the programs were doubled. Checked by
+drawing the same map at the commit before the switch and after it: the ground, the water, the props
+and a unit came out identical to the level, and only the hull's bob, which moves with the clock,
+differed.
+
+**Symptom if wrong.** A new built-in material, a scene background or three.js fog comes out darker
+on the map than its hex (`RISKS.md` section 3). **Change:** pass its colour through `displayColour`.
+**Confidence: high.**
+
+### 166. The ring draws only what it sees: a prop window and a band of terrain
+
+**What.** `buildProps` in `src/render/props.ts` takes an optional window of tiles and the materials
+to share, and places only the props on those tiles, from the same per-tile seeds, so they are the
+map's props exactly. `Scene.ringPropsFor` builds the five by five round a settlement with the map's
+own two materials, keeps it per settlement, and drops it whenever the map's props are laid again.
+The terrain's index runs row by row, and `rowRange` in `src/render/terrain.ts` gives the range of a
+band of rows; the ring draws the band under the picture, one row more each side for the coast's
+vertices that wander off their row. The map's whole-map props are hidden for the draw.
+
+**Why.** The first attempt drew the map's own props, all of them, because every prop mesh is drawn
+without frustum culling: about 280 ms at a device pixel ratio of 1 on the rig, nearly all of it
+vertices under the software renderer. **Measured** now, on the rig's software renderer, the owner's
+phone at 393 by 742, the mature settlement: at 377 pixels (a ratio of 1) 300 to 329 ms the first
+time in a session and 105 to 121 ms every time after, across three runs; at 754 pixels (a ratio of
+2, what the phone draws) 322 to 338 ms, and 470 to 510 ms at 748 to 754 pixels as the screen opens
+in each of the rig's fresh pages. About 160 ms of the first draw is the software renderer setting up
+its first render target, the same with or without multisampling; laying the window's props takes 1
+to 2 ms. Without multisampling the steady draw at 377 pixels is 78 to 88 ms; it stays on, because
+the map's canvas is antialiased and the ring is the map's picture. The brief's line was 150 ms at a
+ratio of 1: it holds after the first draw, not for it. Nothing has measured a phone's GPU, which
+does none of this work on the processor.
+
+**Symptom if wrong.** Opening the screen stutters on a cheap phone. **Change:**
+`RING_PICTURE.dprCap`, then `RING_PICTURE.samples` (`TUNING.md`). **Confidence: medium**, for want
+of a phone.
+
+### 167. The ring's colours are the map's, measured
+
+**What.** The rig compares three tiles of different kinds in the ring's picture with the same tiles
+on the map at a detail zoom (72), at a device pixel ratio of 1, averaging the middle half of each
+tile. Ring less map, in levels of 255, red, green, blue: water at the top left 0.1, -0.3, -0.7;
+grassland under deep timber above the centre 0.1, -0.1, 0.1; plains under light woodland at the top
+right -0.8, -1.6, -0.2. The largest is 1.6, and the rig fails above 3. Across runs the water moves
+by a few tenths, which is its own motion.
+
+**Why.** The brief asked for a few levels a channel; the rig holds it to three.
+
+### 168. The picture is drawn on opening and when what it shows changes, never while it sits open
+
+**What.** `src/ui/ring.ts` keeps the last four pictures (`RING_PICTURES_KEPT`), keyed on the seed,
+the settlement, the turn (which is also the season), the picture's size in pixels, the pieces
+`piecesFor` would choose and the population that chooses them, the units within two tiles (the soft
+edge shows a quarter of the next ring), and the scene's `epoch`, which moves whenever the world is
+built or the props are laid again. Assigning a worker changes none of those: it moves a figure in
+the DOM and draws nothing. A picture taken while a move is being drawn is shown but not kept. A kept
+picture is a plain 2D canvas, so it is still shown through a lost context; one that would have to be
+drawn then is the swatches. Going to the next settlement and back draws only the next one's picture.
+The renderer draws nothing while the screen sits open, because nothing on it moves.
+
+**Measured.** Assigning by taps drew no picture and settled one figure. Nothing was drawn in four
+seconds of the screen sitting open, in every one of the twelve shots.
+
+**Known and left.** The key does not see which way a unit faces, or the drift of the cloud shadow;
+both are cosmetic and both are a turn stale at most.
+
+### 169. One helper draws any piece of the sheets, through one seam each
+
+**What.** `atlasPicture` in `src/ui/pictures.ts` draws a piece of the units sheet or the settlement
+sheet at a given height, as a background image cropped by percentages of its own box from the
+sheet's manifest, with the piece's anchor carried as `--ax` and `--ay` so its feet stand on a point.
+The ring and the town both use it. The seams, each one function or table with a comment naming the
+art it waits for: `figureFor(colonist)`, always `colonist` until the trades sheet; `goodMark(good)`,
+the word until the goods icons; `BUILDING_PICTURE`, every building line to one of the seven early
+pieces until the three building sheets (172); and `unitPiece(kind)`. On the ring each worked tile
+has its worker standing in its lower part (`--ring-feet-x`, `--ring-feet-y`, `--ring-figure` of the
+tile's height, the tile being a size container), the standing as nought to three chevrons beside the
+feet (none for a debtor, one contracted, two free, three a master), and the yield in a pill in the
+tile's top right. A tile that could be worked and is not shows its best yield in a faint pill; the
+centre shows its own yield.
+
+**Why.** The brief, phase 2. The centre's yield needed its own selector: `previewProduction` leaves
+out what a settlement's own ground gives, so `centreYield` in `src/ui/selectors.ts` mirrors
+`produce`: the tile's food, and half its best other yield, rounded down, gold aside. It joins the
+mirrors of decision 42 (`RISKS.md` section 3).
+
+### 170. A figure sent somewhere settles in over 160 ms, once
+
+**What.** A figure that has just been sent to a tile or a door drops about a fifth of its height
+into place and comes up from faint over `SETTLE_MS`, 160 ms, and stops. `settlingSince` in
+`src/ui/settlement.ts` remembers where everyone stood when the screen was last drawn, within one
+settlement and one turn, and who has just moved and when. The screen is drawn again after most taps,
+sometimes twice in one, so a figure carries on from where it had got to through a negative
+`animation-delay` rather than starting again. Reduced motion turns it off. Nothing else on the
+screen moves.
+
+**Why.** Section 3 of the brief: under 200 ms, once. A figure that simply appears is easy to miss on
+a tile among eight others.
+
+### 171. The layout works from the body's own box, in container units
+
+**Supersedes 37's reflow and 38.**
+
+**What.** The flanks, the overflow row, `shouldReflow`, `REFLOW_PX`, `BASE_FONT_PX`, `SLOT_H_PX` and
+the `narrow` class are gone. Portrait stacks the header, a line of notes when there are any, the
+ring, the town and the goods. The body is a size container, and the ring is
+`clamp(--ring-min, min(100cqw, 100cqh - --town-min - --goods-h - two gaps), --ring-max)`: the full
+width unless that would push the town or the goods off the screen. The town takes the height that is
+left, and its buildings stand in a clamp of that between `--lot-art-min` and `--lot-art-max`; the
+goods are one rail `--goods-h` tall. Landscape is a grid: the ring on the left, square, as tall as
+the space under a one-line header, and the town over the goods on the right. The body still scrolls
+if it must, and never clips. A browser without container units gets a ring as wide as the screen,
+and scrolls.
+
+**Measured**, the share of the screen's height each part takes (header, notes, ring, town, goods,
+the queue bar), none of them scrolling, nothing past the edge and no text cut off in any of the
+twelve:
+
+| Screen | Head | Notes | Ring | Town | Goods | Bar | Ring, points | Tile |
+|---|---|---|---|---|---|---|---|---|
+| 393 by 742, mature | 9% | 3% | 51% | 19% | 7% | 8% | 377 | 108 |
+| 393 by 742, early | 9% | none | 51% | 22% | 7% | 8% | 377 | 108 |
+| 390 by 664, mature | 10% | 3% | 50% | 16% | 8% | 8% | 332 | 95 |
+| 390 by 664, early | 10% | none | 53% | 16% | 8% | 8% | 354 | 101 |
+| 390 by 844 | 8% | 3% | 44% | 29 to 32% | 6% | 7% | 374 | 107 |
+| 320 by 640 | 10% | 4% | 48% | 17 to 21% | 8% | 9% | 304 | 87 |
+| 844 by 390 | 14% | 6% | 62 to 67% | 47 to 52% | 13% | 14% | 240 to 262 | 69 to 75 |
+| 390 by 844, 20 px root | 8% | 3% | 44% | 26 to 30% | 8% | 7% | 374 | 107 |
+
+In landscape the ring and the town sit side by side, so their shares overlap.
+
+**Why.** The brief, section 2 and phase 3. Container units size the ring against the space the body
+actually has, with the header and notes already taken out, which the window's size in code could
+not.
+
+### 172. The town is a street of the map's own drawings
+
+**Supersedes 39 and 41.**
+
+**What.** `townView` in `src/ui/town.ts`. The buildings stand in a row on the settlement's own
+ground (the centre tile's `tileLook` colour, as a band behind them that fades in and out), at one
+scale: `STREET_SHEET_PX` pixels of the settlement sheet to the street's height, the ground line at
+`STREET_GROUND` of it, and a person at a door a cabin's eave tall (`SPRITE.eave`), so workers are at
+the buildings' scale. Each building is lifted by a stagger up to `--lot-stagger`, the same every
+time for the same settlement and place in the row. Each has its name under it, its workers standing
+at its door and each empty place as the faint outline of a figure, a pill for what it makes this
+turn (the meeting house shows the grievance the settlement gathers, which is what its workers are
+for), and a warning mark when it is starved of input or an imported machine is failing. The building
+going up is the `frame` drawing with its progress and what it still needs; a tap opens the build
+order. What could be built stands at the end as faint dashed plots with their cost, and a tap
+behaves as the unbuilt slots did: it queues, or gives the gate. The idle stand at the head of the
+street with Assign all; a tap picks one and marks every tile and building that can take them. Land
+units on the settlement's tile stand at the far end; a tap closes the screen and chooses the unit on
+the map. `BUILDING_PICTURE` sends the carpenter to the lodge; the metal trades and finishing to the
+yard; the cloth, rope, dye and still to the longhouse; the meeting house, press, school and agent's
+office to the hall; storage, consignment and the wharf to the barn; the stable and the works to the
+steading. The palisade and the works borrow, as the brief expected.
+
+**Why.** The brief, section 2 and phase 3. Seven pictures for eighteen buildings repeat along a
+mature street, as section 9 says they will; the names carry the difference until the building
+sheets.
+
+### 173. The goods: a mark, a stock, the change this turn, and how full the store is
+
+**What.** `goodsShelf` in `src/ui/selectors.ts`, drawn by `goodsView` in `src/ui/settlement.ts`.
+Market heads the rail, then each good the settlement holds or touches this turn: its mark, its
+stock, the change this turn small beside it, and a bar for how full its store is. The change is what
+is made on the tiles, the centre's free yield and the buildings, less what the buildings work up.
+The bar is plain when there is room, warm (`STORE_WARM`, 0.8 of the store) when the store is near
+full or this turn's change will take it there, and the loss colour when it is over the store's
+capacity and the end of the turn will spoil the rest. A tap opens the good's sheet, as before.
+
+**Why.** The brief, section 2. Food is the exception: the simulation never fills `stock.food`, and
+food is put by in `foodStore` toward the next colonist, so food's stock is the bank, its bar fills
+toward the granary threshold (100), its change is the food balance the header shows, and it takes
+the loss colour when it will run short this turn. A store that a standing order may sell before
+spoilage runs (`src/sim/systems.ts`) is warm rather than spoiling until it is actually over.
+
+### 174. The header, the more control, one line of notes, and a covered map
+
+**What.** The header is previous, the name (a tap renames), the orders control marked while unread,
+a more control, close and next, with the line of numbers under them as wide as the screen; in
+landscape it is one line. On a narrow screen the name gives up a little size before a letter,
+through a container query, and takes a second line before it is cut off. More opens a menu of Build
+order (with its count), Equip, School when there is one, Hulls when there is a wharf, and Everything
+here: every action that was on the screen is at most two taps away. A tap anywhere else on the
+screen puts the menu away, and so does any later drawing of the screen. The notes (how to place
+the colonist being held, hunger, why nothing can be consigned, the clerks the size needs) take one
+line under the header; a tap shows the whole of it in the toast. The toast now takes the width of
+what it says, up to its cap, where before it wrapped at half the screen because it is placed from
+the middle. Where the screen's words name a standing they say it after the person ("idle colonist,
+standing master of timber"), which reads properly for all four, and never put it in front of the
+word colonist as a title. `Scene.setCovered`, set from `App.renderSheet`, stops the map drawing
+while a sheet covers the whole display; the ring's draw does the first shadow bake itself when it is
+still waiting, since a covered map draws no frame to do it (a context restored behind the screen).
+
+**Why.** The brief, section 2 and phase 3. The covered map was found by measuring: the first ring
+after a turn, drawn with the screen open, took 863 ms, because the map drew a frame for the new turn
+behind the screen and the ring's read back waited for it. With the map covered the same draw took
+329 to 348 ms, the first after the season turned and the props were laid again.
+
+### 175. What did not work the way the brief assumed
+
+- **"150 ms at a device pixel ratio of 1"** holds after the first draw in a session, not for it: 300
+  to 329 ms the first time, about 160 of it the software renderer's first render target (166).
+- **"One render of nine tiles"** was a render of the whole map's props until the window and the band
+  (166), and the snapshot's programs were compiled twice until the canvas wrote linear output (165).
+- **"Watch the colour space of a render target"**: the colours matched from the first draw; the cost
+  was in the programs (165).
+- **"The units standing in the nine tiles"** for the key: the soft edge shows a quarter tile more,
+  so the key takes the units within two tiles (168).
+- **"A hull at the wharf"** at the far end of the street: a hull never stands on a settlement's own
+  tile (101); it waits on the water beside it, where the ring's picture shows it. The far end
+  carries land units only, and the brief is corrected.
+- **The goods strip's food** is the bank toward the next colonist, not a store that spoils (173).
+- **"A cell 100 to 120"**: the soft edge takes a quarter tile each side, so a tile is the ring over
+  three and a half: 95 on 390 by 664 with a note showing, 108 on the owner's phone (171). The brief
+  is corrected.
+- **"Narrow screens and large type reflow and scroll"**: they reflow and fit, with nothing
+  scrolling, at 320 by 640 and at a 20 pixel root (171).
+- **`previewProduction`** leaves out the centre's free yield, so the centre's pill and the goods'
+  change mirror it in the interface (169, 173).
+- **The first ring after a turn** waited behind a map frame drawn under the screen (174).
+- **The header's one line** at 320 points leaves the name little room beside five controls; it
+  shrinks a little and then takes a second line (174).
+- **"Smoke all green"**: nine of its ten checks pass. The first, a coastline within 2.5 seconds,
+  fails on this two-core software renderer at phase 0's build as well (3154 ms there, and 2738 and
+  5192 ms after this work), the margin decision 64 doubted. `scripts/shots.mjs` fails its music and
+  resting queue checks at phase 0's build too; its settlement checks all pass. The unit tests pass,
+  57 of 57, and no pin moved.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).
@@ -2722,8 +3019,8 @@ items.
   surplus rule exists.
 - A per-building shape from `previewProduction` (decision 42); the interface derives it.
 - Deleting `C.feel.holdMs`, which nothing reads any more (decision 49).
-- Landscape gets the same one-column settlement screen as portrait, centred. A two-column landscape
-  arrangement, ring beside buildings, was not attempted.
+- Two rows of buildings in landscape (settlement screen brief section 8 leaves it to play). The street
+  is one row in both orientations; landscape puts the ring beside the town and the goods (171).
 - Deleting the keys of `C.art` and `C.feel` that the renderer no longer reads (decisions 55 and 63).
 - Weather beyond the cloud shadow: the art brief's colour grade and fog density are not built.
 - The routes overlay named in `ViewState` is still undrawn.

@@ -1,5 +1,10 @@
 # Settlement screen and screen layout
 
+**Corrected 7 November 2026, after the build.** Two claims in section 2 were wrong and are corrected
+where they stand: the ring's size and its cells, because the soft edge takes a quarter tile on each
+side, and a hull at the far end of the street, because a hull never stands on a settlement's own
+tile. `DECISIONS.md` 164 to 175 record the build.
+
 **Changed 7 November 2026, version 3.** The screen now carries its information in pictures, which is
 what made the source game's settlement screen loved. The ring is a live aerial picture of the nine
 tiles drawn by the map's own renderer. Colonists stand as figures on the tiles they work and at the
@@ -69,7 +74,7 @@ take the panel: its composition, its parchment and wood, its icon set, its arran
 │                                          │
 │   THE RING                               │   the map's own picture of the
 │   drawn by the renderer,                 │   nine tiles, full width less the
-│   a figure on each worked tile,          │   margins, about 300 to 360 points
+│   a figure on each worked tile,          │   margins, about 330 to 380 points
 │   its yield beside it                    │
 │                                          │
 │                                          │
@@ -85,8 +90,12 @@ take the panel: its composition, its parchment and wood, its icon set, its arran
 
 - **The ring takes the full width less the margins**, unless that would push the town or the goods
   below the fold. On a 390 by 664 viewport, a phone with its browser's bars showing, the header, ring,
-  town and goods all fit without scrolling. In practice the ring is 300 to 360 points and a cell 100
-  to 120, larger than version 2's 88
+  town and goods all fit without scrolling. In practice the ring is about 330 to 380 points on a
+  phone 390 points wide, and a cell is the ring over three and a half, because the soft edge takes a
+  quarter tile on each side: 95 to 108 points, larger than version 2's 82 at that width. *Corrected
+  7 November 2026: this said 300 to 360 and 100 to 120, which the soft edge makes impossible
+  together. Measured, the ring is 332 points on 390 by 664 with a note showing and 377 on 393 by 742;
+  on a 320 point screen it is 304 and a cell 87*
 - **The town takes the height that is left above the goods**, and scrolls sideways when the street is
   longer than the screen
 - **The goods strip sits at the bottom**, above the queue bar, and scrolls sideways
@@ -149,8 +158,10 @@ under it. Tapping it opens the build order.
 gated plot gives its gate on tap.
 
 **Idle colonists stand at the head of the street**, as figures, where they cannot be missed. **Units
-in the settlement**, a garrison, a hauler, a hull at the wharf, stand at the far end; tapping one
-closes the screen and selects it on the map.
+in the settlement**, a garrison or a hauler, stand at the far end; tapping one closes the screen and
+selects it on the map. *Corrected 7 November 2026: this named a hull at the wharf, but a hull never
+stands on a settlement's own tile (`DECISIONS.md` 101); it waits on the water beside it, where the
+ring's picture shows it.*
 
 ### What the goods strip shows
 
