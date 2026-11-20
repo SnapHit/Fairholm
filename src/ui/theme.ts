@@ -245,6 +245,28 @@ export const TOKENS: Record<string, string> = {
   '--tick-w': '2px',
   '--tick-over': '3px',
   '--tick': 'var(--ink)',
+  /** Meters in a sheet (src/ui/meters.ts): a wide bar; a price gauge's track, the marker at today's
+   *  price and the dark edge that lifts it off the track, the gap shaded between the price and where
+   *  it would stand with nothing sold, the fall a consignment would cause, hatched, the opening
+   *  price's tick, and the width the floor and the ceiling take at the ends. */
+  '--bar-wide-h': '8px',
+  '--gauge-h': '6px',
+  '--gauge-wide-h': '8px',
+  '--gauge-knob': '12px',
+  '--gauge-wide-knob': '16px',
+  '--gauge-knob-edge': 'rgba(23,24,26,0.85)',
+  '--gauge-now': 'var(--ink)',
+  '--gauge-gap': 'rgba(216,85,62,0.85)',
+  '--gauge-fall': 'repeating-linear-gradient(135deg, rgba(216,85,62,0.6) 0 3px, transparent 3px 6px)',
+  '--gauge-open': 'var(--ink-dim)',
+  '--gauge-end-w': '1.25rem',
+  /** The market board: goods two across, three on a sheet at least BOARD_THREE_ACROSS_PX wide, each on
+   *  a soft ground of its own and this far apart. */
+  '--board-cols': '2',
+  '--board-tile': 'rgba(233,226,204,0.045)',
+  '--board-gap': '8px',
+  /** A sheet led by a picture: the box the picture stands in at the sheet's head. */
+  '--hero-box': '4rem',
   '--cell-gap': '4px',
   '--ring-radius': '5px',
   '--worker-dot': '14px',
@@ -298,7 +320,20 @@ export const TOKENS: Record<string, string> = {
 
 }
 
-/** Write the tokens onto the document root. Called once, before anything renders. */
+/** The market board puts three goods across from a sheet this wide, and two below it (build brief
+ *  phase 2). A width a container query asks about cannot be a custom property, so this one rule is
+ *  written by installTheme rather than the stylesheet. */
+export const BOARD_THREE_ACROSS_PX = 600
+
+/** Write the tokens onto the document root, and the one rule that needs a number of its own. Called
+ *  once, before anything renders. */
 export function installTheme(root: HTMLElement = document.documentElement) {
   for (const [k, v] of Object.entries(TOKENS)) root.style.setProperty(k, v)
+  const doc = root.ownerDocument
+  if (!doc.getElementById('theme-queries')) {
+    const rule = doc.createElement('style')
+    rule.id = 'theme-queries'
+    rule.textContent = `@container sheet (min-width: ${BOARD_THREE_ACROSS_PX}px) { .board { --board-cols: 3; } }`
+    doc.head.append(rule)
+  }
 }

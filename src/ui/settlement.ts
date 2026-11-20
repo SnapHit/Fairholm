@@ -22,6 +22,7 @@ import { ringView, terrainLayers, tileFigures } from './ring'
 import { townView } from './town'
 import { goodMark } from './pictures'
 import { icon, type IconName } from './icons'
+import { fillBar } from './meters'
 import {
   ringCells, goodsShelf, destinationsFor, ownSettlements, consignable, goodWord, type GoodFill,
 } from './selectors'
@@ -145,15 +146,13 @@ function goodOnShelf(app: App, st: Settlement, g: GoodFill): HTMLElement {
   const words = g.good === 'food'
     ? `${fmt(g.stock)} banked of ${g.capacity} for the next colonist, ${signed(change)} this turn${g.state === 'short' ? ', running short' : ''}`
     : `${fmt(g.stock)} of ${g.capacity} held, ${signed(change)} this turn${g.state === 'spoils' ? ', spoiling' : g.state === 'warm' ? ', nearly full' : ''}${g.tick !== null ? `, the surplus rule acts at ${Math.round(g.tick * g.capacity)}` : ''}`
-  const fill = h('span', { class: 'fill' }, h('i', { style: { width: `${Math.round(g.fill * 100)}%` } }))
-  if (g.tick !== null) fill.append(h('b', { class: 'tick', style: { left: `${(g.tick * 100).toFixed(1)}%` } }))
   return h('button', {
     class: 'good ' + g.state, type: 'button', 'aria-label': `${name}: ${words}`,
     onClick: () => app.open({ kind: 'goodActions', settlement: st.id, good: g.good }),
   },
     h('span', { class: 'on-shelf' }, goodMark(g.good, 'shelf')),
     h('span', { class: 'n' }, fmt(g.stock), change !== 0 ? h('small', { class: change > 0 ? 'gain' : 'loss' }, signed(change)) : null),
-    fill,
+    fillBar(g.fill, g.state, g.tick),
   )
 }
 

@@ -9,7 +9,7 @@ import { workableTiles, tileOffers, tileYield, passageCost, goldPassageCost, bui
 import { previewProduction, buildable, buildingName, storageCapacity, isCoastalSettlement, canStart, foundingProblem, surplusRuleFor } from '../sim/settlement'
 import { neighbours8, isLand, dist } from '../sim/worldgen'
 import { turnsToCoast } from '../sim/autopilot'
-import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, recompute } from '../sim/market'
+import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, consignPreview, dumpedGoods } from '../sim/market'
 import { maxMoves, cargoCapacity, equipCost, isHull, isArmed, unitAttack, unitDefence } from '../sim/units'
 import { sightMask } from '../sim/fog'
 import { signatoryList } from '../sim/grievance'
@@ -19,7 +19,7 @@ import { h, button, row, muted, fmt, signed, plural } from './dom'
 import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS, tileLook, tileWords } from '../render/tiles'
 import {
   GOOD_WORDS, ringCells, ringPreview, tileCandidates, buildingCandidates, standingWords, jobWords, goodWord,
-  takesWorkers, type Candidate,
+  takesWorkers, ruleStarts, type Candidate,
 } from './selectors'
 import { settlementScreen, terrainLayers, tileGoodOrder } from './settlement'
 import * as Save from '../io/save'
@@ -27,6 +27,11 @@ import * as Telemetry from '../io/telemetry'
 import type { App, Authoring } from './app'
 import type { RoutePlan } from '../sim/route'
 import { oddsWords } from './route'
+import { icon, isGood, SEASON_ICONS, type IconName } from './icons'
+import { season } from '../sim/turn'
+import { goodMark } from './pictures'
+import { priceGauge, fillBar } from './meters'
+import { STORE_WARM } from './theme'
 import type { Action } from '../sim/actions'
 
 export type SheetSpec =
@@ -59,6 +64,24 @@ function header(app: App, title: (HTMLElement | string)[] | string, sub?: string
     button('‹', () => app.back(), 'back'),
     h('div', { class: 'sheet-title' }, h('div', { class: 'h' }, title), sub ? muted(sub) : null),
   )
+}
+
+/** A sheet's head led by a picture of what it is about (art direction brief section 11a): a good's
+ *  icon at hero size, a building's drawing, a unit's, a banner. The title and the line under it as
+ *  `header` has them, and an aside at the right for the one figure that matters most there. */
+function heroHeader(app: App, pic: Element, title: Kids, sub?: Kids, aside?: Kids): HTMLElement {
+  return h('div', { class: 'sheet-head hero' },
+    button('‹', () => app.back(), 'back'),
+    h('span', { class: 'hero-pic' }, pic),
+    h('div', { class: 'sheet-title' }, h('div', { class: 'h' }, title), sub ? h('div', { class: 'muted sub' }, sub) : null),
+    aside ? h('div', { class: 'aside' }, aside) : null,
+  )
+}
+
+/** An icon and a figure, the word for it said to a screen reader and shown nowhere: for a dense row
+ *  of numbers, where the icon and the number are enough (rule 3). */
+function fig(name: IconName, value: string, word: string, cls = ''): HTMLElement {
+  return h('span', { class: 'fig' + (cls ? ' ' + cls : '') }, icon(name, 'pill'), h('b', {}, value), h('span', { class: 'sr' }, ` ${word}`))
 }
 
 function T(app: App, key: string, label?: string): HTMLElement {
@@ -285,8 +308,27 @@ function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HT
   const ok = canConsign(s, st)
   const o = st.orders
   const others = s.settlements.filter(x => x.owner === 0 && x.id !== st.id)
-  const panel = h('div', { class: 'panel' }, header(app, [T(app, g, GOOD_NAMES[g])], `${st.stock[g]} of ${cap} held at ${st.name}${traded ? ` · ${sellPrice(s, g)} a unit` : ''}`))
-  if (g !== 'food' && st.stock[g] > cap) panel.append(h('p', { class: 'warn' }, 'Above the storage cap, so the excess spoils at the end of the turn.'))
+  // food's store is the bank toward the next colonist, as the shelf has it; everything else is what
+  // the storehouse holds against its capacity, with a tick where the surplus rule starts to sell
+  const food = g === 'food'
+  const held = food ? st.foodStore : st.stock[g]
+  const whole = food ? C.labour.granaryThreshold : cap
+  const rule = surplusRuleFor(st, g)
+  const starts = ruleStarts(s, st, g)
+  const state = !food && held > cap ? 'spoils' : !food && held >= STORE_WARM * cap ? 'warm' : 'plain'
+  const panel = h('div', { class: 'panel' }, heroHeader(app, goodMark(g, 'hero'), [T(app, g, GOOD_NAMES[g])],
+    food ? `${fmt(held)} banked of ${whole} toward the next colonist at ${st.name}` : `${fmt(held)} of ${whole} held at ${st.name}`))
+  const store = h('div', { class: 'meter' },
+    fillBar(held / whole, state, starts !== null ? Math.min(1, starts / whole) : null, 'wide'),
+    h('div', { class: 'meter-words' },
+      h('span', {}, food ? 'Banked' : 'Held', ' ', h('b', {}, fmt(held)), ` of ${whole}`),
+      starts !== null ? h('span', { class: 'rule-at' }, h('i', { class: 'tick-key' }), `${RULE_VERBS[rule.destination.kind] ?? 'Sold'} from ${starts}`) : null,
+    ))
+  panel.append(store)
+  if (traded) panel.append(h('div', { class: 'meter' },
+    priceGauge(s, g, { wide: true }),
+    h('div', { class: 'meter-words' }, h('span', {}, icon('coin', 'pill'), 'The Company pays ', h('b', {}, String(sellPrice(s, g))), ' and asks ', h('b', {}, String(buyPrice(s, g)))))))
+  if (!food && st.stock[g] > cap) panel.append(h('p', { class: 'warn' }, 'Above the storage cap, so the excess spoils at the end of the turn.'))
   const acts = h('div', { class: 'row' })
   if (traded && ok.ok && st.stock[g] > 0) acts.append(button('Consign', () => app.open({ kind: 'consign', settlement: st.id, good: g }), 'primary'))
   if (traded && ok.ok) acts.append(button('Buy', () => app.open({ kind: 'buy', settlement: st.id, good: g }), 'small'))
@@ -295,7 +337,6 @@ function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HT
   if (!ok.ok && ok.reason) panel.append(muted(ok.reason))
   // this good's own surplus rule, over the settlement's: consign, hold, or send, above a threshold
   // of its own (DECISIONS.md 159). Clearing it puts the settlement's rule back
-  const rule = surplusRuleFor(st, g)
   const word = GOOD_NAMES[g].toLowerCase()
   const setRule = (r: GoodRule | null, label: string) => app.dispatch({ t: 'setGoodRule', settlement: st.id, good: g, rule: r }, label)
   const keep = (dest: SurplusDestination) => ({ destination: dest, ...(o.goods?.[g]?.threshold !== undefined ? { threshold: o.goods[g]!.threshold } : {}) })
@@ -305,8 +346,8 @@ function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HT
       ? `A rule for ${word} alone: ${destinationWords(s, rule.destination)} above ${rule.threshold}.`
       : `The settlement's rule: ${destinationWords(s, rule.destination)} above ${rule.threshold}, ${word} included.`),
     h('div', { class: 'chips' },
-      h('button', { class: on(rule.destination.kind === 'hold'), type: 'button', onClick: () => setRule(keep({ kind: 'hold' }), `Hold ${word}`) }, 'hold it'),
-      h('button', { class: on(rule.destination.kind === 'consign'), type: 'button', onClick: () => setRule(keep({ kind: 'consign' }), `Consign ${word}`) }, 'consign it'),
+      h('button', { class: on(rule.destination.kind === 'hold'), type: 'button', onClick: () => setRule(keep({ kind: 'hold' }), `Hold ${word}`) }, icon('crate', 'pill'), 'hold it'),
+      h('button', { class: on(rule.destination.kind === 'consign'), type: 'button', onClick: () => setRule(keep({ kind: 'consign' }), `Consign ${word}`) }, icon('coin', 'pill'), 'consign it'),
       others.map(x => h('button', { class: on(rule.destination.kind === 'ship' && rule.destination.settlement === x.id), type: 'button', onClick: () => setRule(keep({ kind: 'ship', settlement: x.id }), `Send ${word} to ${x.name}`) }, `send to ${x.name}`)),
       peoplesInReach(s, st).map(pp => h('button', { class: on(rule.destination.kind === 'offer' && rule.destination.predecessor === pp.id), type: 'button', onClick: () => setRule(keep({ kind: 'offer', predecessor: pp.id }), `Offer ${word} to ${pp.name}`) }, `offer to ${pp.name}`)),
     ),
@@ -316,6 +357,9 @@ function goodActionsSheet(app: App, s: GameState, st: Settlement, g: GoodId): HT
   ))
   return panel
 }
+
+/** What a surplus rule does at the tick on the store's bar, in a word. */
+const RULE_VERBS: Partial<Record<SurplusDestination['kind'], string>> = { consign: 'Sold', ship: 'Sent on', offer: 'Offered' }
 
 /** The surplus threshold chips, shared by the orders sheet and the good panel. */
 const SURPLUS_THRESHOLDS = [20, 40, 60, 100, 150]
@@ -440,39 +484,54 @@ function ordersSheet(app: App, s: GameState, st: Settlement): HTMLElement {
 }
 
 // ---- market ------------------------------------------------------------------------------------
+// The market board, build brief phase 2: the goods as a grid of tiles, each the good's icon and
+// name, what is held here, what the Company pays and asks beside the coin, and a gauge of where its
+// price stands between its floor and its ceiling, so a dumped good is visibly dumped. Sell and Buy
+// stay on the tile. The head carries the Company's banner in the Company's colour and its charge.
 function marketSheet(app: App, s: GameState, st: Settlement): HTMLElement {
   const ok = canConsign(s, st)
   const loss = freightLoss(s, st)
-  const panel = h('div', { class: 'panel' }, header(app, [T(app, 'company', 'The Company market')], `${st.name} · charge ${Math.round(s.company.charge * 100)} per cent${loss > 0 ? `, freight ${Math.round(loss * 100)} per cent` : ''}`))
+  const charge = Math.round(s.company.charge * 100)
+  const panel = h('div', { class: 'panel' }, heroHeader(app, icon('banner', 'tile', 'company-banner'),
+    [T(app, 'company', 'The Company market')],
+    `${st.name}${loss > 0 ? ` · freight takes ${Math.round(loss * 100)}%` : ''}`,
+    h('span', { class: 'charge', onClick: () => app.open({ kind: 'glossary', key: 'charge' }) }, h('b', {}, `${charge}%`), h('small', {}, 'charge'))))
   if (!ok.ok) panel.append(h('p', { class: 'warn' }, ok.reason ?? 'Cannot consign from here.'))
-  if (s.company.embargoed.length) panel.append(h('p', { class: 'warn' }, `Embargoed: ${s.company.embargoed.join(', ')}.`))
+  if (s.company.embargoed.length) panel.append(h('p', { class: 'warn' }, `Embargoed: ${s.company.embargoed.map(g => GOOD_NAMES[g].toLowerCase()).join(', ')}.`))
   const due = s.company.payments.filter(p => p.due > s.turn)
-  if (due.length) panel.append(muted(`${due.reduce((a, p) => a + p.gold, 0)} gold on the water, due over ${Math.max(...due.map(p => p.due - s.turn))} turns.`))
-  const rows = GOODS.filter(g => C.market.goods[g].traded).map(g => {
-    const emb = isEmbargoed(s, g)
-    return h('div', { class: 'line' },
-      h('span', { class: 'l' }, T(app, g, GOOD_NAMES[g]), emb ? h('span', { class: 'warn' }, ' embargo') : ''),
-      h('span', { class: 'r' }, muted(`${st.stock[g]} held · `), `${sellPrice(s, g)} / ${buyPrice(s, g)}`,
-        ' ', ok.ok && st.stock[g] > 0 && !emb ? button('Sell', () => app.open({ kind: 'consign', settlement: st.id, good: g }), 'tiny') : '',
-        ' ', ok.ok ? button('Buy', () => app.open({ kind: 'buy', settlement: st.id, good: g }), 'tiny ghost') : ''),
-    )
-  })
-  panel.append(section('Sells at / buys at', ...rows))
+  if (due.length) panel.append(h('p', { class: 'muted on-water' }, icon('coin', 'pill'), `${due.reduce((a, p) => a + p.gold, 0)} gold on the water, due over ${plural(Math.max(...due.map(p => p.due - s.turn)), 'turn')}.`))
+  const dumped = new Set(dumpedGoods(s).map(d => d.good))
+  panel.append(h('div', { class: 'board' }, GOODS.filter(g => C.market.goods[g].traded).map(g => marketTile(app, s, st, g, ok.ok, dumped.has(g)))))
   return panel
 }
 
-function walkPreview(s: GameState, g: GoodId, amount: number): { first: number; last: number; gold: number } {
-  const e = { ...s.market.tables[0][g] }
-  const first = e.price
-  let gold = 0, remaining = amount
-  while (remaining > 0) {
-    const lot = Math.min(C.market.lotSize, remaining)
-    gold += e.price * lot
-    e.pressure += lot
-    recompute(e, g)
-    remaining -= lot
-  }
-  return { first, last: e.price, gold }
+/** One good on the market board. */
+function marketTile(app: App, s: GameState, st: Settlement, g: GoodId, canTrade: boolean, dumped: boolean): HTMLElement {
+  const emb = isEmbargoed(s, g)
+  const held = st.stock[g]
+  const sell = sellPrice(s, g), buy = buyPrice(s, g)
+  const word = GOOD_NAMES[g].toLowerCase()
+  return h('div', { class: 'mtile' + (dumped ? ' dumped' : '') + (emb ? ' embargoed' : '') },
+    h('div', { class: 'mt-head' },
+      goodMark(g, 'tile'),
+      h('div', { class: 'mt-name' }, T(app, g, GOOD_NAMES[g]), h('span', { class: 'held' }, emb ? 'embargoed' : held > 0 ? `${fmt(held)} held` : 'none held')),
+    ),
+    h('div', { class: 'mt-price' }, icon('coin', 'pill'), h('b', {}, String(sell)), h('span', { class: 'ask' }, `· ${buy}`),
+      h('span', { class: 'sr' }, ` The Company pays ${sell} a unit and asks ${buy}.`)),
+    priceGauge(s, g),
+    canTrade ? h('div', { class: 'mt-acts' },
+      held > 0 && !emb ? h('button', { class: 'btn tiny', type: 'button', 'aria-label': `Sell ${word} at ${sell}`, onClick: () => app.open({ kind: 'consign', settlement: st.id, good: g }) }, 'Sell') : null,
+      h('button', { class: 'btn tiny ghost', type: 'button', 'aria-label': `Buy ${word} at ${buy}`, onClick: () => app.open({ kind: 'buy', settlement: st.id, good: g }) }, 'Buy'),
+    ) : null,
+  )
+}
+
+/** What a trade comes to, as two figures: what goes and what comes back, each its icon and number. */
+function deal(n: number, g: GoodId, gold: number, goldWords: string): HTMLElement {
+  return h('div', { class: 'deal' },
+    h('span', { class: 'side' }, h('b', {}, fmt(n)), goodMark(g, 'tile')),
+    h('span', { class: 'side gold' }, icon('coin', 'tile'), h('b', {}, fmt(gold)), h('small', {}, goldWords)),
+  )
 }
 
 function consignSheet(app: App, s: GameState, st: Settlement, g: GoodId): HTMLElement {
@@ -481,20 +540,22 @@ function consignSheet(app: App, s: GameState, st: Settlement, g: GoodId): HTMLEl
   const smuggling = !!(s.declaration?.declared && !s.declaration.won)
   const rate = (1 - s.company.charge) * (1 - freightLoss(s, st)) * (smuggling ? C.market.smugglerRate : 1)
   const preview = h('div', { class: 'preview' })
-  const slider = h('input', { type: 'range', min: 0, max: held, step: 1, value: amount }) as HTMLInputElement
+  const slider = h('input', { type: 'range', min: 0, max: held, step: 1, value: amount, 'aria-label': `How much ${GOOD_NAMES[g].toLowerCase()} to consign` }) as HTMLInputElement
   const render = () => {
-    const p = walkPreview(s, g, amount)
+    // the market's own formula, lot by lot, on a copy: where the price would stand after this lot
+    const p = consignPreview(s, g, amount)
     preview.replaceChildren(
-      h('div', { class: 'big' }, `${amount} ${GOOD_NAMES[g]}`),
-      h('div', {}, `Price ${p.first}${p.last !== p.first ? ` falling to ${p.last}` : ''} · ${Math.round(p.gold * rate)} gold after the charge, due in ${C.market.crossingTurns[s.settings.crossing]} turns`),
-      p.last < p.first ? h('div', { class: 'warn' }, `Each lot of ${C.market.lotSize} moves the price. ${amount > C.market.lotSize * 3 ? 'Sending less now and more later would earn more.' : ''}`) : muted('Below the volume that moves the price.'),
+      deal(amount, g, Math.round(p.gross * rate), `gold after the charge, due in ${plural(C.market.crossingTurns[s.settings.crossing], 'turn')}`),
+      priceGauge(s, g, { ghost: amount > 0 ? p.after : null, wide: true }),
+      h('div', { class: 'small-print' }, `Price ${p.first}${p.after !== p.first ? `, falling to ${p.after}` : ''}.`),
+      p.after < p.first ? h('div', { class: 'warn small-print' }, `Each lot of ${C.market.lotSize} moves the price. ${amount > C.market.lotSize * 3 ? 'Sending less now and more later would earn more.' : ''}`) : h('div', { class: 'muted small-print' }, 'Below the volume that moves the price.'),
     )
     slider.value = String(amount)
   }
   slider.addEventListener('input', () => { amount = Number(slider.value); render() })
   render()
   const chips = h('div', { class: 'chips' }, [25, 50, 100, held].filter((v, i, a) => v > 0 && v <= held && a.indexOf(v) === i).map(v => h('button', { class: 'chip', type: 'button', onClick: () => { amount = v; render() } }, v === held ? `all ${held}` : String(v))))
-  return h('div', { class: 'panel' }, header(app, [T(app, 'consign'), ' ', GOOD_NAMES[g]], `${held} held at ${st.name}`), preview, slider, chips,
+  return h('div', { class: 'panel' }, heroHeader(app, goodMark(g, 'hero'), [T(app, 'consign'), ' ', GOOD_NAMES[g].toLowerCase()], `${held} held at ${st.name}`), preview, slider, chips,
     row(button('Consign', () => { if (amount > 0 && app.dispatch({ t: 'consign', settlement: st.id, good: g, amount }, `${amount} ${g} consigned`)) app.back() }, 'primary')))
 }
 
@@ -504,11 +565,19 @@ function buySheet(app: App, s: GameState, st: Settlement, g: GoodId): HTMLElemen
   const can = Math.floor(gold / Math.max(1, price))
   let amount = Math.min(can, 10)
   const preview = h('div', { class: 'preview' })
-  const slider = h('input', { type: 'range', min: 0, max: Math.max(1, can), step: 1, value: amount }) as HTMLInputElement
-  const render = () => { preview.replaceChildren(h('div', { class: 'big' }, `${amount} ${GOOD_NAMES[g]}`), h('div', {}, `${amount * price} gold of ${fmt(gold)}`)) }
+  const slider = h('input', { type: 'range', min: 0, max: Math.max(1, can), step: 1, value: amount, 'aria-label': `How much ${GOOD_NAMES[g].toLowerCase()} to buy` }) as HTMLInputElement
+  // buying from the Company does not move its price (buyFromCompany in src/sim/market.ts), so the
+  // gauge has no ghost: it shows where the price stands, and what the Company asks above it
+  const render = () => {
+    preview.replaceChildren(
+      deal(amount, g, amount * price, `gold of ${fmt(gold)}`),
+      priceGauge(s, g, { wide: true }),
+      h('div', { class: 'muted small-print' }, `The Company asks ${price}, ${price - sellPrice(s, g)} above what it pays. Buying does not move its price.`),
+    )
+  }
   slider.addEventListener('input', () => { amount = Number(slider.value); render() })
   render()
-  return h('div', { class: 'panel' }, header(app, ['Buy ', GOOD_NAMES[g]], `${price} each from the Company`), preview, slider,
+  return h('div', { class: 'panel' }, heroHeader(app, goodMark(g, 'hero'), ['Buy ', GOOD_NAMES[g].toLowerCase()], `${price} each from the Company`), preview, slider,
     row(button('Buy', () => { if (amount > 0 && app.dispatch({ t: 'buy', settlement: st.id, good: g, amount }, `${amount} ${g} bought`)) app.back() }, 'primary')))
 }
 
@@ -820,11 +889,21 @@ function demandSheet(app: App, s: GameState): HTMLElement {
     row(button('Accept', () => { if (app.dispatch({ t: 'answerDemand', accept: true }, 'Demand accepted')) app.back() }, 'small'), button('Refuse', () => { if (app.dispatch({ t: 'answerDemand', accept: false }, 'Demand refused')) app.back() }, 'danger')))
 }
 
+/** The glossary's entries that are something the player could see or hold, by the icon that draws
+ *  them; every good is its own. */
+const TERM_PICTURES: Record<string, IconName> = {
+  word: 'word', passage: 'word', grievance: 'grievance', resolve: 'resolve', colonist: 'colonist', frame: 'frame',
+  signatory: 'seal', charter: 'banner', company: 'banner', storage: 'crate', spoilage: 'crate', hull: 'sail',
+  declaration: 'resolve', fleet: 'cannon', consign: 'coin', charge: 'coin',
+}
+
 function glossarySheet(app: App, s: GameState, key: string): HTMLElement {
   const t = term(key)
   if (!t) return h('div', { class: 'panel' }, header(app, key), muted('No entry.'))
   const state = t.state ? t.state(s) : ''
-  return h('div', { class: 'panel' }, header(app, t.title), h('p', {}, app.withTerms(t.text)), state ? h('p', { class: 'state' }, state) : null,
+  const name: IconName | null = isGood(key) ? key : key === 'turn' || key === 'season' ? SEASON_ICONS[season(s.turn)] : TERM_PICTURES[key] ?? null
+  const head = name ? heroHeader(app, icon(name, 'tile', name === 'banner' ? 'company-banner' : ''), t.title) : header(app, t.title)
+  return h('div', { class: 'panel' }, head, h('p', {}, app.withTerms(t.text)), state ? h('p', { class: 'state' }, state) : null,
     h('div', { class: 'chips' }, Object.keys(TERMS).filter(k => k !== key).slice(0, 60).map(k => h('button', { class: 'chip small', type: 'button', onClick: () => app.open({ kind: 'glossary', key: k }) }, TERMS[k].title))))
 }
 

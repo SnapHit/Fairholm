@@ -1261,11 +1261,14 @@ export class App {
       h('span', { class: 'term fig', role: 'button', 'aria-label': word, onClick: () => this.open({ kind: 'glossary', key }) }, icon(name, 'hud'), h('span', { class: 'u' }, value))
     this.hud.append(
       h('div', { class: 'intent', onClick: () => this.open({ kind: 'intent' }) }, s.intent),
+      // the clock keeps to one line and gives up the end of its words before it wraps; the purse
+      // takes the far end of that line, or the start of one of its own when there is no room
       h('div', { class: 'status' },
-        h('button', { class: 'menu', type: 'button', 'aria-label': 'menu', onClick: () => this.open({ kind: 'menu' }) }, '⋯'),
-        figure('turn', SEASON_ICONS[season(s.turn)], `Turn ${s.turn}`, `Turn ${s.turn}, ${SEASON_NAMES[season(s.turn)]}`),
-        h('span', { class: 'when muted' }, `year ${year(s.turn)}, ${SEASON_NAMES[season(s.turn)]}`),
-        h('span', { class: 'spacer' }),
+        h('span', { class: 'clock' },
+          h('button', { class: 'menu', type: 'button', 'aria-label': 'menu', onClick: () => this.open({ kind: 'menu' }) }, '⋯'),
+          figure('turn', SEASON_ICONS[season(s.turn)], `Turn ${s.turn}`, `Turn ${s.turn}, ${SEASON_NAMES[season(s.turn)]}`),
+          h('span', { class: 'when muted' }, `year ${year(s.turn)}, ${SEASON_NAMES[season(s.turn)]}`),
+        ),
         h('span', { class: 'purse' },
           figure('gold', 'coin', fmt(ch.gold), `${fmt(ch.gold)} gold`),
           figure('word', 'word', fmt(ch.word), `${fmt(ch.word)} Word`),

@@ -120,6 +120,25 @@ export function consign(s: GameState, st: Settlement, g: GoodId, amount: number,
   return result
 }
 
+/** What consigning `amount` of a good would do to its price, worked lot by lot as `consign` works it
+ *  but on a copy of the price: what the first lot fetches, what the last lot fetches, the price left
+ *  standing after it, and what the lots fetch before the charge and the freight. Pure and read-only:
+ *  nothing in the state changes. For the interface's preview of a consignment. */
+export function consignPreview(s: GameState, g: GoodId, amount: number, charter = 0): { first: number; last: number; after: number; gross: number } {
+  const e = { ...s.market.tables[charter][g] }
+  const first = e.price
+  let last = e.price, gross = 0, remaining = Math.max(0, Math.floor(amount))
+  while (remaining > 0) {
+    const lot = Math.min(C.market.lotSize, remaining)
+    last = e.price
+    gross += e.price * lot
+    e.pressure += lot
+    recompute(e, g)
+    remaining -= lot
+  }
+  return { first, last, after: e.price, gross }
+}
+
 export function buyFromCompany(s: GameState, st: Settlement, g: GoodId, amount: number): number {
   const price = buyPrice(s, g)
   const ch = s.charters[0]
