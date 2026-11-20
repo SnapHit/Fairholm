@@ -3091,6 +3091,12 @@ the charge as a large percentage.
 **Why.** The brief, phase 2. The gap is the market's own "below where it would be with nothing
 sold" from the dumping card, so the board and the card never disagree.
 
+**Changed in review, the same day.** The two figures carry their words, pays and asks, as the good's
+sheet says them: order alone did not say which was which once the table's column heading had gone.
+On a narrow tile what it asks wraps under what it pays. And in a list of people the person keeps
+the width of their own words, so a long line about what they would become wraps instead of
+crowding them out on a 320 point screen.
+
 ### 181. consignPreview is the one helper in the simulation, and buying moves no price
 
 **What.** `consignPreview(s, good, amount)` in `src/sim/market.ts` walks the lots `consign` walks,

@@ -433,9 +433,10 @@ p { margin: var(--space-3) 0; }
 .mt-name { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .mt-name .term { font-weight: var(--weight-medium); overflow-wrap: anywhere; }
 .mt-name .held { font-size: var(--text-tiny); color: var(--ink-dim); white-space: nowrap; }
-.mt-price { display: flex; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
-.mt-price b { font-size: var(--text-head); line-height: var(--leading-tight); font-weight: var(--weight-strong); }
-.mt-price .ask { font-size: var(--text-small); color: var(--ink-dim); }
+.mt-price { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
+/* what it pays stands a little apart from what it asks, which wraps under it on a narrow tile */
+.mt-price b { font-size: var(--text-head); line-height: var(--leading-tight); font-weight: var(--weight-strong); margin-right: var(--space-4); }
+.mt-price .ask { font-size: var(--text-small); color: var(--ink-dim); white-space: nowrap; }
 .mtile.dumped .mt-price b { color: var(--loss); }
 .mtile.embargoed .held { color: var(--warn); }
 .mtile.embargoed .mt-head .ic, .mtile.embargoed .mt-price { opacity: var(--ic-faint); }
@@ -481,7 +482,9 @@ p { margin: var(--space-3) 0; }
 .now { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-small); color: var(--ink-dim); }
 .now small { font-size: var(--text-small); }
 .now.idle { color: var(--warn); }
-.person-row .here { flex: none; }
+/* the person keeps the width of their own words; what they would become here gives way and wraps */
+.person-row .who { min-width: auto; }
+.person-row .here { flex: 0 1 auto; min-width: 0; text-align: right; }
 .person-row .acts { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); max-width: var(--acts-max); }
 .person-row.holder { border-bottom-color: transparent; }
 .fig.would b { font-weight: var(--weight-strong); }

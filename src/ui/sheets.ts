@@ -627,7 +627,10 @@ function marketTile(app: App, s: GameState, st: Settlement, g: GoodId, canTrade:
       goodMark(g, 'tile'),
       h('div', { class: 'mt-name' }, T(app, g, GOOD_NAMES[g]), h('span', { class: 'held' }, emb ? 'embargoed' : held > 0 ? `${fmt(held)} held` : 'none held')),
     ),
-    h('div', { class: 'mt-price' }, icon('coin', 'pill'), h('b', {}, String(sell)), h('span', { class: 'ask' }, `· ${buy}`),
+    // what it pays, large, and what it asks, small, each with its word, as the good's sheet says them
+    h('div', { class: 'mt-price' }, icon('coin', 'pill'),
+      h('span', { class: 'ask', 'aria-hidden': 'true' }, 'pays'), h('b', { 'aria-hidden': 'true' }, String(sell)),
+      h('span', { class: 'ask', 'aria-hidden': 'true' }, `asks ${buy}`),
       h('span', { class: 'sr' }, ` The Company pays ${sell} a unit and asks ${buy}.`)),
     priceGauge(s, g),
     canTrade ? h('div', { class: 'mt-acts' },
