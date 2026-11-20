@@ -19,7 +19,7 @@ import { h, button, row, muted, fmt, signed, plural } from './dom'
 import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS, tileLook, tileWords } from '../render/tiles'
 import {
   GOOD_WORDS, ringCells, ringPreview, tileCandidates, buildingCandidates, standingWords, jobWords, goodWord,
-  takesWorkers, ruleStarts, catalogue, makesIn, goodsShelf, buildingSlots, type Candidate, type CatalogueEntry,
+  takesWorkers, ruleStarts, catalogue, makesIn, goodsShelf, buildingSlots, personTitle, type Candidate, type CatalogueEntry,
 } from './selectors'
 import { settlementScreen, terrainLayers, tileGoodOrder } from './settlement'
 import * as Save from '../io/save'
@@ -31,7 +31,7 @@ import { icon, isGood, SEASON_ICONS, type IconName } from './icons'
 import { season } from '../sim/turn'
 import { goodMark, buildingPicture, unitPicture, personPicture, intoArrow, dispatchIcon, queueIcon } from './pictures'
 import { priceGauge, fillBar, pips, sealRow, relationTrack } from './meters'
-import { STORE_WARM, PLACE_BOX_REM, PLACE_TILES_SHOWN } from './theme'
+import { STORE_WARM, PLACE_BOX_REM, PLACE_TILES_SHOWN, RING_PICTURES_KEPT } from './theme'
 import { ringPixels } from './ring'
 import { RING_PICTURE } from '../render/look'
 import type { Action } from '../sim/actions'
@@ -428,11 +428,6 @@ export function destinationWords(s: GameState, d: SurplusDestination): string {
   }
 }
 
-/** A colonist in a title: "A debtor", "A free colonist", "A master of timber". */
-function personTitle(c: Colonist): string {
-  return c.standing === 'debtor' || c.standing === 'master' ? `A ${standingWords(c)}` : `A ${c.standing} colonist`
-}
-
 /** One colonist's places, the other path into assignment (settlement screen brief section 3): every
  *  tile they could work, as what it gives them, best first, and every building that takes workers,
  *  as its picture with what they would make there and how many work there now. */
@@ -575,19 +570,21 @@ function ordersSheet(app: App, s: GameState, st: Settlement): HTMLElement {
   const others = s.settlements.filter(x => x.owner === 0 && x.id !== st.id)
   const panel = h('div', { class: 'panel' }, header(app, 'Standing orders', st.name),
     h('p', { class: 'muted' }, 'The settlement follows these by itself. Anything you set by hand is left alone.'))
-  panel.append(section('Purpose', h('div', { class: 'chips' }, PURPOSES.map(p => h('button', { class: 'chip' + (o.purpose === p ? ' on' : ''), type: 'button', onClick: () => set('purpose', p, `Purpose: ${p}`) }, p)))))
+  // a purpose that is a good wears its icon; industry the tooling it runs on, civic the grievance
+  const purposeIcon = (p: Purpose): IconName => isGood(p) ? p : p === 'industry' ? 'tooling' : 'grievance'
+  panel.append(section('Purpose', h('div', { class: 'chips' }, PURPOSES.map(p => h('button', { class: 'chip' + (o.purpose === p ? ' on' : ''), type: 'button', onClick: () => set('purpose', p, `Purpose: ${p}`) }, icon(purposeIcon(p), 'pill'), p)))))
   const thresholds = SURPLUS_THRESHOLDS
   const goodRules = Object.entries(o.goods ?? {}) as [GoodId, GoodRule][]
   panel.append(section('Surplus',
     h('div', { class: 'chips' }, thresholds.map(t => h('button', { class: 'chip' + (o.surplus.threshold === t ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, threshold: t }, `Surplus above ${t}`) }, `above ${t}`))),
     h('div', { class: 'chips' },
-      h('button', { class: 'chip' + (o.surplus.destination.kind === 'consign' ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'consign' } }, 'Surplus: consign') }, 'consign'),
-      h('button', { class: 'chip' + (o.surplus.destination.kind === 'hold' ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'hold' } }, 'Surplus: hold') }, 'hold'),
+      h('button', { class: 'chip' + (o.surplus.destination.kind === 'consign' ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'consign' } }, 'Surplus: consign') }, icon('coin', 'pill'), 'consign'),
+      h('button', { class: 'chip' + (o.surplus.destination.kind === 'hold' ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'hold' } }, 'Surplus: hold') }, icon('crate', 'pill'), 'hold'),
       others.map(x => h('button', { class: 'chip' + (o.surplus.destination.kind === 'ship' && o.surplus.destination.settlement === x.id ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'ship', settlement: x.id } }, `Surplus: ship to ${x.name}`) }, `ship to ${x.name}`)),
       peoplesInReach(s, st).map(pp => h('button', { class: 'chip' + (o.surplus.destination.kind === 'offer' && o.surplus.destination.predecessor === pp.id ? ' on' : ''), type: 'button', onClick: () => set('surplus', { ...o.surplus, destination: { kind: 'offer', predecessor: pp.id } }, `Surplus: offer to ${pp.name}`) }, `offer to ${pp.name}`)),
     ),
     goodRules.length ? h('p', { class: 'muted' }, 'Rules for one good, set from the goods strip:') : '',
-    ...goodRules.map(([g, r]) => line([GOOD_NAMES[g], muted(` · ${destinationWords(s, r.destination)} above ${r.threshold ?? o.surplus.threshold}`)], 'remove', () => app.dispatch({ t: 'setGoodRule', settlement: st.id, good: g, rule: null }, `${GOOD_NAMES[g]}: the settlement's rule`))),
+    ...goodRules.map(([g, r]) => line([h('span', { class: 'ic-word' }, goodMark(g), GOOD_NAMES[g]), muted(` · ${destinationWords(s, r.destination)} above ${r.threshold ?? o.surplus.threshold}`)], 'remove', () => app.dispatch({ t: 'setGoodRule', settlement: st.id, good: g, rule: null }, `${GOOD_NAMES[g]}: the settlement's rule`))),
   ))
   panel.append(section('Growth', h('div', { class: 'chips' },
     h('button', { class: 'chip' + (o.growth.kind === 'keep' ? ' on' : ''), type: 'button', onClick: () => set('growth', { kind: 'keep' }, 'Growth: keep') }, 'keep'),
@@ -991,17 +988,20 @@ function foundPreview(app: App, s: GameState, tile: number, problem: string | nu
     if (c.tile === null || !c.look) return h('div', { class: 'cell dim', 'aria-label': c.words }, h('div', { class: 'label' }, c.words))
     const el = h('div', { class: 'cell' + (c.reason && !c.centre ? ' bad' : ''), 'aria-label': `${c.words}${c.best ? `, ${goodWord(c.best.good as GoodId)} ${c.best.yield}` : ''}` }, ...terrainLayers(c.look))
     if (c.centre) el.append(h('div', { class: 'centre' }, problem ? '✕' : '●'))
-    else if (c.best && !c.reason) el.append(h('div', { class: 'label' }, `${goodWord(c.best.good as GoodId)} ${c.best.yield}`))
+    else if (c.best && !c.reason) el.append(h('div', { class: 'label' }, goodMark(c.best.good, 'pill'), h('b', {}, String(c.best.yield))))
     return el
   }))
   const yields = cells.filter(c => c.best && !c.reason && !c.centre).reduce((acc, c) => { acc[c.best!.good] = (acc[c.best!.good] ?? 0) + c.best!.yield; return acc }, {} as Partial<Record<TileGood, number>>)
-  const words = Object.entries(yields).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).slice(0, 4).map(([g, v]) => `${v} ${GOOD_NAMES[g].toLowerCase()}`).join(', ')
+  const best = (Object.entries(yields) as [TileGood, number][]).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).slice(0, 4)
+  const words = best.map(([g, v]) => `${v} ${GOOD_NAMES[g].toLowerCase()}`).join(', ')
   const about = h('div', { class: 'about' })
   if (problem) {
     about.append(h('div', { class: 'big warn' }, 'Not here'), h('p', { class: 'muted' }, `${problem[0].toUpperCase()}${problem.slice(1)}. ${problem.startsWith('too close') ? 'Two settlements need two clear tiles between them.' : ''}`))
   } else {
     const t = s.world.tiles[tile]
-    about.append(h('div', { class: 'big' }, tileWords(tileLook(s, tile))), h('p', { class: 'muted' }, `Its best work: ${words || 'little'}.${t.river ? ' Fresh water.' : ''}${neighbours8(s.world.width, s.world.height, tile).some(n => s.world.tiles[n].terrain === 'water') ? ' On the coast, so ships and freight landers come to it.' : ' Inland: it will haul to the coast.'}`))
+    about.append(h('div', { class: 'big' }, tileWords(tileLook(s, tile))))
+    if (best.length) about.append(h('div', { class: 'goods-row', role: 'img', 'aria-label': `Its best work: ${words}.` }, best.map(([g, v]) => h('span', { class: 'fig' }, goodMark(g, 'pill'), h('b', {}, String(v))))))
+    about.append(h('p', { class: 'muted' }, `${best.length ? '' : 'Little to work here.'}${t.river ? ' Fresh water.' : ''}${neighbours8(s.world.width, s.world.height, tile).some(n => s.world.tiles[n].terrain === 'water') ? ' On the coast, so ships and freight landers come to it.' : ' Inland: it will haul to the coast.'}`.trim()))
     about.append(button(label, found, 'primary'))
   }
   return h('div', { class: 'found' }, ring, about)
@@ -1046,11 +1046,31 @@ function placePicture(app: App, s: GameState, tile: number): HTMLElement {
   const zoom = across / PLACE_TILES_SHOWN
   box.style.setProperty('--place-zoom', zoom.toFixed(4))
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-  const canvas = app.scene.canDraw ? app.scene.drawRing(tile, ringPixels(PLACE_BOX_REM * rem * zoom)) : null
+  const px = ringPixels(PLACE_BOX_REM * rem * zoom)
+  // drawn once for what it shows, so a sheet drawn again after a tap draws nothing: the tile, the
+  // turn, the size, the renderer's epoch, and the units and people in sight of it
+  const w = s.world.width
+  const near = new Set([tile, ...neighbours8(w, s.world.height, tile)])
+  const key = [s.seed, tile, s.turn, px, app.scene.epoch,
+    s.units.filter(u => near.has(u.tile)).map(u => `${u.id}.${u.kind}.${u.tile}`).sort().join(','),
+    s.settlements.filter(x => near.has(x.tile)).map(x => `${x.id}.${x.colonists.length}`).join(',')].join('|')
+  let canvas = places.get(key) ?? null
+  if (canvas) { places.delete(key); places.set(key, canvas) }
+  else if (app.scene.canDraw) {
+    canvas = app.scene.drawRing(tile, px)
+    // one taken while a move is drawn shows it half way: shown, not kept
+    if (canvas && !app.scene.moving) {
+      places.set(key, canvas)
+      while (places.size > RING_PICTURES_KEPT) places.delete(places.keys().next().value as string)
+    }
+  }
   if (canvas) box.append(canvas)
   else box.append(h('span', { class: 'cell' }, ...terrainLayers(tileLook(s, tile))))
   return box
 }
+
+/** The places drawn for sheets, most recently used last. */
+const places = new Map<string, HTMLCanvasElement>()
 
 function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
   const t = s.world.tiles[tile]
@@ -1199,7 +1219,7 @@ function authoringSheet(app: App, s: GameState, a: Authoring): HTMLElement {
         app.renderSheet()
       }
       rows.push(h('div', { class: 'line' },
-        h('span', { class: 'l' }, GOOD_NAMES[g], muted(` · ${st.stock[g]} here`)),
+        h('span', { class: 'l' }, h('span', { class: 'ic-word' }, goodMark(g), GOOD_NAMES[g]), muted(` · ${st.stock[g]} here`)),
         h('span', { class: 'chips' },
           h('button', { class: 'chip small' + (loading ? ' on' : ''), type: 'button', onClick: () => set(loading ? 'leave' : 'load') }, 'load'),
           h('button', { class: 'chip small' + (unloading ? ' on' : ''), type: 'button', onClick: () => set(unloading ? 'leave' : 'unload') }, 'unload'),

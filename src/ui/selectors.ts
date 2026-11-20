@@ -383,6 +383,14 @@ export function standingWords(c: Colonist): string {
   return `master of ${sp}`
 }
 
+/** A colonist as the title of a sheet or a card. A standing that is a word for a person leads
+ *  ("A debtor", "A master of timber"); the other two come after the word colonist, never before it as
+ *  a title (`DECISIONS.md` 174 and 189): "A colonist under contract", "A colonist of free standing". */
+export function personTitle(c: Colonist): string {
+  if (c.standing === 'debtor' || c.standing === 'master') return `A ${standingWords(c)}`
+  return c.standing === 'contracted' ? 'A colonist under contract' : 'A colonist of free standing'
+}
+
 /** How many chevrons a colonist's standing is drawn with: none for a debtor, one contracted, two
  *  free, three a master. */
 export function standingLevel(c: Colonist): 0 | 1 | 2 | 3 {

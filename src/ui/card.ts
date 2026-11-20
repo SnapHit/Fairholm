@@ -17,7 +17,7 @@ import { tileOffers, tileYield } from '../sim/labour'
 import { sightMask, unitVisible, settlementKnown } from '../sim/fog'
 import { C } from '../sim/constants'
 import { tileLook, tileWords } from '../render/tiles'
-import { GOOD_WORDS, standingWords } from './selectors'
+import { GOOD_WORDS, standingWords, personTitle } from './selectors'
 import { oddsWords } from './route'
 import { button, plural } from './dom'
 import type { App, UiRoute, Authoring } from './app'
@@ -166,7 +166,7 @@ export function passengerCard(app: App, s: GameState, lander: Unit): Card {
   const r = app.route && app.route.unit === lander.id && ('ashore' in app.route || !app.route.ok) ? app.route : null
   const actions: HTMLElement[] = []
   const card: Card = {
-    title: next ? `A ${standingWords(next)} colonist, aboard` : 'No one aboard',
+    title: next ? `${personTitle(next)}, aboard` : 'No one aboard',
     tag: null,
     line: 'Hold the shore beside the lander, and let go to send them ashore.',
     warn: false,

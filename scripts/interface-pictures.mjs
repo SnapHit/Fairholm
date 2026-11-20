@@ -180,16 +180,30 @@ async function layout(page) {
       }
       if (clipped) cut.push(`${el.className || el.tagName}: "${el.textContent.trim().slice(0, 28)}"`)
     }
-    return { past: past.slice(0, 5), pastCount: past.length, cut: cut.slice(0, 6), cutCount: cut.length, pageScroll: document.documentElement.scrollWidth > W }
+    // every control an icon sits in says what it is in words (art direction brief section 11a, rule
+    // 5): its label, or its text, which must hold a word and not only figures
+    const silent = []
+    const scope = '#sheet.open .body, #overlay.show, #hud, #queuebar'
+    for (const ic of document.querySelectorAll(`${scope.split(', ').map(x => x + ' svg.ic').join(', ')}`)) {
+      if (ic.getAttribute('aria-hidden') !== 'true') silent.push('an icon a screen reader can see')
+      const control = ic.closest('button, [role=button], a')
+      if (!control) continue
+      const name = (control.getAttribute('aria-label') || control.textContent || '').trim()
+      if (!/[A-Za-z]{2,}/.test(name)) silent.push(`${control.className || control.tagName}: "${name.slice(0, 20)}"`)
+    }
+    return { past: past.slice(0, 5), pastCount: past.length, cut: cut.slice(0, 6), cutCount: cut.length, pageScroll: document.documentElement.scrollWidth > W, silent: [...new Set(silent)].slice(0, 4), silentCount: silent.length }
   })
 }
 
 const shotPath = (name) => `${OUT}/${PREFIX}${name}.jpg`
+/** The sheets shot a second screen down: the board, the catalogue, the hulls, equip's units, the
+ *  detail's people and the twelve. */
+const MORE = ['05-market', '09-build', '10-hulls', '11-equip', '16-detail', '21-signatories']
 const wanted = (name) => !ONLY || ONLY.split(',').some(k => name.includes(k))
 
 /** Open a sheet over the map, wait for it, shoot it, and say what the layout check found. A sheet
- *  that scrolls on the owner's phone is shot again a screen further down, as `<name>-more`, so what
- *  is below its fold is seen too. */
+ *  in MORE, whose second screen shows pictures the first does not, is shot again a screen further
+ *  down, as `<name>-more`, when it scrolls on the owner's phone. */
 async function shoot(page, name, spec, wait = 900, more = false) {
   if (!wanted(name)) return
   await page.evaluate((spec) => { const a = window.fairholm; a.closeSheet(); if (spec) a.open(spec) }, spec)
@@ -197,7 +211,7 @@ async function shoot(page, name, spec, wait = 900, more = false) {
   await idle(page)
   await page.screenshot({ path: shotPath(name), type: 'jpeg', quality: 85 })
   const l = await layout(page)
-  note(`  ${name}: past the edge ${l.pastCount}${l.past.length ? ' (' + l.past.join('; ') + ')' : ''}; cut off ${l.cutCount}${l.cut.length ? ' (' + l.cut.join('; ') + ')' : ''}${l.pageScroll ? '; THE PAGE SCROLLS SIDEWAYS' : ''}`)
+  note(`  ${name}: past the edge ${l.pastCount}${l.past.length ? ' (' + l.past.join('; ') + ')' : ''}; cut off ${l.cutCount}${l.cut.length ? ' (' + l.cut.join('; ') + ')' : ''}; controls with an icon and no words ${l.silentCount}${l.silent.length ? ' (' + l.silent.join('; ') + ')' : ''}${l.pageScroll ? '; THE PAGE SCROLLS SIDEWAYS' : ''}`)
   if (!more) return
   const scrolled = await page.evaluate(() => {
     const body = document.querySelector('#sheet.open .body')
@@ -301,14 +315,14 @@ for (const view of VIEWS) {
     }
     note(`  timing: the settlement screen opens in ${say(settlement)}; the market in ${say(market)}`)
   }
-  for (const [name, spec, wait] of matureShots(view, f)) await shoot(page, name, spec, wait, !!view.every && !!spec && spec.kind !== 'settlement')
+  for (const [name, spec, wait] of matureShots(view, f)) await shoot(page, name, spec, wait, !!view.every && MORE.includes(name))
   if (view.every && wanted('26-resume')) {
     // the resume card, as a game opened again shows it
     await page.evaluate(() => { const a = window.fairholm; a.closeSheet(); a.showReturnScreen() })
     await page.waitForTimeout(600)
     await page.screenshot({ path: shotPath('26-resume'), type: 'jpeg', quality: 85 })
     const l = await layout(page)
-    note(`  26-resume: past the edge ${l.pastCount}; cut off ${l.cutCount}${l.cut.length ? ' (' + l.cut.join('; ') + ')' : ''}`)
+    note(`  26-resume: past the edge ${l.pastCount}; cut off ${l.cutCount}${l.cut.length ? ' (' + l.cut.join('; ') + ')' : ''}; controls with an icon and no words ${l.silentCount}`)
     await page.evaluate(() => window.fairholm.hideScreen())
   }
   await ctx.close()

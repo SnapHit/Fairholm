@@ -85,6 +85,39 @@ the pictures: its measures print the share of the height each part takes and wha
 | A worker at a door looks too large or too small for the building | The street's scale | `STREET_SHEET_PX`, `STREET_GROUND` | Raise to shrink everything | People follow the buildings through `SPRITE.eave` |
 | The ground under the street is a heavy band | Its height and fades | `--street-band`, `--street-fade`, `--street-hold` | Lower the band | Nothing else |
 
+## The sheets' pictures are hard to read, crowded, or slow to open
+
+Art direction brief section 11a, the settlement brief's goods shelf, and `DECISIONS.md` 176 to 189.
+Every size and colour is in `src/ui/theme.ts`; the three numbers that are not tokens are named
+there (`BOARD_THREE_ACROSS_PX`, `PLACE_BOX_REM`, `PLACE_TILES_SHOWN`) or in `src/ui/sheets.ts`
+(`FLEET_SHIPS_DRAWN`). Rerun `CHROMIUM=/opt/pw-browsers/chromium node scripts/interface-pictures.mjs`
+after any change and look at the pictures beside their `before-*`; its log says, for every sheet,
+whether anything reaches past the edge, has its words cut off, or is a control with an icon and no
+words, and how long the settlement screen and the market take to open.
+
+| Symptom | Likely cause | Constant | Direction | Also affects |
+|---|---|---|---|---|
+| An icon in a sentence sits above or below its words | How far it drops below the baseline | `--ic-inline-drop` | More negative to lower it | Every icon in a sentence |
+| Icons in sentences crowd the line, or are too small to tell apart | Their size against the words | `--ic-inline` | Lower or raise | The line height of any sentence with a good in it |
+| A yield pill's good is hard to make out on the ring | The pill's icon | `--ic-pill` | Raise | The pills grow and crowd the figure on a tile; every icon beside a figure in a sheet |
+| The top strip's icons are lost over pale ground | Their shadow | `--ic-over-map`, `--ic-hud` | Darken, or raise the size | The settlement header's line uses `--ic-hud` too |
+| The shelf takes too much of a short phone, and the street or the ring shrinks | The shelf's row | `--goods-h`, `--ic-shelf`, `--stock-size` | Lower all three together | The ring is sized from what is left on a short screen (`--goods-h` is in its formula) |
+| The shelf reads as a grey stripe, or the goods float above it | The band and where the feet meet it | `--shelf-top`, `--shelf-front`, `--shelf-h`, `--shelf-sink` | Lighten the top for a lit edge; raise the sink to stand the goods in it | Nothing else |
+| This turn's gain or loss is hard to see beside a stock | The palette's own colours | `--gain` (the chance colour), `--loss` | Raise their contrast in the palette, not here | Every gain and loss in the interface |
+| The tick where a rule acts is lost on a bar | Its width and how far it stands past the bar | `--tick-w`, `--tick-over`, `--tick` | Raise | Every fullness bar, the opening price on a gauge |
+| A dumped good does not stand out on the market board | The shaded gap | `--gauge-gap` | More opaque | The good's sheet, consign and buy |
+| The price marker is hard to find on a gauge | The marker | `--gauge-knob`, `--gauge-wide-knob`, `--gauge-knob-edge` | Raise | Nothing else |
+| The market is a long scroll on a tablet, or its tiles are cramped on one | When it goes three across | `BOARD_THREE_ACROSS_PX` in `theme.ts` | Lower for three across sooner | Equip's units and the build catalogue share the grid |
+| The board's tiles run together | The ground each stands on | `--board-tile`, `--board-gap` | Raise the tile's alpha a little | Catalogue cards, hulls, rivals, people tiles |
+| A building on a catalogue card is too small to read | Its box | `--card-pic-h` | Raise | The card grows; the street's scale holds, so a hall stays taller than a barn |
+| A hull is too small to see, or too big for its card | The person a hull is drawn against | `--hull-person`, `--hull-box-w`, `--hull-box-h` | Raise or lower together | A unit's sheet and cargo for hulls and the lander |
+| People in a list are too small to tell apart | Their height | `--row-figure-h`, `--tile-figure-h`, `--person-tile-w` | Raise | Every list of people |
+| The place at a tile's head shows too much or too little round the tile | How many tiles it shows | `PLACE_TILES_SHOWN` in `theme.ts` | Lower to show the tile larger | Who works a building's head is a drawing, not the place |
+| A card that cannot be had yet is unreadable, or not plainly unavailable | How faint it is | `--gated` | Raise to read it, lower to set it back | Catalogue, equip and hull cards |
+| The unsigned seals compete with the signed | How faint they are | `--seal-faint` | Lower | Each of the twelve's own seal |
+| The recall fleet's hulls are too small to count | Their size, and how many are drawn | `--fleet-person`, `FLEET_SHIPS_DRAWN` in `sheets.ts` | Raise the size, or draw fewer | The fleet wraps onto a second line past about a dozen at 393 points |
+| A charter in a dark colour is lost on the panel | The banner's hem | the hem's `stroke-opacity` on `ic-banner` in `src/ui/icons.svg` | Raise | Every banner, the Company's gold included |
+
 ## Immigration stalls
 
 | Symptom | Likely cause | Constant | Direction | Also affects |

@@ -922,7 +922,7 @@ input[type=text] {
 .cell .terrain { position: absolute; inset: 0; }
 .cell .feature { position: absolute; inset: 0; pointer-events: none; }
 .cell .label {
-  position: relative; z-index: 1;
+  position: relative; z-index: 1; display: flex; align-items: center; gap: var(--space-1);
   font-size: var(--text-micro); line-height: 1.15; font-weight: var(--weight-medium);
   padding: var(--space-1) var(--space-2);
   text-shadow: var(--shadow-text);

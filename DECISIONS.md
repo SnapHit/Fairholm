@@ -3001,6 +3001,238 @@ behind the screen and the ring's read back waited for it. With the map covered t
   resting queue checks at phase 0's build too; its settlement checks all pass. The unit tests pass,
   57 of 57, and no pin moved.
 
+## Interface pictures, session of 21 November 2026
+
+Section 11a of the art direction brief and the goods shelf in section 2 of the settlement screen
+brief, built from `docs/builds/interface-pictures.md` in five phases, each committed on its own:
+wherever the interface names something the player could see or hold, it shows it. The rig is
+`scripts/interface-pictures.mjs`. It plays the competent policy inside the page to an early game
+and a mature one (turn 160), gives the mature landing what play left out and a phone would show (a
+varied store, a wharf, two queued buildings, a loaded hauler), shoots every sheet the brief names
+into `shots/interface-pictures/` at the owner's phone and three of them at four other screens, and
+measures what a picture cannot say. The `before-*` pictures there were taken before anything
+changed; `*-more` pictures are a sheet a screen further down. Nothing under `/src/sim` changed but
+one pure helper in `src/sim/market.ts`, nor the save format, and no pin moved.
+
+### 176. The icons are one sprite, sized by six tokens
+
+**What.** `installIcons` puts `src/ui/icons.svg` into the document once, in the `App` constructor
+before anything renders. An icon is `icon(name, size)` in `src/ui/icons.ts`, an inline svg that
+points at its symbol, classed `ic ic-<size>`; the sizes are tokens in `src/ui/theme.ts`: inline
+(1.3em, dropped 0.3em below the baseline, because every drawing stands on a shadow low in its
+square), pill (17), the top strip (20), the shelf (34), a tile (40) and a sheet's head (64). Every
+icon is `aria-hidden`; what it stands for is said in the words of the control it sits in or in a
+visually hidden `.sr` span beside a bare figure. `ICON_NAMES` lists every name, and
+`tests/icons.test.ts` reads the sprite as text and holds it to that list and to every good.
+
+**Why.** The brief, phase 1, and rule 5 of section 11a. One sprite and a `use` per icon is the
+cheapest way to put a hundred icons on a sheet; the sizes in rem follow the reader's own font.
+
+### 177. A good is its icon, through goodMark, in pills and in sentences
+
+**What.** `goodMark` in `src/ui/pictures.ts` returns the good's icon, so every yield pill on the
+ring and the street is the icon and the number, the word gone; the faint pill keeps its faint
+ground and draws its icon at `--ic-faint`. `withTerms` puts a good's icon before its word, at the
+size of the words and never wrapped apart from it, in the dispatch, the queue cards and the
+glossary. Gold is left without one in a sentence: "62 gold due" is money, and the nugget beside it
+would say the good dug from a seam. The standing orders' purposes (industry wears the tooling, civic
+the grievance), consign and hold, the haul circuit's goods and the founding preview's best yields
+carry their icons too. A glossary entry for something the player could see or hold is led by it.
+
+**Why.** Rules 1 and 6 of section 11a. Telling gold the money from gold the good would need the
+simulation's sentences to say which they mean; the word alone is honest about both.
+
+### 178. The goods strip is a shelf, and its bar shows where the surplus rule sells
+
+**What.** `goodsView` in `src/ui/settlement.ts`: Market at the head as the coin, then each good's
+icon standing on one shared band in the raised surface colour (each good draws its own length of it
+and the end of the rail carries it to the edge, so a short row still stands on a whole shelf), its
+stock under it in large tabular figures with this turn's change in the palette's gain and loss
+colours, and its fullness bar (`fillBar` in `src/ui/meters.ts`) with a tick where the surplus rule
+starts to sell. `ruleStarts` in `src/ui/selectors.ts` mirrors the turn: the market's consignment
+(twice the threshold kept for a building's input and for horses, a lot of 25 above it, or the full
+store's minimum sale), the orders' sending and the predecessors' offering (ten above the
+threshold, a literal in both, mirrored as `SURPLUS_SHIPMENT_MIN`); null for a hold, food, the
+capability goods a settlement-wide rule keeps, and a settlement that cannot consign. The row is
+4.375rem tall where it was 3.25.
+
+**Why.** The settlement brief, section 2, and rule 2. "Starts to sell" taken at its word: the tick
+is the stock at which next turn's rule sells, not the threshold, so a bar short of the tick never
+sells and a bar past it always does. **Symptom if wrong:** a good past its tick that does not sell,
+or one short of it that does. **Change:** `ruleStarts`, with the three systems it names.
+**Confidence:** medium; it mirrors three systems by hand, as `centreYield` mirrors `produce`.
+
+### 179. The header line and the top strip are icons and figures
+
+**What.** The settlement header's line is the colonist and the count, the food and the balance (the
+loss colour below nought), the resolve flame and its percentage. The top strip puts the season's
+icon before the turn and the coin and the letter before the gold and the Word, each a control that
+still opens its glossary entry and says its figure in words. The strip's clock (the menu, the turn,
+the year and season) keeps to one line and gives up the end of its words first; the purse shares
+that line or starts its own, by `justify-content: space-between`. Every Word figure goes through
+`fmt`: the glossary said 56.20000000000002 Word held.
+
+**Why.** The brief, phase 1. At 320 points the season's icon had pushed "year 14, deep summer" onto
+a line of its own and the purse onto a fourth.
+
+### 180. The market is a board of goods, each with a price gauge
+
+**What.** `marketSheet` in `src/ui/sheets.ts`: a grid of tiles, two across, three on a sheet at
+least `BOARD_THREE_ACROSS_PX` (600) wide, by a container query `installTheme` writes, since a
+query's width cannot be a custom property. Each tile is the icon, the name, what is held, what the
+Company pays and asks beside the coin (in that order, over Sell and Buy in that order), and
+`priceGauge` in `src/ui/meters.ts`: a track from the good's floor to its ceiling with the two at
+its ends, a tick at its opening price, a marker at today's, and, when the price stands below where
+it would with nothing sold (the baseline rounded and held to the track, as `recompute` has it with
+no pressure), the gap shaded in the loss colour. A good the simulation's own `dumpedGoods` names
+has its price in the loss colour too. The head is the Company's banner in the Company colour and
+the charge as a large percentage.
+
+**Why.** The brief, phase 2. The gap is the market's own "below where it would be with nothing
+sold" from the dumping card, so the board and the card never disagree.
+
+### 181. consignPreview is the one helper in the simulation, and buying moves no price
+
+**What.** `consignPreview(s, good, amount)` in `src/sim/market.ts` walks the lots `consign` walks,
+on a copy of the price entry, and returns the first lot's price, the last's, the price left
+standing and the gross. Consign draws it as a hollow marker on the gauge with the fall to it
+hatched, and its two figures, what goes and the gold that comes back after the charge. The old
+`walkPreview` in the interface is gone. Buy draws the gauge with no ghost.
+
+**Why.** The brief, phase 2, allowed one pure, read-only function. `buyFromCompany` does not touch
+the price, so "a ghost marker where the price will stand after this lot" has nowhere to go for a
+purchase: buy says so in words instead.
+
+### 182. A good's sheet, and food's bank
+
+**What.** `goodActionsSheet`: the icon at hero size; the store on a wide fullness bar with the
+rule's tick and a key that says what the rule does there (sold, sent on, offered) and from what
+stock; the price gauge with what the Company pays and asks; and the rule's choices with the crate
+for hold and the coin for consign. Food's sheet shows the bank toward the next colonist, as the
+shelf does, where it showed `stock.food`, which the simulation never fills.
+
+### 183. The build order is a catalogue, with gated cards that say why
+
+**What.** `buildSheet`: what is under way leads as the frame drawing with a progress bar for each
+cost and the cost's icon at its end; what is queued is the buildings' drawings in order, each with
+Remove; everything that could be built is a card two across: the drawing at the street's one scale
+(`buildingPicture` in `src/ui/pictures.ts`, `STREET_SHEET_PX`), the name, what it turns into what as
+icons with an arrow between or its role in words with an icon, and its cost as icons and numbers,
+the coin for an imported machine. `catalogue` in `src/ui/selectors.ts` adds, after `buildable`'s
+list, the next tier of a line that something nameable stops (the people a tier needs, a signatory
+not yet signed, horses for a stable, the gold for a machine), as a faint card that gives its reason
+on a tap. A refinery onboarding has not shown, and a wharf inland, stay hidden.
+
+**Why.** The brief, phase 3. `buildable` drops a gated line without a word, so without this the
+catalogue would never have a gated card to show. Seven drawings stand for eighteen lines until the
+building sheets exist, so the smelter, the toolworks and the armoury share the yard and the names
+carry the difference.
+
+### 184. Hulls, people and units are their drawings
+
+**What.** `unitPicture` draws a unit at its own size against a person a token tall, from the
+sheet's manifest and `UNIT_SPRITE.scale`, so the lighter is a small ship and the cutter nearly a
+trader. Hulls: each its drawing, speed as pips of the fastest's beside the sail, guns beside the
+cannon, hold beside the crate, cost as icons, the wharf it needs; one the wharf cannot lay down, or
+the store cannot pay for, is faint and says why. People (`personPicture`, the map's figure with
+its chevrons) lead every row of equip, school, who works a building or a tile, a colonist's
+places, the detail's grid, the lander's passengers; each with their standing in a word and what
+they do now as an icon and a number (`makesIn` in `src/ui/selectors.ts`, now shared with
+`buildingCandidates`). Equip's choices are the units' drawings with their costs as icons; a stack
+is its units' drawings. School found the colonist being taught by the id it stores as if it were a
+place in the list, which named the wrong person or threw; it finds them by id now.
+
+### 185. The detail is a tally; a unit, its cargo and a tile are pictures
+
+**What.** `settlementDetailSheet`: led by the place itself; what is made this turn as icons, signed
+numbers and short bars to scale in the gain colour; what is held as icons with fullness bars and
+the rule's tick, a tap opening the good; the people as a grid of figures; the buildings as their
+drawings with their places as pips; the Word toward the next passage as a bar; resolve as a bar
+with the flame and the declaration's tick. A unit's sheet is led by its drawing, with its quality
+and its moves as pips, and its hold as icons with amounts over a bar; cargo loads and unloads by
+icon. A tile's sheet is led by the place itself, small (`placePicture`): `Scene.drawRing` of the
+tile, cropped to the middle tile and a little round it (`PLACE_BOX_REM`, `PLACE_TILES_SHOWN`), or the
+tile's swatch where the renderer cannot draw; its yields are icon chips.
+
+**Why.** The brief, phase 3. The place went in cleanly: `drawRing` takes any tile, and the props it
+builds for one are kept with the settlements' until the map's are laid again. Who works a tile is
+led by the good it is worked for instead, so the settlement screen's commonest tap draws nothing.
+
+### 186. The declaration, the signatories and the charters are meters and tallies
+
+**What.** The declaration: resolve across the settlements as a bar with the flame and a tick at
+`declarationGate`, and the recall fleet's strength as small hulls, one each up to
+`FLEET_SHIPS_DRAWN` (twelve) and then a number; once declared, each wave as its soldiers. The
+signatories: twelve seals in a row (`sealRow`), whole for those who have signed and first, faint
+for the rest; the grievance toward the next name as a bar; what is sought with its icon (trade the
+coin, land the sprout, arms the rifle, voice the letter); each of the twelve led by a seal. The other
+charters: each led by its banner in its own colour, its relation as a marker on a three step track
+(`relationTrack`), its settlements as a large number.
+
+### 187. Cards lead with an icon for their kind
+
+**What.** `queueIcon` and `dispatchIcon` in `src/ui/pictures.ts`: queue cards, the queue bar's top
+item, the group sheet, the dispatch and the resume card lead with the good for goods (the dumping
+card's key names it; a line of the dispatch names it in its words, gold aside), the cannon for
+raiders and war, the frame for build orders, the colonist for people and idleness, the coin for
+money, the letter for Word and passage, the seal for signatories, the banner in the rival's own
+colour, the flame for the declaration, and the season before the date on the resume card. Where
+nothing fits there is no icon and the card's coloured edge says its kind, as before.
+
+### 188. One icon changed: the banner has a hem
+
+**What.** `ic-banner` in `src/ui/icons.svg` has a light edge round its cloth, at 0.3 opacity.
+
+**Why.** Legibility at the size it is needed: the Sable Company's charcoal (#2e2e2e) and Vane and
+Marlow's indigo (#2b2f6e) banners vanished on the dark panels at forty pixels. On the crimson, the
+Company's gold and the bone the hem is barely seen. No other icon was touched.
+
+### 189. What did not work the way the brief assumed
+
+- **"The price gauge with a ghost marker where the price will stand after this lot", for buy**:
+  buying from the Company does not move its price (`buyFromCompany`), so buy's gauge has no ghost
+  and says so in words (181).
+- **"A gated card is faint and gives its gate on tap"**: `buildable` drops a gated line without a
+  word, so the catalogue had no gated card to show until `catalogue` named the gates (183).
+- **"A tick where the good's surplus rule starts to sell"** is not the rule's threshold: it is the
+  threshold kept (doubled for a building's input and for horses) and a lot above it, or the full
+  store; a send or an offer starts ten above the threshold (178).
+- **"Where withTerms links a good's word, the good's icon sits before it"**: in the game's sentences
+  gold is as often money as the good, so it has no icon there (177).
+- **"Use it as drawn"**: the banner vanished in the charcoal and indigo charters' colours on the dark
+  panels, so it has a hem (188). Every other icon is as drawn. At twenty pixels every good can be
+  told from every other; the nearest pair is hemp and madder, two green bundles that madder's red
+  roots tell apart, and gold's nuggets are close to the treasury's coin, which is not a good.
+- **The shelf's height**: its icon, its band, its figures and its bar take 4.375rem where the strip's
+  words took 3.25, which the street gives up at 393 by 742 (its share of the height from 19 to 16 per cent; the ring
+  stays 377 points) and the ring at 390 by 664 with a note showing (332 points to 310, a cell 89).
+  `scripts/settlement-view.mjs` still passes every check, its taps included, with nothing scrolling,
+  past the edge or cut off; the settlement brief's measured sizes are corrected.
+- **Food's good sheet** showed `stock.food`, which the simulation never fills; it shows the bank (182).
+- **School's sheet** read the colonist being taught by their id as if it were a place in the list;
+  found while drawing it (184).
+- **A person's title**: a colonist's sheet first put their standing before the word colonist, which
+  decision 174 rules out because of the ladder it would echo, and the lander's passenger card already
+  did. `personTitle` in `src/ui/selectors.ts` names them both: "A debtor", "A master of timber", "A
+  colonist under contract", "A colonist of free standing".
+- **A container query's width cannot be a token**, so the one rule that puts the board three across
+  is written by `installTheme` from `BOARD_THREE_ACROSS_PX` (180).
+- **The rig**: Vite reloads the page when an HTML file appears under the project root, so a test page
+  written beside a running rig reloaded it into the resume card, over every sheet after. That set was
+  thrown away and taken again with nothing written meanwhile.
+- **How long the sheets take to open**, on the rig at a device pixel ratio of two: the settlement
+  screen 684 ms the first time before and 635 after, most of it the ring's picture (building it 25
+  and 13 ms), and 34 ms every time after, before and after (building it 7 and 12 ms); the market 33 ms
+  before and after, the first time and every time (building it 4 and 17 ms the first time, 2 and 6
+  after). Both paint on the second frame after the call, as they did.
+- **"Smoke all green"**: nine of its ten checks pass. The first, a coastline within about a second,
+  fails before and after, as it did: 6866 ms in this session's last smoke run. Over ten loads each on
+  a warm dev server it took 3.4 to 7.1 s at the before commit and 3.8 to 7.5 s after (medians 6.4
+  and 4.6 s), so it is no worse; this two-core software renderer swings by seconds from load to load.
+  A smoke run at the before commit also failed its second check once, on a world whose first sail
+  sighted no land: that check depends on the random world. The unit tests pass, 60 of 60 with the
+  three new ones, and no pin moved.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

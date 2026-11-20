@@ -259,6 +259,18 @@ Places where a change in one file breaks something in a distant file without the
   so a ring drawn after a context was restored behind the screen would have had no shadows, found by
   reading rather than seen; `drawRing` now does the bake itself. Anything new hung on `draw` needs
   the same thought.
+- **The goods shelf's tick and the build catalogue mirror the simulation by hand.** Added 21
+  November 2026. `ruleStarts` in `src/ui/selectors.ts` restates when three systems act on a good's
+  surplus: the market system's consignment in `src/sim/market.ts` (the doubled keep for a building's
+  input and for horses, the lot, the full store's minimum sale, the office's threshold, the goods a
+  settlement-wide rule keeps), `shipSurplus` in `src/sim/orders.ts` and `offerSurplus` in
+  `src/sim/predecessors.ts` (both a literal ten, mirrored as `SURPLUS_SHIPMENT_MIN`). `catalogue`
+  restates the filters of `buildable` in `src/sim/settlement.ts` to say why a line is gated. Change
+  any of them and the tick moves to the wrong place, or a gated card gives the wrong reason; nothing
+  fails. `centreYield` and `goodsShelf` were already this kind of mirror (decisions 169 and 173).
+- **The dispatch's leading icon reads its sentences.** `dispatchIcon` in `src/ui/pictures.ts` finds
+  the first good a line names, and "passage", "Word", "signed" and "declar" in its words. A line the
+  simulation rewords may lose its icon or take another's. The cost is an icon, never a fact.
 
 ## 4. Invariants held by convention, not by types or tests
 

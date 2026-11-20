@@ -100,7 +100,9 @@ take the panel: its composition, its parchment and wood, its icon set, its arran
   quarter tile on each side: 95 to 108 points, larger than version 2's 82 at that width. *Corrected
   7 November 2026: this said 300 to 360 and 100 to 120, which the soft edge makes impossible
   together. Measured, the ring is 332 points on 390 by 664 with a note showing and 377 on 393 by 742;
-  on a 320 point screen it is 304 and a cell 87*
+  on a 320 point screen it is 304 and a cell 87.* *Changed 21 November 2026: the goods shelf stands
+  taller than the strip of words did, so on 390 by 664 with a note showing the ring is 310 points and
+  a cell 89; on 393 by 742 it is still 377, and the street gives up the height (`DECISIONS.md` 189)*
 - **The town takes the height that is left above the goods**, and scrolls sideways when the street is
   longer than the screen
 - **The goods strip sits at the bottom**, above the queue bar, and scrolls sideways

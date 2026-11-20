@@ -267,7 +267,9 @@ banner. `src/ui/icons.ts` is the only way to draw one.
   table rather than a symbol on a button
 - **The palette is the world's**: timber, iron, linen, wax, brass. Bloom, Attar and Cores are the only
   icons that glow. The setting's wonder is the one thing drawn as light, everywhere it appears
-- **The banner takes its charter's colour.** Nothing else is recoloured
+- **The banner takes its charter's colour.** Nothing else is recoloured. *Corrected 21 November 2026:
+  the banner alone has a light hem round its cloth, because a charter in charcoal or indigo vanished
+  on the dark panels at forty pixels (`DECISIONS.md` 188)*
 - **One drawing at every size**: legible at 16 pixels inline in a sentence, rich at 64 in a header
 
 People, hulls and buildings in the interface are the painted sheets the map already uses, drawn in
