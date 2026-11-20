@@ -162,6 +162,10 @@ Opportunities getting a second appearance is the fix for the information-loss pr
 
 ## 9. Ending a turn early
 
+*Changed 21 November 2026, at the owner's request: turns now run on by themselves while nothing new
+needs the player, so a quiet turn takes no tap at all, and an ended turn carries on until something
+new turns up in the queue or the player touches the screen. `DECISIONS.md` 190 has the rule.*
+
 The turn ends when the shown items are resolved. **An end-turn affordance is always available**, and
 anything unresolved behaves per the table above and is written to the dispatch.
 

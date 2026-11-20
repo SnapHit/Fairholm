@@ -234,6 +234,51 @@ const ctxLoss = await page.evaluate(async () => {
   return { skipped: false, calls: a.scene.renderer.info.render.calls, lost: a.scene.renderer.getContext().isContextLost() }
 })
 check('10 background and restore without losing context', ctxLoss.skipped || (!ctxLoss.lost && ctxLoss.calls > 0), JSON.stringify(ctxLoss))
+// 11: turns run on by themselves while nothing new needs the player (DECISIONS.md 190): the lighter
+// sent a long way, End turn pressed once, and the turns carry on without another tap until something
+// new turns up, such as the lighter arriving and awaiting orders. Rigs drive their own turns, so
+// this check is the one place a run is let happen under automation
+const runSetup = await page.evaluate(async () => {
+  const a = window.fairholm, s = a.state
+  const { findPath } = await import('/src/sim/units.ts')
+  a.closeSheet()
+  const boat = s.units.find(u => u.owner === 0 && u.kind === 'lighter')
+  if (!boat) return { ok: false, why: 'no lighter' }
+  // the farthest known water it can reach, short of a long way round
+  let best = null
+  for (let t = 0; t < s.world.tiles.length; t++) {
+    const tile = s.world.tiles[t]
+    if (tile.terrain !== 'water' || !tile.explored) continue
+    const p = findPath(s, boat, boat.tile, t)
+    if (p && p.length <= 30 && (!best || p.length > best.len)) best = { t, len: p.length }
+  }
+  if (!best || best.len < 7) return { ok: false, why: 'no water far enough', best }
+  a.turns.allowInRigs = true
+  await a.moveTo(boat.id, best.t)
+  return { ok: true, boat: boat.id, len: best.len, turn: s.turn }
+})
+let runOn = { ...runSetup }
+if (runSetup.ok) {
+  await page.waitForTimeout(400)
+  // End turn is pressed once by code, not a tap, so no touch stops the run it starts
+  await page.evaluate(() => { const a = window.fairholm; a.turns.stop(); a.endTurn() })
+  let last = -1, still = 0
+  for (let i = 0; i < 120 && still < 8; i++) {
+    await page.waitForTimeout(500)
+    const t = await page.evaluate(() => window.fairholm.state.turn)
+    still = t === last ? still + 1 : 0
+    last = t
+  }
+  runOn = await page.evaluate(({ start, boat }) => {
+    const a = window.fairholm
+    const keys = [...a.queue.shown, ...a.queue.folded].flatMap(g => g.items.map(it => it.key))
+    a.turns.allowInRigs = false
+    a.turns.stop()
+    return { start, turn: a.state.turn, armed: a.turns.state.armed, arrived: keys.includes(`unitIdle:${boat}`), keys }
+  }, { start: runSetup.turn, boat: runSetup.boat })
+}
+check('11 turns run on while nothing new needs the player, and stop when something does',
+  runSetup.ok && runOn.turn >= runSetup.turn + 2 && !runOn.armed, JSON.stringify(runOn))
 const perf = await page.evaluate(() => ({ calls: window.fairholm.scene.renderer.info.render.calls, tris: window.fairholm.scene.renderer.info.render.triangles }))
 console.log('draw calls', JSON.stringify(perf))
 console.log(results.join('\n'))

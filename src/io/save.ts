@@ -39,7 +39,7 @@ let pristineKey = ''
 let pristineTiles: Tile[] | null = null
 
 function pristine(seed: string, settings: Settings): Tile[] {
-  const key = seed + '|' + JSON.stringify({ ...settings, audio: undefined, pace: undefined, firstGame: undefined, difficulty: undefined, turns: undefined, crossing: undefined })
+  const key = seed + '|' + JSON.stringify({ ...settings, audio: undefined, pace: undefined, firstGame: undefined, difficulty: undefined, turns: undefined, crossing: undefined, autoTurns: undefined })
   if (key !== pristineKey || !pristineTiles) {
     pristineTiles = generateWorld(seed, settings).tiles
     pristineKey = key

@@ -390,6 +390,9 @@ export interface Settings {
   pace: Pace
   audio: { on: boolean; muted: boolean; volume: number; track: number }
   firstGame: boolean
+  /** Whether turns run on by themselves while nothing new needs the player (src/ui/turns.ts,
+   *  DECISIONS.md 190). Absent in saves made before it existed, which reads as on. */
+  autoTurns?: boolean
 }
 
 // ---------------------------------------------------------------------------------------------

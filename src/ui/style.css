@@ -234,6 +234,14 @@ body {
 #queuebar .uc-actions.tight .btn { padding: var(--space-3) var(--space-4); font-size: var(--text-small); }
 #queuebar .uc-actions.tight { gap: var(--space-3); }
 #queuebar .btn.end { flex: none; }
+/* turns running on by themselves: the button stops them, and a bar along its foot fills toward the
+   next turn over the time the runner gives it (--run-ms, set where the button is drawn) */
+#queuebar .btn.end.running { position: relative; overflow: hidden; }
+#queuebar .btn.end.running.counting::after {
+  content: ''; position: absolute; left: 0; bottom: 0; height: var(--run-bar-h); width: 100%;
+  background: var(--run-bar); transform-origin: left; animation: run-fill var(--run-ms) linear var(--run-from) forwards;
+}
+@keyframes run-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 #queuebar .uc-head .btn.end { padding: var(--space-3) var(--space-6); }
 /* while a move is drawn the card's controls wait for it; End turn never does */
 #queuebar.held .uc-head .btn, #queuebar.held .uc-actions .btn:not(.end) { pointer-events: none; }

@@ -81,6 +81,9 @@ the pictures: its measures print the share of the height each part takes and wha
 | Swiping back to a settlement draws its ring again | Too few pictures kept | `RING_PICTURES_KEPT` | Raise | About two megabytes a picture at the largest |
 | A store reads as filling too early or too late | Where the bar warms | `STORE_WARM` | Raise or lower | Only the colour; spoiling is the simulation's capacity |
 | An assignment reads as a jump, or as a lag | The settle-in | `SETTLE_MS` | Keep under 200 | Nothing else; it runs once and stops |
+| A quiet turn ends before the player has finished looking | The quiet wait | `AUTO_TURN_QUIET_MS` in `src/ui/theme.ts` | Raise | The time left to undo before the turn takes the undo with it |
+| Turns running on blur past, or drag | The rest between turns of a run | `AUTO_TURN_PAUSE_MS` | Raise, lower | Nothing else; it waits after the moves are drawn |
+| Runs stop too often, or let something slip by | Which standing items always stop a run | `ALWAYS_STOPS` in `src/ui/turns.ts` | Remove, add a group | Nothing else |
 | The street reads as a shelf | Too little stagger | `--lot-stagger` | Raise | The ground line stays put; only the drawings lift |
 | A worker at a door looks too large or too small for the building | The street's scale | `STREET_SHEET_PX`, `STREET_GROUND` | Raise to shrink everything | People follow the buildings through `SPRITE.eave` |
 | The ground under the street is a heavy band | Its height and fades | `--street-band`, `--street-fade`, `--street-hold` | Lower the band | Nothing else |

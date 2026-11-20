@@ -1374,6 +1374,9 @@ function settingsSheet(app: App, s: GameState): HTMLElement {
   const order: Difficulty[] = ['generous', 'standard', 'hard', 'punitive']
   const cur = order.indexOf(s.settings.difficulty)
   return h('div', { class: 'panel' }, header(app, 'Settings'),
+    section('Turns', muted('Whether turns run on by themselves while nothing new needs you. Any touch stops them.'), h('div', { class: 'chips' },
+      h('button', { class: 'chip' + (s.settings.autoTurns !== false ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setAutoTurns', on: true }) }, 'run on'),
+      h('button', { class: 'chip' + (s.settings.autoTurns === false ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setAutoTurns', on: false }) }, 'wait for me'))),
     section('Pace', muted('How much the queue shows before folding.'), h('div', { class: 'chips' }, (['light', 'normal', 'all'] as const).map(p => h('button', { class: 'chip' + (s.settings.pace === p ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setPace', pace: p }) }, p)))),
     section('The charter terms', muted('Can be eased at any time, never tightened.'), h('div', { class: 'chips' }, order.map((d, i) => h('button', { class: 'chip' + (i === cur ? ' on' : '') + (i > cur ? ' off' : ''), type: 'button', onClick: () => { if (i < cur) app.dispatch({ t: 'lowerDifficulty', difficulty: d }) } }, d)))),
     section('Music', row(button(s.settings.audio.on ? 'Pause' : 'Play', () => app.music.toggleOn(), 'small'), button(s.settings.audio.muted ? 'Unmute' : 'Mute', () => app.music.toggleMute(), 'small'), button('Next track', () => app.music.skip(), 'small'))),

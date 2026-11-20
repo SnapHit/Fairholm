@@ -68,6 +68,7 @@ export type Action =
   | { t: 'lowerDifficulty'; difficulty: Difficulty }
   | { t: 'setIntent'; text: string }
   | { t: 'setPace'; pace: Pace }
+  | { t: 'setAutoTurns'; on: boolean }
   | { t: 'setAudio'; audio: Partial<Settings['audio']> }
   | { t: 'markExplained'; key: string }
   | { t: 'dismiss'; key: string }
@@ -554,6 +555,10 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
     }
     case 'setPace': {
       s.settings.pace = a.pace
+      return s
+    }
+    case 'setAutoTurns': {
+      s.settings.autoTurns = a.on
       return s
     }
     case 'setAudio': {

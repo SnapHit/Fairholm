@@ -3239,6 +3239,53 @@ Company's gold and the bone the hem is barely seen. No other icon was touched.
   sighted no land: that check depends on the random world. The unit tests pass, 60 of 60 with the
   three new ones, and no pin moved.
 
+## Turns that run on, and a faster lighter, 21 November 2026
+
+Asked for by the owner: lighters should move three a turn, and turns should end by themselves unless
+there is something the player needs to do, so a lighter sent twelve tiles with the build order full
+sails on without a tap a turn.
+
+### 190. Turns run on by themselves while nothing new needs the player
+
+**What.** `TurnRunner` in `src/ui/turns.ts`, wired in `src/ui/app.ts`. Two ways a run begins:
+
+- **A quiet turn ends itself.** After the player does something (any action through `dispatch`
+  other than ending the turn) and the queue then holds nothing at all, the turn ends after
+  `AUTO_TURN_QUIET_MS` (2.5 s), long enough to touch the screen and keep the turn, or to undo.
+- **An ended turn carries on.** After the player ends a turn, the next ones end by themselves too,
+  `AUTO_TURN_PAUSE_MS` (0.8 s) after the last move has been drawn.
+
+A run stops when the queue holds a key it did not hold when the turn before was let go: a unit
+arriving and awaiting orders, a build order running dry, a raider sighted. What stood in the queue
+when the player let the turn go is theirs to leave and does not stop it, except the groups that grow
+worse each turn left alone, which stop it every time they stand: hunger, a threat, a wave at sea, a
+blockade, a raider off the coast, and the Company's demand. Any touch, key or wheel stops a run;
+a sheet, a screen, the opening lines, a move being drawn, an aim or a pick holds it. While a run is
+armed the End turn button reads Stop and a bar along its foot fills toward the next turn; the bar
+says "Turns running on" when the queue is empty. The setting is in Settings, Turns: run on, or wait
+for me. It is `settings.autoTurns`, absent in older saves and read as on, so no save changes.
+
+**Why.** The owner's request. "Stop on anything new" rather than "stop on anything at all" because a
+mature game always holds something (idle colonists, spoilage at a settlement the player has chosen
+to let spill), and a run that every standing item stopped would never run. The few that grow worse
+are excepted because a run must never let people starve or a wave land unseen.
+
+**Departs from** the queue brief section 9 ("the turn ends when the shown items are resolved") and
+the acceptance check "a quiet turn is one tap": a quiet turn is now no taps. The brief carries a
+dated line. Rigs and the smoke test drive their own turns, so the runner does not run under
+automation (`navigator.webdriver`) unless a check sets `turns.allowInRigs`; smoke check 11 does,
+sends the lighter a long way, presses End turn once and sees the turns carry on and stop.
+
+### 191. A lighter moves three a turn
+
+**What.** `C.naval.hulls.lighter.speed` from 2 to 3, so the boat the lander leaves sails three too.
+
+**Why.** The owner's request. A lighter is now as fast as a trader, so the trader's edge is its hold
+(300 to 100) and its two guns, not its speed; the rival charters brief says the speed gaps are what
+make a chase mean anything, and the lighter has no guns to fight one. The pace table was not rerun
+for this: the machine players hardly sail lighters, and the unit tests, the pins and the pace test
+pass unchanged.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

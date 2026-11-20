@@ -223,7 +223,8 @@ export const C = {
   // -------------------------------------------------------------------------------------------
   naval: {
     hulls: {
-      lighter: { speed: 2, guns: 0, capacity: 100, cost: { timber: 40, cordage: 0 }, wharfTier: 1 },
+      // the lighter's speed was 2; the owner asked for 3 on 21 November 2026 (DECISIONS.md 191)
+      lighter: { speed: 3, guns: 0, capacity: 100, cost: { timber: 40, cordage: 0 }, wharfTier: 1 },
       trader:  { speed: 3, guns: 2, capacity: 300, cost: { timber: 90, cordage: 20 }, wharfTier: 2 },
       raider:  { speed: 5, guns: 4, capacity: 100, cost: { timber: 70, cordage: 25, arms: 10 }, wharfTier: 2 },
       cutter:  { speed: 4, guns: 7, capacity: 80,  cost: { timber: 110, cordage: 30, arms: 20 }, wharfTier: 3 },

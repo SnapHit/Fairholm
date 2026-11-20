@@ -43,6 +43,7 @@ import { SHEET_DISMISS_PX, TAP_MIN_PX, installTheme } from './theme'
 import { installIcons, icon, isGood, SEASON_ICONS, type IconName } from './icons'
 import { goodMark, queueIcon, dispatchIcon } from './pictures'
 import { mountOpening, type Opening } from './opening'
+import { TurnRunner, queueKeys } from './turns'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
 import { term } from './glossary'
@@ -98,6 +99,8 @@ export class App {
   audioStrip: HTMLElement
   turnStartedAt = performance.now()
   private toastTimer: number | null = null
+  /** Turns that run on by themselves while nothing new needs the player (src/ui/turns.ts). */
+  turns: TurnRunner
   private stacks: StackCounts
   private routeLayer: RouteLayer
 
@@ -144,6 +147,16 @@ export class App {
     })
     // the first tap anywhere starts the music; every tap after it quietly rescues a refused start
     document.addEventListener('pointerdown', () => this.music.unlock(), { capture: true })
+    // turns running on by themselves stop at any touch, key or wheel, before anything else hears it
+    const app = this
+    this.turns = new TurnRunner({
+      get queue() { return app.queue },
+      allowed: () => this.turnsMayRun(),
+      atRest: () => this.atRest(),
+      endTurnForRunner: () => this.endTurn('runner'),
+      renderBar: () => this.renderQueueBar(),
+    })
+    for (const ev of ['pointerdown', 'keydown', 'wheel'] as const) document.addEventListener(ev, () => this.turns.interrupt(), { capture: true, passive: true })
     new ResizeObserver(() => this.layout()).observe(root)
     this.layout()
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.save() })
@@ -310,6 +323,7 @@ export class App {
     this.route = null
     this.scene.rebuild(this.state, 'dynamic')
     this.refresh()
+    if (a.t !== 'endTurn') this.turns.acted()
     return true
   }
 
@@ -332,9 +346,14 @@ export class App {
     this.toast('Undone')
   }
 
-  endTurn() {
+  /** End the turn. `by` says who pressed: the player, whose ended turn then carries on by itself
+   *  while nothing new needs them, or the runner doing it for them (src/ui/turns.ts). */
+  endTurn(by: 'player' | 'runner' = 'player') {
     if (this.state.declaration?.won || this.state.declaration?.lost) return
     const q = this.queue
+    // what the player let stand when they let the turn go
+    const seen = queueKeys(q)
+    if (by === 'player') this.turns.stop()
     const seconds = (performance.now() - this.turnStartedAt) / 1000
     const before = this.state.turn
     // the player's units with somewhere to go keep going in the turn, and are drawn going: where
@@ -344,7 +363,9 @@ export class App {
       .map(u => ({ id: u.id, tile: u.tile, path: [...u.path], lander: u.kind === 'lander' }))
     if (going.length) { this.scene.prepareMove(this.state, going.map(g => g.id)); this.holdUi(this.scene.cam.view.activeUnit) }
     this.dispatch({ t: 'endTurn' })
-    if (this.state.turn === before) { this.scene.cancelMove(); this.releaseUi(); return }
+    if (this.state.turn === before) { this.scene.cancelMove(); this.releaseUi(); this.turns.stop(); return }
+    // an Undo offered before the turn ended has nothing left to undo
+    if (this.undoStack.length) this.toastEl.classList.remove('show')
     if (going.length) {
       const trails = going.map(g => {
         const u = this.state.units.find(x => x.id === g.id)
@@ -368,6 +389,27 @@ export class App {
     if (this.state.declaration?.won) this.showEnd(true)
     else if (this.state.declaration?.lost) this.showEnd(false)
     else if (this.state.turn >= this.state.settings.turns) this.showEnd(null)
+    if (by === 'player') this.turns.ended(seen)
+  }
+
+  /** Whether turns may run on by themselves: the player's setting, a game still going, and not a
+   *  rig or the smoke test driving the game, unless a check asks for it. */
+  private turnsMayRun(): boolean {
+    const s = this.state
+    if (s.settings.autoTurns === false) return false
+    if (s.declaration?.won || s.declaration?.lost || s.turn >= s.settings.turns || s.turn === 0) return false
+    if (navigator.webdriver && !this.turns.allowInRigs) return false
+    return true
+  }
+
+  /** Whether the screen is at rest, so a turn may end by itself: no sheet open past the queue bar,
+   *  no screen or the opening lines up, no move being drawn, nothing being aimed or picked. */
+  private atRest(): boolean {
+    if (this.sheetShowing() || this.heldFor !== null) return false
+    if (this.overlayEl.classList.contains('show') || this.opening?.showing) return false
+    if (this.route !== null || this.pick !== null || this.passenger?.aboard != null || this.authoring !== null) return false
+    if (document.hidden) return false
+    return true
   }
 
   save() {
@@ -1288,7 +1330,16 @@ export class App {
     const idle = q.shown.concat(q.folded).filter(g => g.type === 3 || g.type === 4).reduce((a, g) => a + g.items.length, 0)
     const label = idle > 0 ? `End turn, ${idle} will idle` : 'End turn'
     const ended = s.declaration?.won || s.declaration?.lost || s.turn >= s.settings.turns
-    const turn = ended ? button('Over', () => this.showEnd(s.declaration?.won ? true : s.declaration?.lost ? false : null), 'primary end') : button(label, () => this.endTurn(), 'primary end')
+    const run = this.turns.state
+    let turn: HTMLElement
+    if (ended) turn = button('Over', () => this.showEnd(s.declaration?.won ? true : s.declaration?.lost ? false : null), 'primary end')
+    else if (run.armed) {
+      // turns running on by themselves: the button stops them, its foot filling toward the next turn
+      turn = button('Stop', () => this.turns.stop(), 'primary end running' + (run.leftMs !== null ? ' counting' : ''))
+      turn.setAttribute('aria-label', 'Turns are running on by themselves. Stop them.')
+      // drawn again part way through, the bar carries on from where it had got to
+      if (run.leftMs !== null) { turn.style.setProperty('--run-ms', `${run.waitMs}ms`); turn.style.setProperty('--run-from', `${Math.round(run.leftMs - run.waitMs)}ms`) }
+    } else turn = button(label, () => this.endTurn(), 'primary end')
     const card = this.sheetShowing() ? null : this.currentCard()
     this.queuebar.classList.toggle('carded', card !== null)
     if (card) {
@@ -1315,7 +1366,7 @@ export class App {
         h('button', { class: 'top', type: 'button', onClick: () => { if (this.queueExpanded && this.sheet.kind === 'queue') this.closeSheet(); else this.open({ kind: 'queue' }) } },
           h('span', { class: 'mark ' + typeClass }),
           lead,
-          h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? top.title : 'A quiet turn'),
+          h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? top.title : run.armed ? 'Turns running on' : 'A quiet turn'),
           total > 1 ? h('span', { class: 'count' }, String(total)) : null,
         ),
         turn,

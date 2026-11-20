@@ -69,6 +69,13 @@ end, no drag and drop. No confirmation dialogs: undo instead. Below 44 px a tile
 tappable; a destination hold still works down to the overview zoom, because it commits nothing until
 the release.
 
+## Turns run on
+
+Turns end by themselves while nothing new needs the player (`src/ui/turns.ts`, `DECISIONS.md` 190):
+a quiet turn after the player acts, and every turn after one the player ends, until the queue holds
+something it did not, or something that grows worse each turn. Any touch stops a run. Rigs drive
+their own turns; the runner stays off under automation unless a check sets `turns.allowInRigs`.
+
 ## Repository layout
 
 ```
@@ -130,7 +137,8 @@ against build specification section 6 before touching a constant.
 9. Portrait and landscape both work
 10. The tab can be backgrounded and restored without losing the WebGL context
 
-`npm run smoke` exercises all ten in a headless mobile Chromium; do it on a real phone as well.
+`npm run smoke` exercises all ten in a headless mobile Chromium, and an eleventh: turns run on by
+themselves and stop when something new needs the player. Do it on a real phone as well.
 
 ## Deployments
 

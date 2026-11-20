@@ -62,6 +62,13 @@ export const STORE_WARM = 0.8
  *  hundred milliseconds, once, and then nothing on the screen moves. */
 export const SETTLE_MS = 160
 
+/** Turns that run on by themselves (src/ui/turns.ts, DECISIONS.md 190). A quiet turn, after the
+ *  player has done something and nothing is left in the queue, ends after this long, which leaves
+ *  time to touch the screen and keep the turn, or to undo what was just done. Between turns of a
+ *  run, after the last move has been drawn, the map rests this long so each turn can be seen. */
+export const AUTO_TURN_QUIET_MS = 2500
+export const AUTO_TURN_PAUSE_MS = 800
+
 /** A tile's sheet leads with the place itself, small, drawn by the map's renderer: a box this many
  *  rem square, showing this many tiles across with the tile in the middle (build brief phase 3). */
 export const PLACE_BOX_REM = 4.5
@@ -362,6 +369,9 @@ export const TOKENS: Record<string, string> = {
 
   // Motion
   '--hold-ms': `${HOLD_MS}ms`,
+  /** The End turn button while turns run on: a bar along its foot fills toward the next turn. */
+  '--run-bar-h': '4px',
+  '--run-bar': 'rgba(23,24,26,0.55)',
   '--slide-ms': '180ms',
   '--fade-ms': '200ms',
   '--opening-fade-ms': `${OPENING_FADE_MS}ms`,
