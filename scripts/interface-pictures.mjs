@@ -19,7 +19,8 @@
 //
 // Run with:  CHROMIUM=/opt/pw-browsers/chromium node scripts/interface-pictures.mjs
 //            PREFIX=before- names a set taken before a change
-//            ONLY=market shoots only the pictures whose name contains that
+//            ONLY=market shoots only the pictures whose name contains that (or any of a list
+//            separated by commas)
 //
 // JPEG at quality 85, never PNG: pictures are kept in the repository. Slow under a software renderer,
 // several minutes. Run it on its own, never beside another rig or the smoke test.
@@ -184,10 +185,11 @@ async function layout(page) {
 }
 
 const shotPath = (name) => `${OUT}/${PREFIX}${name}.jpg`
+const wanted = (name) => !ONLY || ONLY.split(',').some(k => name.includes(k))
 
 /** Open a sheet over the map, wait for it, shoot it, and say what the layout check found. */
 async function shoot(page, name, spec, wait = 900) {
-  if (ONLY && !name.includes(ONLY)) return
+  if (!wanted(name)) return
   await page.evaluate((spec) => { const a = window.fairholm; a.closeSheet(); if (spec) a.open(spec) }, spec)
   await page.waitForTimeout(wait)
   await idle(page)
@@ -264,14 +266,13 @@ function matureShots(view, f) {
   ]
 }
 
-const wanted = (name) => !ONLY || name.includes(ONLY)
 
 for (const view of VIEWS) {
   // a view none of whose pictures are wanted is not opened at all
-  const names = view.every ? ['early', 'timing', '26-resume', ...matureShots(view, { st: 0, hauler: 0 }).map(x => x[0])] : matureShots(view, { st: 0 }).map(x => x[0])
+  const names = view.every ? ['early-map-hud', 'early-settlement', 'timing', '26-resume', ...matureShots(view, { st: 0, hauler: 0 }).map(x => x[0])] : matureShots(view, { st: 0 }).map(x => x[0])
   if (!names.some(wanted)) continue
   const { ctx, page } = await open(view)
-  if (view.every && wanted('early')) {
+  if (view.every && (wanted('early-map-hud') || wanted('early-settlement'))) {
     const e = await settle(page, 'early')
     note(`${view.name} early: turn ${e.turn}, ${e.name}, ${e.people} people (${e.idle} idle); ${e.buildings}`)
     await shoot(page, 'early-map-hud', null, 400)

@@ -7,6 +7,7 @@ import { C } from '../sim/constants'
 import { sellPrice, buyPrice } from '../sim/market'
 import { passageCost, population } from '../sim/labour'
 import { SEASON_NAMES, season, year } from '../sim/turn'
+import { fmt } from './dom'
 
 export interface Term { title: string; text: string; state?: (s: GameState) => string }
 
@@ -39,7 +40,7 @@ export const TERMS: Record<string, Term> = {
   company: { title: 'The Company', text: 'The Company sent you, buys what you consign, and sells what you cannot make. It also sends demands, and a recall fleet when you declare.', state: s => `Fleet strength ${Math.round(s.company.fleetStrength)}. ${s.company.embargoed.length ? 'Embargoed: ' + s.company.embargoed.join(', ') + '.' : 'No embargoes.'}` },
   charge: { title: 'The charge', text: 'The Company keeps a share of every consignment. Each demand you accept raises it.', state: s => `${Math.round(s.company.charge * 100)} per cent.` },
   consign: { title: 'Consign', text: 'Consigning sends goods to the Company market in lots of twenty-five. Each lot moves the price, so a dump walks it down while you watch.', state: s => `Payment arrives ${C.market.crossingTurns[s.settings.crossing]} turns after the ship leaves.` },
-  word: { title: 'Word', text: 'Word is reputation at home. Consigning earns it, and when enough has gathered a colonist takes passage to join you.', state: s => `${s.charters[0].word} Word held; next passage needs ${passageCost(s)}.` },
+  word: { title: 'Word', text: 'Word is reputation at home. Consigning earns it, and when enough has gathered a colonist takes passage to join you.', state: s => `${fmt(s.charters[0].word)} Word held; next passage needs ${passageCost(s)}.` },
   passage: { title: 'Passage', text: 'A passage brings one colonist across. Each costs more Word than the last; gold can buy one outright.', state: s => `${s.charters[0].passages} passages so far.` },
   landing: { title: 'The Landing', text: 'Your first settlement, where the lander beached. Freight landers come down offshore of any coastal settlement you own; inland settlements haul to one, or build a consignment office.', state: s => s.settlements.find(x => x.owner === 0) ? `${s.settlements.find(x => x.owner === 0)!.name}.` : 'Not yet ashore.' },
   settlement: { title: 'Settlement', text: 'A settlement works the nine tiles around it and the buildings within. Every colonist in it has one job.', state: s => `${s.settlements.filter(x => x.owner === 0).length} of yours.` },

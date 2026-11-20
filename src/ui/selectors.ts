@@ -389,6 +389,42 @@ export function goodsStrip(s: GameState, st: Settlement): GoodChip[] {
   return out
 }
 
+/** The least surplus a send or an offer moves: the literal 10 in `shipSurplus` (src/sim/orders.ts)
+ *  and in `offerSurplus` (src/sim/predecessors.ts), mirrored here; TUNING.md lists both among the
+ *  literals that should be constants. */
+const SURPLUS_SHIPMENT_MIN = 10
+
+/** The stock at which a good's surplus rule next acts at this settlement, selling, sending or
+ *  offering: the tick on its fullness bar (art direction brief section 11a, rule 2). Null where no
+ *  rule acts on it: a hold, a good the Company does not take, the capability goods a settlement-wide
+ *  rule keeps (tooling, arms, instruments), a settlement that cannot consign. Mirrors the turn: the
+ *  market system's consignment, which keeps twice the threshold of a building's input and of horses
+ *  and sells a lot at a time, or what is above the threshold short of a lot once the store is full;
+ *  and the orders' sending and the predecessors' offering, which move anything above the threshold
+ *  once it is worth a shipment. The three must move together. */
+export function ruleStarts(s: GameState, st: Settlement, g: GoodId): number | null {
+  if (g === 'food') return null
+  const rule = surplusRuleFor(st, g)
+  const cap = storageCapacity(st)
+  const office = st.buildings.consignment > 0
+  const starts: number[] = []
+  const p = C.market.goods[g]
+  const consigns = rule.destination.kind === 'consign' || (office && !rule.own && rule.destination.kind !== 'hold')
+  if (p.traded && consigns && (office || (canConsign(s, st).ok && !s.company.embargoed.includes(g))) && g !== 'tooling' && g !== 'arms' && g !== 'instruments') {
+    const threshold = office ? Math.min(rule.threshold, C.market.consignmentOfficeThreshold) : rule.threshold
+    const input = BUILDING_LINES.some(l => st.buildings[l] > 0 && (C.buildings.lines[l].input === g || C.buildings.lines[l].secondInput === g))
+    const keep = input || g === 'horses' ? threshold * 2 : threshold
+    if (keep + C.market.lotSize <= cap) starts.push(keep + C.market.lotSize)
+    else if (keep + C.market.fullStoreMinSale <= cap) starts.push(cap)
+  }
+  if (rule.destination.kind === 'ship' && (rule.own || !['tooling', 'arms', 'horses', 'instruments'].includes(g))) {
+    const to = s.settlements[rule.destination.settlement]
+    if (to && to.owner === 0) starts.push(rule.threshold + SURPLUS_SHIPMENT_MIN)
+  }
+  if (rule.destination.kind === 'offer' && p.predecessor && s.predecessors[rule.destination.predecessor]) starts.push(rule.threshold + SURPLUS_SHIPMENT_MIN)
+  return starts.length ? Math.min(...starts) : null
+}
+
 /** One good on the settlement screen's shelf: what is held, what the store holds, what this turn
  *  will add or take away, and how full that leaves it. */
 export interface GoodFill {
@@ -406,6 +442,8 @@ export interface GoodFill {
   /** Plain when there is room; warm as it nears capacity; spoils when it is over and the excess will
    *  be lost at the end of the turn; short when food will run out this turn. */
   state: 'plain' | 'warm' | 'spoils' | 'short'
+  /** Where the surplus rule starts to sell, as a share of the capacity, or null (`ruleStarts`). */
+  tick: number | null
 }
 
 /** Every good the settlement holds or touches this turn, food first, then in the order of the goods.
@@ -430,14 +468,15 @@ export function goodsShelf(s: GameState, st: Settlement, warmAt: number): GoodFi
     if (g === 'food') {
       const stock = st.foodStore, capacity = C.labour.granaryThreshold
       const change = foodBalance(s, st)
-      out.push({ good: g, stock, capacity, change, fill: Math.max(0, Math.min(1, stock / capacity)), state: stock + change < 0 ? 'short' : 'plain' })
+      out.push({ good: g, stock, capacity, change, fill: Math.max(0, Math.min(1, stock / capacity)), state: stock + change < 0 ? 'short' : 'plain', tick: null })
       continue
     }
     const stock = st.stock[g]
     const change = (made[g] ?? 0) + (free[g] ?? 0) - (used[g] ?? 0)
     if (stock <= 0 && change === 0) continue
     const state = stock > cap ? 'spoils' : Math.max(stock, stock + change) >= warmAt * cap ? 'warm' : 'plain'
-    out.push({ good: g, stock, capacity: cap, change, fill: Math.max(0, Math.min(1, stock / cap)), state })
+    const starts = ruleStarts(s, st, g)
+    out.push({ good: g, stock, capacity: cap, change, fill: Math.max(0, Math.min(1, stock / cap)), state, tick: starts === null ? null : Math.min(1, starts / cap) })
   }
   return out
 }

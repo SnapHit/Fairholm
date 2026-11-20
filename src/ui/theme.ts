@@ -95,6 +95,8 @@ export const TOKENS: Record<string, string> = {
   '--teal': '#1e5f66',
   '--loss': '#d8553e',
   '--loss-soft': 'rgba(216,85,62,0.18)',
+  /** What a turn adds, set against --loss for what it takes away: the palette's own green. */
+  '--gain': 'var(--chance)',
   '--company': '#c9a24a',
   '--stuck': '#8fa3b5',
   '--idle': '#7f8a6a',
@@ -163,6 +165,23 @@ export const TOKENS: Record<string, string> = {
   '--shadow-sheet': '0 -8px 28px rgba(0,0,0,0.45)',
   '--shadow-text': '0 1px 2px rgba(0,0,0,0.6)',
 
+  // Icons, art direction brief section 11a: one drawing at every size, standing on the panel with no
+  // plate behind it. In rem, so they follow the reader's own font size: in a yield pill, in the top
+  // strip, on the goods shelf, on a board or catalogue tile, and at the head of a sheet. In a sentence
+  // in em, so an icon is as tall as the words beside it and a little more, and dropped below their
+  // baseline by as much as each drawing leaves under its feet, so it stands on the line.
+  '--ic-inline': '1.3em',
+  '--ic-inline-drop': '-0.3em',
+  '--ic-pill': '1.0625rem',      // 17
+  '--ic-hud': '1.25rem',         // 20
+  '--ic-shelf': '2.125rem',      // 34
+  '--ic-tile': '2.5rem',         // 40
+  '--ic-hero': '4rem',           // 64
+  /** A faint pill's icon: what a tile could make, not what it makes. */
+  '--ic-faint': '0.55',
+  /** Over the map an icon carries the same shadow the words there do, so it reads on pale ground. */
+  '--ic-over-map': 'drop-shadow(0 1px 1.5px rgba(0,0,0,0.7))',
+
   // Sizes
   '--tap-min': `${TAP_MIN_PX}px`,
   '--control-h': '40px',
@@ -203,14 +222,29 @@ export const TOKENS: Record<string, string> = {
   '--plot-h': '0.3',
   '--plot-line': 'rgba(233,226,204,0.4)',
   '--plot-fill': 'rgba(233,226,204,0.05)',
-  /** A good on the shelf, and the bar for how full its store is: plain, warm, spoiling. */
-  '--goods-h': '3.25rem',
+  /** The goods shelf, settlement screen brief section 2: each good's icon stands on one shared shelf
+   *  (a soft band in the raised surface colour under the row, lit from above like the drawings), its
+   *  stock under it in large figures with the change this turn beside them, and under those the bar
+   *  for how full its store is, plain, warm or spoiling, with a tick where the surplus rule starts to
+   *  sell. The row's height, a good's least width, the shelf's thickness, and how far an icon's feet
+   *  sit into it. */
+  '--goods-h': '4.375rem',
   '--good-w': '3.5rem',
+  '--shelf-h': '0.5rem',
+  '--shelf-sink': '0.3125rem',
+  '--shelf-top': '#40464f',
+  '--shelf-front': 'var(--surface-raised)',
+  '--shelf-under': 'rgba(0,0,0,0.28)',
+  '--stock-size': 'var(--text-lead)',
   '--fill-h': '4px',
   '--fill-track': 'rgba(233,226,204,0.14)',
   '--fill-plain': 'var(--ink-dim)',
   '--fill-warm': 'var(--warn)',
   '--fill-spoils': 'var(--loss)',
+  /** The tick on a fullness bar where a rule acts: how wide, and how far it stands past the bar. */
+  '--tick-w': '2px',
+  '--tick-over': '3px',
+  '--tick': 'var(--ink)',
   '--cell-gap': '4px',
   '--ring-radius': '5px',
   '--worker-dot': '14px',

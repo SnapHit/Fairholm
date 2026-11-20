@@ -19,6 +19,27 @@ body {
   position: fixed; inset: 0; overflow: hidden;
 }
 
+/* ---- icons: one drawing at every size, art direction brief section 11a. No plate behind any of
+   them: each stands on its own drawn shadow, on whatever panel it is in. In a sentence an icon is
+   sized in em and dropped so its feet sit on the line of the words; everywhere else in rem. */
+.ic {
+  display: inline-block; flex: none; width: var(--ic-inline); height: var(--ic-inline);
+  vertical-align: var(--ic-inline-drop); pointer-events: none;
+}
+.ic-pill { width: var(--ic-pill); height: var(--ic-pill); vertical-align: middle; }
+.ic-hud { width: var(--ic-hud); height: var(--ic-hud); vertical-align: middle; }
+.ic-shelf { width: var(--ic-shelf); height: var(--ic-shelf); }
+.ic-tile { width: var(--ic-tile); height: var(--ic-tile); }
+.ic-hero { width: var(--ic-hero); height: var(--ic-hero); }
+/* a good's word in a sentence with its icon before it, never wrapped apart */
+.ic-word { white-space: nowrap; }
+.ic-word .ic { margin-right: var(--space-1); }
+/* words said to a screen reader and not shown: what an icon and a figure stand for */
+.sr {
+  position: absolute; width: var(--line-hair); height: var(--line-hair); margin: calc(var(--line-hair) * -1);
+  padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
 /* ---- the shell: the map is the whole screen, always -------------------------------------------- */
 #app { position: absolute; inset: 0; overflow: hidden; }
 #map {
@@ -47,13 +68,17 @@ body {
 #hud .status {
   display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
   font-size: var(--text-small); color: var(--ink-dim);
-  text-shadow: var(--shadow-text); pointer-events: auto; align-items: baseline;
+  text-shadow: var(--shadow-text); pointer-events: auto; align-items: center;
   padding-right: calc(var(--speaker) + var(--space-4));
 }
 #hud .status > * { white-space: nowrap; }
 #hud .status .when { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-#hud .status .purse { display: flex; gap: var(--space-5); }
+#hud .status .purse { display: flex; gap: var(--space-6); }
 #hud .status .term { color: var(--ink); }
+/* a figure in the top strip: its icon and its number, the number underlined as a term is */
+#hud .fig { display: inline-flex; align-items: center; gap: var(--space-2); border-bottom: none; font-variant-numeric: tabular-nums; }
+#hud .fig .u { border-bottom: var(--line-hair) dotted var(--ink-faint); }
+#hud .ic { filter: var(--ic-over-map); }
 #hud .spacer { flex: 1; }
 #hud .menu {
   background: none; border: none; color: var(--ink-dim); font: inherit;
@@ -394,11 +419,15 @@ input[type=text] {
 @supports (width: 1cqw) {
   .st-head .who .name { font-size: clamp(var(--text-small), var(--name-cqw), var(--text-title)); }
 }
+/* the numbers: the people, the food a turn and the resolve, each its icon and its figure */
 .st-head .sub {
   flex: 0 0 100%; margin-top: calc(var(--space-2) * -1);
-  font-size: var(--text-tiny); color: var(--ink-dim); text-align: center;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; justify-content: center; align-items: center; gap: var(--space-7);
+  font-size: var(--text-small); color: var(--ink-dim); white-space: nowrap; min-width: 0;
 }
+.st-head .sub .fig { display: inline-flex; align-items: center; gap: var(--space-2); }
+.st-head .sub .fig b { font-weight: var(--weight-medium); color: var(--ink); font-variant-numeric: tabular-nums; }
+.st-head .sub .fig.loss b { color: var(--loss); }
 /* the more control's menu: Build order, Equip, School, Hulls, Everything here */
 .st-more {
   position: absolute; z-index: 4; top: calc(100% - var(--space-2)); right: calc(var(--space-4) + var(--safe-right));
@@ -570,38 +599,61 @@ input[type=text] {
 .lot.idle .name, .lot.units .name { contain: none; display: block; margin-left: 0; margin-right: 0; white-space: nowrap; }
 .lot.idle .name .btn { margin-top: 0; }
 
-/* ---- the goods: each its mark and stock, the change small, and how full its store is ----------- */
+/* ---- the goods: a shelf. Each good's icon stands on one shared band in the raised surface colour,
+   lit from above as the drawings are; its stock is under it in large figures with the change this
+   turn beside them, and under those the bar for how full its store is, with a tick where the
+   surplus rule starts to sell. Market stands at the head as the coin. Each good draws its own length
+   of the shelf and the lengths meet, and the end of the rail carries it on to the edge, so the row
+   stands on one band however few goods there are. */
 .st-goods { flex: none; width: 100%; }
 .st-goods .rail {
-  display: flex; gap: var(--space-2); overflow-x: auto; overflow-y: hidden;
+  display: flex; overflow-x: auto; overflow-y: hidden;
   -webkit-overflow-scrolling: touch; scrollbar-width: none;
 }
 .st-goods .rail::-webkit-scrollbar { display: none; }
-.st-goods .market {
-  flex: none; height: var(--goods-h); min-height: 0; padding: 0 var(--space-4);
-  border: none; background: var(--surface-tint); color: var(--ink); font-size: var(--text-small);
+.good, .st-goods .shelf-end {
+  flex: none; position: relative; height: var(--goods-h); min-width: var(--good-w);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0 var(--space-3); margin: 0; border: none; border-radius: var(--radius-md); background: none;
+  color: var(--ink); font: inherit; cursor: pointer;
 }
-.good {
-  flex: none; height: var(--goods-h); min-width: var(--good-w);
-  display: flex; flex-direction: column; justify-content: center; gap: var(--space-1);
-  padding: 0 var(--space-3); border: none; border-radius: var(--radius-md); background: none;
-  color: var(--ink); font: inherit; cursor: pointer; text-align: left;
+.st-goods .shelf-end { flex: 1 0 var(--space-6); min-width: var(--space-6); padding: 0; cursor: default; }
+.good::before, .st-goods .shelf-end::before {
+  content: ''; position: absolute; z-index: 0; left: 0; right: 0; pointer-events: none;
+  top: calc(var(--ic-shelf) - var(--shelf-sink)); height: var(--shelf-h);
+  background: linear-gradient(to bottom, var(--shelf-top), var(--shelf-front));
+  box-shadow: 0 var(--shelf-h) var(--shelf-h) calc(var(--shelf-h) / -2) var(--shelf-under);
 }
+.st-goods .rail > :first-child::before { border-top-left-radius: var(--shelf-h); border-bottom-left-radius: var(--shelf-h); }
+.st-goods .shelf-end::before { border-top-right-radius: var(--shelf-h); border-bottom-right-radius: var(--shelf-h); }
 .good:active { background: var(--surface-tint); }
-.good .mark { font-size: var(--text-micro); line-height: var(--leading); color: var(--ink-dim); white-space: nowrap; }
-.good .n { font-size: var(--text-small); line-height: var(--leading); font-weight: var(--weight-strong); white-space: nowrap; }
-.good .n small { margin-left: var(--space-2); font-size: var(--text-micro); font-weight: var(--weight-normal); color: var(--ink-dim); }
-.good .fill { display: block; height: var(--fill-h); border-radius: var(--radius-pill); background: var(--fill-track); overflow: hidden; }
-.good .fill i { display: block; height: 100%; border-radius: inherit; background: var(--fill-plain); }
+.good .on-shelf { position: relative; z-index: 1; display: block; height: var(--ic-shelf); }
+.good .on-shelf .ic { display: block; }
+.good .n {
+  position: relative; z-index: 1; margin-top: calc(var(--shelf-h) - var(--shelf-sink) + var(--space-2));
+  font-size: var(--stock-size); line-height: var(--leading-tight); font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.good .n small { margin-left: var(--space-1); font-size: var(--text-micro); font-weight: var(--weight-medium); color: var(--ink-dim); }
+.good .n small.gain { color: var(--gain); }
+.good .n small.loss { color: var(--loss); }
+.good.market .n { font-size: var(--text-small); font-weight: var(--weight-medium); color: var(--ink-dim); }
+/* the bar for how full the store is; the tick stands past it above and below, so nothing clips it */
+.good .fill { position: relative; display: block; align-self: stretch; height: var(--fill-h); margin-top: var(--space-3); border-radius: var(--radius-pill); background: var(--fill-track); }
+.good .fill i { display: block; max-width: 100%; height: 100%; border-radius: inherit; background: var(--fill-plain); }
+.good .fill .tick {
+  position: absolute; top: calc(var(--tick-over) * -1); bottom: calc(var(--tick-over) * -1);
+  width: var(--tick-w); margin-left: calc(var(--tick-w) / -2); border-radius: var(--tick-w); background: var(--tick);
+}
 .good.warm .fill i { background: var(--fill-warm); }
 .good.spoils .fill i, .good.short .fill i { background: var(--fill-spoils); }
-.good.spoils .n, .good.short .n small { color: var(--loss); }
+.good.spoils .n { color: var(--loss); }
 
 /* ---- landscape: the ring on the left, square and as tall as the space allows; the town over the
    goods on the right. The ring comes first because the eye goes to it first. */
 #app.landscape .st-head { flex-wrap: nowrap; }
 #app.landscape .st-head .who { flex: 0 1 auto; }
-#app.landscape .st-head .sub { order: 1; flex: 1 1 auto; min-width: 0; margin-top: 0; text-align: left; }
+#app.landscape .st-head .sub { order: 1; flex: 1 1 auto; min-width: 0; margin-top: 0; justify-content: flex-start; gap: var(--space-6); }
 #app.landscape .st-head .orders { order: 2; }
 #app.landscape .st-head .more { order: 3; }
 #app.landscape .st-head .close { order: 4; }
@@ -691,14 +743,17 @@ input[type=text] {
 }
 @media (prefers-reduced-motion: reduce) { .stand.settle { animation: none; } }
 
+/* what something makes: the good's icon and the number, on a small dark pill so it reads over the
+   ring's picture */
 .pill {
-  display: inline-block; white-space: nowrap;
-  font-size: var(--text-micro); line-height: var(--leading); font-weight: var(--weight-normal);
-  padding: 0 var(--space-3); border-radius: var(--radius-pill);
+  display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap;
+  font-size: var(--text-tiny); line-height: var(--leading-tight); font-weight: var(--weight-normal);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: var(--radius-pill);
   background: var(--pill-bg); color: var(--ink);
 }
-.pill b { font-weight: var(--weight-strong); }
+.pill b { font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .pill.faint { background: var(--pill-faint-bg); color: var(--ink-dim); }
+.pill.faint .ic { opacity: var(--ic-faint); }
 
 /* on the ring each tile is a container, so a figure is a share of its tile at any size */
 .st-ring .tile { container-type: size; }

@@ -16,13 +16,25 @@
 // file and goodMark in src/ui/pictures.ts are the only places a good becomes a picture.
 
 import sprite from './icons.svg?raw'
-import type { GoodId } from '../sim/state'
+import { GOODS, type GoodId } from '../sim/state'
 
-export type IconName =
-  | GoodId | 'frame' | 'grievance'
-  | 'coin' | 'word' | 'resolve' | 'colonist'
-  | 'sprout' | 'sun' | 'leaf' | 'frost'
-  | 'crate' | 'cannon' | 'sail' | 'seal' | 'banner'
+/** The icons that are not goods, in the order the sprite draws them. */
+const OTHER_ICONS = [
+  'frame', 'grievance',
+  'coin', 'word', 'resolve', 'colonist',
+  'sprout', 'sun', 'leaf', 'frost',
+  'crate', 'cannon', 'sail', 'seal', 'banner',
+] as const
+
+export type IconName = GoodId | typeof OTHER_ICONS[number]
+
+/** Every icon by name: what tests/icons.test.ts holds the sprite to. */
+export const ICON_NAMES: readonly IconName[] = [...GOODS, ...OTHER_ICONS]
+
+/** The sizes an icon is drawn at, each a token in src/ui/theme.ts: in a sentence, in a yield pill, on
+ *  the goods shelf, on a tile of a board or a catalogue, at the head of a sheet, and in the top strip.
+ *  One drawing at every size (art direction brief section 11a). */
+export type IconSize = 'inline' | 'pill' | 'shelf' | 'tile' | 'hero' | 'hud'
 
 /** The season's icon, by the index into SEASON_NAMES in src/sim/turn.ts: new green, deep summer,
  *  the turn of the leaf, bare ground. */
@@ -44,16 +56,20 @@ export function installIcons(doc: Document = document): void {
   doc.body.prepend(holder)
 }
 
-/** One icon, as an inline svg that the stylesheet sizes (class `ic`, one em square unless a size
- *  class says otherwise). Decorative: whatever it stands for is said in words beside it or in the
- *  label of the control it sits in. */
-export function icon(name: IconName, cls = ''): SVGSVGElement {
+/** One icon, as an inline svg that the stylesheet sizes (class `ic` and `ic-<size>`). Decorative:
+ *  whatever it stands for is said in words beside it or in the label of the control it sits in. */
+export function icon(name: IconName, size: IconSize = 'inline', cls = ''): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg')
-  svg.setAttribute('class', 'ic' + (cls ? ' ' + cls : ''))
+  svg.setAttribute('class', `ic ic-${size}${cls ? ' ' + cls : ''}`)
   svg.setAttribute('aria-hidden', 'true')
   svg.setAttribute('focusable', 'false')
   const use = document.createElementNS(SVG_NS, 'use')
   use.setAttribute('href', `#ic-${name}`)
   svg.append(use)
   return svg
+}
+
+/** Whether a word is a good's id, so that a sentence can put the good's icon before it. */
+export function isGood(word: string): word is GoodId {
+  return (GOODS as string[]).includes(word)
 }

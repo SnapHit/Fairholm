@@ -21,8 +21,9 @@ import { SETTLE_MS, STORE_WARM } from './theme'
 import { ringView, terrainLayers, tileFigures } from './ring'
 import { townView } from './town'
 import { goodMark } from './pictures'
+import { icon, type IconName } from './icons'
 import {
-  ringCells, goodsShelf, destinationsFor, ownSettlements, consignable, type GoodFill,
+  ringCells, goodsShelf, destinationsFor, ownSettlements, consignable, goodWord, type GoodFill,
 } from './selectors'
 import type { App } from './app'
 
@@ -88,10 +89,21 @@ function header(app: App, s: GameState, st: Settlement, multiple: boolean): HTML
     h('button', { class: 'close', type: 'button', 'aria-label': 'close', onClick: () => app.closeSheet() }, '✕'),
   )
   if (multiple) head.append(nav(1, 'next settlement', '›'))
-  // the numbers, on a line of their own under the controls, as wide as the screen
-  head.append(h('div', { class: 'sub' }, `${plural(st.colonists.length, 'colonist')} · food ${signed(fb)}${C.flags.grievance ? ` · resolve ${Math.round(st.resolve * 100)}%` : ''}`))
+  // the numbers, on a line of their own under the controls, as wide as the screen: the people, the
+  // food a turn and the resolve, each its icon and its figure, and its word for a screen reader
+  const resolve = Math.round(st.resolve * 100)
+  head.append(h('div', { class: 'sub' },
+    figure('colonist', String(st.colonists.length), st.colonists.length === 1 ? 'colonist' : 'colonists'),
+    figure('food', signed(fb), 'food a turn', fb < 0),
+    C.flags.grievance ? figure('resolve', `${resolve}%`, 'resolve') : null,
+  ))
   if (open) head.append(moreMenu(app, st))
   return head
+}
+
+/** An icon and a figure, with the word for it said to a screen reader and nowhere else. */
+function figure(name: IconName, value: string, word: string, loss = false): HTMLElement {
+  return h('span', { class: 'fig' + (loss ? ' loss' : '') }, icon(name, 'hud'), h('b', {}, value), h('span', { class: 'sr' }, ` ${word}`))
 }
 
 /** Build order, Equip, School, Hulls and Everything here: each two taps from the screen. */
@@ -124,25 +136,38 @@ function notesLine(app: App, s: GameState, st: Settlement, pick: number | null):
 
 // ---- the goods --------------------------------------------------------------------------------------
 
-/** One good: its mark and stock, the change this turn small, and a bar for how full its store is. */
-function goodChip(app: App, st: Settlement, g: GoodFill): HTMLElement {
+/** One good on the shelf: its icon standing on the shelf, its stock under it in large figures with
+ *  the change this turn beside them, gain and loss in their own colours, and the bar for how full the
+ *  store is, with a tick where the surplus rule starts to sell. A tap opens the good. */
+function goodOnShelf(app: App, st: Settlement, g: GoodFill): HTMLElement {
+  const change = Math.round(g.change)
+  const name = goodWord(g.good)
   const words = g.good === 'food'
-    ? `${fmt(g.stock)} banked of ${g.capacity} for the next colonist, ${signed(Math.round(g.change))} this turn${g.state === 'short' ? ', running short' : ''}`
-    : `${fmt(g.stock)} of ${g.capacity} held, ${signed(Math.round(g.change))} this turn${g.state === 'spoils' ? ', spoiling' : g.state === 'warm' ? ', nearly full' : ''}`
+    ? `${fmt(g.stock)} banked of ${g.capacity} for the next colonist, ${signed(change)} this turn${g.state === 'short' ? ', running short' : ''}`
+    : `${fmt(g.stock)} of ${g.capacity} held, ${signed(change)} this turn${g.state === 'spoils' ? ', spoiling' : g.state === 'warm' ? ', nearly full' : ''}${g.tick !== null ? `, the surplus rule acts at ${Math.round(g.tick * g.capacity)}` : ''}`
+  const fill = h('span', { class: 'fill' }, h('i', { style: { width: `${Math.round(g.fill * 100)}%` } }))
+  if (g.tick !== null) fill.append(h('b', { class: 'tick', style: { left: `${(g.tick * 100).toFixed(1)}%` } }))
   return h('button', {
-    class: 'good ' + g.state, type: 'button', 'aria-label': `${goodMark(g.good).textContent}: ${words}`,
+    class: 'good ' + g.state, type: 'button', 'aria-label': `${name}: ${words}`,
     onClick: () => app.open({ kind: 'goodActions', settlement: st.id, good: g.good }),
   },
-    goodMark(g.good),
-    h('span', { class: 'n' }, fmt(g.stock), Math.round(g.change) !== 0 ? h('small', {}, signed(Math.round(g.change))) : null),
-    h('span', { class: 'fill' }, h('i', { style: { width: `${Math.round(g.fill * 100)}%` } })),
+    h('span', { class: 'on-shelf' }, goodMark(g.good, 'shelf')),
+    h('span', { class: 'n' }, fmt(g.stock), change !== 0 ? h('small', { class: change > 0 ? 'gain' : 'loss' }, signed(change)) : null),
+    fill,
   )
 }
 
+/** The shelf: Market at its head, as the coin and the word, then every good the settlement holds or
+ *  touches this turn. It scrolls sideways. */
 function goodsView(app: App, s: GameState, st: Settlement): HTMLElement {
   return h('div', { class: 'st-goods' }, h('div', { class: 'rail' },
-    button('Market', () => app.open({ kind: 'market', settlement: st.id }), 'market'),
-    goodsShelf(s, st, STORE_WARM).map(g => goodChip(app, st, g)),
+    h('button', { class: 'good market', type: 'button', 'aria-label': 'The Company market', onClick: () => app.open({ kind: 'market', settlement: st.id }) },
+      h('span', { class: 'on-shelf' }, icon('coin', 'shelf')),
+      h('span', { class: 'n' }, 'Market'),
+    ),
+    goodsShelf(s, st, STORE_WARM).map(g => goodOnShelf(app, st, g)),
+    // the shelf runs on to the edge past the last good
+    h('i', { class: 'shelf-end', 'aria-hidden': 'true' }),
   ))
 }
 

@@ -13,7 +13,8 @@ import UNITS_ATLAS_JSON from '../../public/textures/units.json'
 import { manifestFrom, type AtlasManifest } from '../render/billboards'
 import { UNIT_SPRITE } from '../render/look'
 import { h, fmt } from './dom'
-import { goodWord, standingLevel } from './selectors'
+import { standingLevel } from './selectors'
+import { icon, type IconSize } from './icons'
 
 /** The people's sheet, as the map reads it, and the early era's buildings. */
 export const UNITS_SHEET: AtlasManifest = manifestFrom(UNITS_ATLAS_JSON, 'units.json')
@@ -61,10 +62,12 @@ export function unitPiece(kind: UnitKind): string | null {
   return alias && UNITS_SHEET.pieces[alias] ? alias : null
 }
 
-/** A good as the screen marks it: its word for now. Waits for the goods sheet of icons; when it
- *  arrives, the icon is drawn here and nowhere else. */
-export function goodMark(g: GoodId | 'frame' | 'grievance'): HTMLElement {
-  return h('span', { class: 'mark' }, goodWord(g))
+/** A good as the screen marks it: its icon from src/ui/icons.svg, at any of the icon sizes. The one
+ *  seam a good becomes a picture through (art direction brief section 11a, rule 6): when painted
+ *  goods art exists, it is drawn here and nothing else changes. Decorative, so whatever it sits in
+ *  says the good in words, as `goodWord` gives it. */
+export function goodMark(g: GoodId | 'frame' | 'grievance', size: IconSize = 'inline', cls = ''): SVGSVGElement {
+  return icon(g, size, cls)
 }
 
 /** Which of the seven early era drawings stands for each building line. Waits for the three building
@@ -136,8 +139,9 @@ export function chevrons(n: number): Element {
   return svg
 }
 
-/** What something makes, as a small pill: the number and the good. Faint for what a tile could make
- *  if someone worked it. */
+/** What something makes, as a small pill: the good's icon and the number (rule 1: three food is the
+ *  food icon and a 3). Faint for what a tile could make if someone worked it. The pill sits inside
+ *  a control that says the good in words. */
 export function yieldPill(n: number, good: GoodId | 'frame' | 'grievance', faint = false): HTMLElement {
-  return h('span', { class: 'pill' + (faint ? ' faint' : '') }, h('b', {}, fmt(n)), ' ', goodMark(good))
+  return h('span', { class: 'pill' + (faint ? ' faint' : '') }, goodMark(good, 'pill'), h('b', {}, fmt(n)))
 }

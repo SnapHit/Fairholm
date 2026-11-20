@@ -40,6 +40,8 @@ import { h, clear, append, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
 import { SHEET_DISMISS_PX, TAP_MIN_PX, installTheme } from './theme'
+import { installIcons, icon, isGood, SEASON_ICONS, type IconName } from './icons'
+import { goodMark } from './pictures'
 import { mountOpening, type Opening } from './opening'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
@@ -101,6 +103,8 @@ export class App {
 
   constructor(root: HTMLElement, state: GameState, resumed: boolean, notice: string | null = null) {
     installTheme()
+    // the icons' one sprite, before anything that draws an icon renders
+    installIcons()
     this.root = root
     this.state = state
     this.canvas = h('canvas', { id: 'map' }) as HTMLCanvasElement
@@ -1251,16 +1255,20 @@ export class App {
     const s = this.state
     clear(this.hud)
     const ch = s.charters[0]
+    // each figure is its icon and its number, and opens its glossary entry; the word is said to a
+    // screen reader and is one tap away for everyone else (art direction brief section 11a)
+    const figure = (key: string, name: IconName, value: string, word: string) =>
+      h('span', { class: 'term fig', role: 'button', 'aria-label': word, onClick: () => this.open({ kind: 'glossary', key }) }, icon(name, 'hud'), h('span', { class: 'u' }, value))
     this.hud.append(
       h('div', { class: 'intent', onClick: () => this.open({ kind: 'intent' }) }, s.intent),
       h('div', { class: 'status' },
         h('button', { class: 'menu', type: 'button', 'aria-label': 'menu', onClick: () => this.open({ kind: 'menu' }) }, '⋯'),
-        h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'turn' }) }, `Turn ${s.turn}`),
+        figure('turn', SEASON_ICONS[season(s.turn)], `Turn ${s.turn}`, `Turn ${s.turn}, ${SEASON_NAMES[season(s.turn)]}`),
         h('span', { class: 'when muted' }, `year ${year(s.turn)}, ${SEASON_NAMES[season(s.turn)]}`),
         h('span', { class: 'spacer' }),
         h('span', { class: 'purse' },
-          h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'gold' }) }, `${fmt(ch.gold)} gold`),
-          h('span', { class: 'term', onClick: () => this.open({ kind: 'glossary', key: 'word' }) }, `${fmt(ch.word)} Word`),
+          figure('gold', 'coin', fmt(ch.gold), `${fmt(ch.gold)} gold`),
+          figure('word', 'word', fmt(ch.word), `${fmt(ch.word)} Word`),
         ),
       ),
     )
@@ -1454,7 +1462,10 @@ export class App {
     if (this.sheet.kind === 'queue') { this.queueExpanded = false; this.renderSheet(); this.renderQueueBar() }
   }
 
-  /** Wrap known glossary terms in tappable spans. */
+  /** Wrap known glossary terms in tappable spans. A good's word has the good's icon before it, at the
+   *  size of the words, and the two never wrap apart (art direction brief section 11a). Gold is the
+   *  exception: in a sentence it is as often the treasury's money as the good dug from a seam, and
+   *  the nugget beside "62 gold due" would say the wrong thing. */
   withTerms(text: string): (HTMLElement | string)[] {
     const out: (HTMLElement | string)[] = []
     const re = /\b([A-Za-z][a-z]+)\b/g
@@ -1465,7 +1476,8 @@ export class App {
       const t = term(key)
       if (t) {
         out.push(text.slice(last, m.index))
-        out.push(h('span', { class: 'term', onClick: (e: Event) => { e.stopPropagation(); this.open({ kind: 'glossary', key }) } }, word))
+        const link = h('span', { class: 'term', onClick: (e: Event) => { e.stopPropagation(); this.open({ kind: 'glossary', key }) } }, word)
+        out.push(isGood(key) && key !== 'gold' ? h('span', { class: 'ic-word' }, goodMark(key), link) : link)
         last = m.index + word.length
       }
     }
