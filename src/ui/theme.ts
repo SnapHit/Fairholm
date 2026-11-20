@@ -62,6 +62,11 @@ export const STORE_WARM = 0.8
  *  hundred milliseconds, once, and then nothing on the screen moves. */
 export const SETTLE_MS = 160
 
+/** A tile's sheet leads with the place itself, small, drawn by the map's renderer: a box this many
+ *  rem square, showing this many tiles across with the tile in the middle (build brief phase 3). */
+export const PLACE_BOX_REM = 4.5
+export const PLACE_TILES_SHOWN = 1.6
+
 /** A colour from the map's look as a CSS colour at some opacity. */
 function rgba(hex: string, alpha: number): string {
   const [r, g, b] = hexRgb(hex).map(v => Math.round(v * 255))
@@ -267,6 +272,51 @@ export const TOKENS: Record<string, string> = {
   '--board-gap': '8px',
   /** A sheet led by a picture: the box the picture stands in at the sheet's head. */
   '--hero-box': '4rem',
+  /** Pictures in sheets, build brief phase 3. Buildings stand in boxes this tall at one scale: on a
+   *  catalogue card, under way, queued, and in a row of a list. People are drawn this tall: in a row
+   *  of a list and on a tile of a grid of people. A unit is drawn at its own size against a person
+   *  this tall: at the head of its sheet, on an equip card, and on the hulls sheet, where a trader
+   *  stands three people to its masthead; and the hull's box. */
+  '--card-pic-h': '4.5rem',
+  '--underway-h': '5.5rem',
+  '--queued-h': '3.5rem',
+  '--row-building-h': '2.75rem',
+  '--row-building-w': '3.75rem',
+  '--row-figure-h': '2.75rem',
+  '--tile-figure-h': '3rem',
+  '--person-tile-w': '5rem',
+  '--hero-person': '3.5rem',
+  '--card-person': '2.75rem',
+  '--hull-person': '1.6rem',
+  '--hull-box-w': '6.5rem',
+  '--hull-box-h': '5rem',
+  '--qitem-w': '5.5rem',
+  /** A person's box in a list, as a share of the figure's height, and where in it the feet stand; an
+   *  equip card's box, in people, tall enough for an outrider. */
+  '--person-box-w': '0.75',
+  '--person-feet-x': '45%',
+  '--person-feet-y': '96%',
+  '--unit-card-box': '1.4',
+  /** The actions at the end of a person's row take at most this share of it. */
+  '--acts-max': '50%',
+  /** The place itself at the head of a tile's sheet (PLACE_BOX_REM above), and how wide the
+   *  numbers stand in a tally of what is made and held. */
+  '--place-box': `${PLACE_BOX_REM}rem`,
+  '--tally-num-w': '2.5rem',
+  /** Something that cannot be had yet is drawn this faint, and says why on a tap. */
+  '--gated': '0.45',
+  /** A count of a few things as pips: their size, the gap between them, whole and hollow. */
+  '--pip': '7px',
+  '--pip-gap': '3px',
+  '--pip-on': 'var(--ink)',
+  '--pip-off': 'rgba(233,226,204,0.2)',
+  /** Progress toward something being built or taught, and what a turn makes. */
+  '--progress': 'var(--accent)',
+  '--made': 'var(--gain)',
+  /** The arrow between what goes into a building and what comes out: its width and its line. */
+  '--into-w': '0.875rem',
+  '--into-h': '0.625',
+  '--into-stroke': '1.7',
   '--cell-gap': '4px',
   '--ring-radius': '5px',
   '--worker-dot': '14px',

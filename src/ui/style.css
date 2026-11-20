@@ -451,6 +451,105 @@ p { margin: var(--space-3) 0; }
 .deal .side.gold small { grid-column: 1 / -1; font-size: var(--text-tiny); color: var(--ink-dim); }
 .small-print { font-size: var(--text-small); margin-top: var(--space-3); }
 
+/* ---- pictures in sheets: buildings, units and people from the map's own drawings ------------- */
+.pic-box { position: relative; flex: none; display: inline-flex; align-items: flex-end; justify-content: center; }
+.pic-box .drawing { display: block; }
+.pic-box.person { width: calc(var(--fig-box) * var(--person-box-w)); height: var(--fig-box); }
+.pic-box.person .stand { left: var(--person-feet-x); top: var(--person-feet-y); }
+.figs { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+.figs .moves { display: inline-flex; align-items: center; gap: var(--space-2); }
+.pips { display: inline-flex; align-items: center; gap: var(--pip-gap); }
+.pips i { display: block; width: var(--pip); height: var(--pip); border-radius: var(--radius-pill); background: var(--pip-off); }
+.pips i.on { background: var(--pip-on); }
+.into { flex: none; width: var(--into-w); height: calc(var(--into-w) * var(--into-h)); color: var(--ink-dim); }
+.into path { fill: none; stroke: currentColor; stroke-width: var(--into-stroke); stroke-linecap: round; stroke-linejoin: round; }
+.bar.progress .fill { background: var(--progress); }
+.bar.made .fill { background: var(--made); }
+/* the place itself at the head of a tile's sheet: the middle of the ring's picture of it */
+.place { position: relative; display: block; width: var(--place-box); height: var(--place-box); overflow: hidden; border-radius: var(--radius-md); }
+.place canvas {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: calc(var(--place-box) * var(--place-zoom)); height: calc(var(--place-box) * var(--place-zoom));
+}
+.place .cell { position: absolute; inset: 0; border-radius: 0; }
+
+/* people in a list: the figure, the standing and what they do now, what they would do here, and the
+   actions; and people as tiles of a grid, to choose from or to open */
+.person-row { gap: var(--space-4); }
+.person-row .who { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.person-row .who b { font-weight: var(--weight-medium); color: var(--ink); }
+.now { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-small); color: var(--ink-dim); }
+.now small { font-size: var(--text-small); }
+.now.idle { color: var(--warn); }
+.person-row .here { flex: none; }
+.person-row .acts { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); max-width: var(--acts-max); }
+.person-row.holder { border-bottom-color: transparent; }
+.fig.would b { font-weight: var(--weight-strong); }
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--person-tile-w), 1fr)); gap: var(--space-3); margin: var(--space-3) 0; }
+.person-tile {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-1); min-width: 0;
+  padding: var(--space-3) var(--space-2) var(--space-4); border: var(--line-hair) solid transparent; border-radius: var(--radius-md);
+  background: var(--board-tile); color: var(--ink); font: inherit; font-size: var(--text-small); cursor: pointer;
+}
+.person-tile .standing { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-tile .now small { display: none; }
+.person-tile.on { border-color: var(--accent); background: var(--accent-soft); }
+.person-tile:active { background: var(--surface-tint); }
+
+/* the catalogue: what could be built, and equip's units, as cards two across */
+.bcard {
+  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); min-width: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4); border: none; border-radius: var(--radius-md);
+  background: var(--board-tile); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.bcard:active { background: var(--surface-tint); }
+.bcard .pic-box { align-self: center; }
+.bcard .pic-box.unit { height: calc(var(--card-person) * var(--unit-card-box)); }
+.bcard .name { font-weight: var(--weight-medium); }
+.bcard .does { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); min-height: var(--ic-pill); font-size: var(--text-small); color: var(--ink-dim); }
+.bcard .cost { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: var(--text-small); }
+.bcard.gated, .hull-card.gated { opacity: var(--gated); }
+.small-role { font-size: var(--text-small); }
+/* what is under way: the frame, and a bar for each cost with its icon at the end */
+.underway { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--board-tile); }
+.underway .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.underway .name { font-weight: var(--weight-medium); }
+.cost-bar { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-small); color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.cost-bar .bar { flex: 1; }
+.cost-bar b { color: var(--ink); }
+/* what is queued, as the buildings' pictures in order */
+.queued { display: flex; gap: var(--space-5); overflow-x: auto; padding-bottom: var(--space-2); scrollbar-width: none; }
+.queued::-webkit-scrollbar { display: none; }
+.qitem { flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); width: var(--qitem-w); font-size: var(--text-small); text-align: center; }
+/* hulls: each its picture at its size against the others, and its speed, guns, hold and cost */
+.hulls { display: flex; flex-direction: column; gap: var(--board-gap); margin: var(--space-5) 0; }
+.hull-card {
+  display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) var(--space-5);
+  border: none; border-radius: var(--radius-md); background: var(--board-tile); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.hull-card:active { background: var(--surface-tint); }
+.hull-card .pic-box { width: var(--hull-box-w); height: var(--hull-box-h); }
+.hull-card .stats { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.hull-card .name { font-weight: var(--weight-medium); }
+.row-figs { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: var(--text-small); }
+/* a tally: each good's icon, its number and a short bar, made this turn or held */
+.tally { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-7); margin: var(--space-3) 0; }
+.tally-row { display: grid; grid-template-columns: auto var(--tally-num-w) minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); min-height: var(--control-h-tiny); }
+.tally-row b { text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--weight-medium); }
+.tally-row.spoils b { color: var(--loss); }
+.tally-row.tappable { cursor: pointer; border-radius: var(--radius-sm); }
+.tally-row.tappable:active { background: var(--surface-tint); }
+.goods-row { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-6); margin-bottom: var(--space-4); }
+.chip.good-chip b { font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.chip.good-chip .word { color: var(--ink-dim); }
+/* a building in a list: its picture, its name, what it makes and its places */
+.in-building { gap: var(--space-4); }
+.in-building .pic-box { width: var(--row-building-w); }
+.in-building .l { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.in-building .bar { align-self: stretch; }
+.schooling { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); min-width: var(--qitem-w); font-size: var(--text-small); }
+.schooling .bar { align-self: stretch; }
+
 /* while a move is drawn the sheet keeps what it said before it, and nothing on it can be pressed */
 #sheet.held > * { pointer-events: none; }
 /* a plotted route's controls: go, put away, and the shortcut said quietly beside them */

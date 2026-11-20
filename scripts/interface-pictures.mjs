@@ -187,8 +187,10 @@ async function layout(page) {
 const shotPath = (name) => `${OUT}/${PREFIX}${name}.jpg`
 const wanted = (name) => !ONLY || ONLY.split(',').some(k => name.includes(k))
 
-/** Open a sheet over the map, wait for it, shoot it, and say what the layout check found. */
-async function shoot(page, name, spec, wait = 900) {
+/** Open a sheet over the map, wait for it, shoot it, and say what the layout check found. A sheet
+ *  that scrolls on the owner's phone is shot again a screen further down, as `<name>-more`, so what
+ *  is below its fold is seen too. */
+async function shoot(page, name, spec, wait = 900, more = false) {
   if (!wanted(name)) return
   await page.evaluate((spec) => { const a = window.fairholm; a.closeSheet(); if (spec) a.open(spec) }, spec)
   await page.waitForTimeout(wait)
@@ -196,6 +198,16 @@ async function shoot(page, name, spec, wait = 900) {
   await page.screenshot({ path: shotPath(name), type: 'jpeg', quality: 85 })
   const l = await layout(page)
   note(`  ${name}: past the edge ${l.pastCount}${l.past.length ? ' (' + l.past.join('; ') + ')' : ''}; cut off ${l.cutCount}${l.cut.length ? ' (' + l.cut.join('; ') + ')' : ''}${l.pageScroll ? '; THE PAGE SCROLLS SIDEWAYS' : ''}`)
+  if (!more) return
+  const scrolled = await page.evaluate(() => {
+    const body = document.querySelector('#sheet.open .body')
+    if (!body || body.scrollHeight <= body.clientHeight + 40) return false
+    body.scrollTop = Math.round(body.clientHeight * 0.8)
+    return true
+  })
+  if (!scrolled) return
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: shotPath(`${name}-more`), type: 'jpeg', quality: 85 })
 }
 
 /** How long a sheet takes to open, the first time and then again with everything it draws already
@@ -289,7 +301,7 @@ for (const view of VIEWS) {
     }
     note(`  timing: the settlement screen opens in ${say(settlement)}; the market in ${say(market)}`)
   }
-  for (const [name, spec, wait] of matureShots(view, f)) await shoot(page, name, spec, wait)
+  for (const [name, spec, wait] of matureShots(view, f)) await shoot(page, name, spec, wait, !!view.every && !!spec && spec.kind !== 'settlement')
   if (view.every && wanted('26-resume')) {
     // the resume card, as a game opened again shows it
     await page.evaluate(() => { const a = window.fairholm; a.closeSheet(); a.showReturnScreen() })

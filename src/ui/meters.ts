@@ -53,6 +53,15 @@ export function priceGauge(s: GameState, g: GoodId, opts: { ghost?: number | nul
     h('span', { class: 'end' }, String(p.floor)), track, h('span', { class: 'end' }, String(p.ceiling)))
 }
 
+/** A small count as that many marks: `have` whole and the rest of `of` hollow, such as the moves a
+ *  unit has left of its moves, or a hull's speed of the fastest hull's. Decorative; the figure is
+ *  said in words beside it. */
+export function pips(have: number, of: number, cls = ''): HTMLElement {
+  const row = h('span', { class: 'pips' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true' })
+  for (let k = 0; k < of; k++) row.append(h('i', { class: k < have ? 'on' : '' }))
+  return row
+}
+
 /** How full something is, as a bar: plain, warm as it nears full, and the loss colour once it is
  *  over (spoiling) or about to run out (short); with a tick where a rule acts. Shares of the whole.
  *  The tick stands past the bar above and below, so nothing clips it. */

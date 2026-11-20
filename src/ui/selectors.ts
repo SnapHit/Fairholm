@@ -12,7 +12,9 @@ import {
 } from '../sim/labour'
 import {
   previewProduction, buildable, buildingName, storageCapacity, outputModifier, effectiveTier, canStart, surplusRuleFor,
+  isCoastalSettlement,
 } from '../sim/settlement'
+import { signatoryList } from '../sim/grievance'
 import { sellPrice, canConsign } from '../sim/market'
 import { tileLook, tileWords, type TileLook } from '../render/tiles'
 
@@ -266,6 +268,43 @@ export function buildingSlots(s: GameState, st: Settlement): BuildingSlot[] {
   return slots
 }
 
+/** One card of the build order's catalogue: something that could be built, and what stops it now,
+ *  if anything does. */
+export interface CatalogueEntry { id: BuildId; gate: string | null }
+
+/** Everything the build order offers, in the simulation's own order (`buildable`), and after it the
+ *  next tier of each line that something nameable stops for now: the population a tier needs, a
+ *  signatory who has not signed, horses for a stable, the gold for an imported machine. Mirrors the
+ *  filters in `buildable` (src/sim/settlement.ts), which drops these without saying why; a refinery
+ *  that onboarding has not shown yet stays hidden, and so does what can never be built here (a wharf
+ *  inland), so the catalogue teaches nothing early. */
+export function catalogue(s: GameState, st: Settlement): CatalogueEntry[] {
+  const gold = s.charters[0].gold
+  const out: CatalogueEntry[] = buildable(s, st).map(id => ({
+    id, gate: id.imported && gold < C.buildings.importedMachineGold ? `Needs ${C.buildings.importedMachineGold} gold; the treasury holds ${Math.floor(gold)}.` : null,
+  }))
+  const offered = new Set(out.map(e => e.id.line))
+  const sigs = s.charters[0].signatories
+  for (const line of BUILDING_LINES) {
+    if (offered.has(line)) continue
+    const def = C.buildings.lines[line]
+    const cur = st.buildings[line]
+    if (cur >= def.tiers) continue
+    if (st.buildQueue.some(b => b.line === line) || st.building?.id.line === line) continue
+    const tier = (cur + 1) as 1 | 2 | 3
+    if (line === 'wharf' && !isCoastalSettlement(s, st)) continue
+    // a refinery onboarding has not shown yet is not shown here either
+    if (def.input && def.output && def.output !== 'frame' && cur === 0) continue
+    let gate: string | null = null
+    if (st.colonists.length < C.buildings.popGate[tier]) gate = `Needs ${C.buildings.popGate[tier]} people here; ${st.colonists.length} now.`
+    else if (line === 'consignment' && !sigs.includes(0)) gate = `Needs a signatory: ${signatoryList()[0].name}.`
+    else if (line === 'press' && tier === 2 && !sigs.includes(9)) gate = `Needs a signatory: ${signatoryList()[9].name}.`
+    else if (line === 'stable') gate = 'Needs horses here, or someone working a pasture.'
+    if (gate) out.push({ id: { line, tier }, gate })
+  }
+  return out
+}
+
 // ---- who can work what --------------------------------------------------------------------------
 
 export interface Candidate {
@@ -291,17 +330,21 @@ export function tileCandidates(s: GameState, st: Settlement, tile: number, good:
   return rows
 }
 
+/** What one colonist makes in a building a turn, before its input runs short: their output at it,
+ *  the settlement's modifier, and the tier's multiplier. Nought for a line that makes no good. */
+export function makesIn(s: GameState, st: Settlement, c: Colonist, line: BuildingLine): number {
+  if (!C.buildings.lines[line].output) return 0
+  return Math.max(0, workerOutput(c, line) + outputModifier(s, st)) * C.labour.tierMultiplier[effectiveTier(st, line)]
+}
+
 /** Everyone in the settlement, best first, for a building line. */
 export function buildingCandidates(s: GameState, st: Settlement, line: BuildingLine): Candidate[] {
-  const mod = outputModifier(s, st)
-  const tier = effectiveTier(st, line)
   const inside = st.colonists.some(c => c.job.kind === 'building' && c.job.line === line)
   const full = buildingWorkers(st, line) >= C.labour.workersPerBuilding
   const rows: Candidate[] = []
   st.colonists.forEach((c, i) => {
     if (c.job.kind === 'building' && c.job.line === line) return
-    const per = C.buildings.lines[line].output ? Math.max(0, workerOutput(c, line) + mod) * C.labour.tierMultiplier[tier] : 0
-    rows.push({ index: i, colonist: c, amount: per, now: jobWords(s, st, c), swap: full && inside && c.job.kind !== 'idle' })
+    rows.push({ index: i, colonist: c, amount: makesIn(s, st, c, line), now: jobWords(s, st, c), swap: full && inside && c.job.kind !== 'idle' })
   })
   rows.sort((a, b) => b.amount - a.amount || a.index - b.index)
   return rows

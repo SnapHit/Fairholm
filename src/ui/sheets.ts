@@ -19,7 +19,7 @@ import { h, button, row, muted, fmt, signed, plural } from './dom'
 import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS, tileLook, tileWords } from '../render/tiles'
 import {
   GOOD_WORDS, ringCells, ringPreview, tileCandidates, buildingCandidates, standingWords, jobWords, goodWord,
-  takesWorkers, ruleStarts, type Candidate,
+  takesWorkers, ruleStarts, catalogue, makesIn, goodsShelf, buildingSlots, type Candidate, type CatalogueEntry,
 } from './selectors'
 import { settlementScreen, terrainLayers, tileGoodOrder } from './settlement'
 import * as Save from '../io/save'
@@ -29,9 +29,11 @@ import type { RoutePlan } from '../sim/route'
 import { oddsWords } from './route'
 import { icon, isGood, SEASON_ICONS, type IconName } from './icons'
 import { season } from '../sim/turn'
-import { goodMark } from './pictures'
-import { priceGauge, fillBar } from './meters'
-import { STORE_WARM } from './theme'
+import { goodMark, buildingPicture, unitPicture, personPicture, intoArrow } from './pictures'
+import { priceGauge, fillBar, pips } from './meters'
+import { STORE_WARM, PLACE_BOX_REM, PLACE_TILES_SHOWN } from './theme'
+import { ringPixels } from './ring'
+import { RING_PICTURE } from '../render/look'
 import type { Action } from '../sim/actions'
 
 export type SheetSpec =
@@ -165,42 +167,57 @@ function settlementDetailSheet(app: App, s: GameState, st: Settlement): HTMLElem
   const consignable = canConsign(s, st)
   const landing = landingSettlement(s)
   const clerksNeed = clerksRequired(pop)
-  const goods = GOODS.filter(g => st.stock[g] > 0 || (prod[g] ?? 0) > 0)
   const panel = h('div', { class: 'panel' },
-    header(app, [st.name, ' ', h('span', { class: 'muted small tappable', onClick: () => app.open({ kind: 'rename', settlement: st.id }) }, 'rename')], `${plural(pop, 'colonist')} · food ${signed(fb)} a turn · storage ${cap}`),
+    heroHeader(app, placePicture(app, s, st.tile), [st.name, ' ', h('span', { class: 'muted small tappable', onClick: () => app.open({ kind: 'rename', settlement: st.id }) }, 'rename')],
+      h('span', { class: 'figs' }, fig('colonist', String(pop), pop === 1 ? 'colonist' : 'colonists'), fig('food', signed(fb), 'food a turn', fb < 0 ? 'loss' : ''), fig('crate', String(cap), 'held of each good before it spoils'))),
   )
   if (st.hunger > 0) panel.append(h('div', { class: 'crisis' }, `Short of food for ${plural(st.hunger, 'turn')}.`))
-  // production
-  const prodLines = Object.entries(prod).filter(([, v]) => (v ?? 0) > 0)
-  panel.append(section('This turn', prodLines.length ? prodLines.map(([g, v]) => line([g === 'frame' ? T(app, 'frame') : g === 'grievance' ? T(app, 'grievance') : T(app, g, GOOD_NAMES[g as GoodId])], signed(v ?? 0))) : h('p', { class: 'muted' }, 'Nothing is being made. Assign the colonists below.')))
-  // stock
+  // what is made this turn: each good's icon and its signed number, with a short bar to scale
+  const made = (Object.entries(prod) as [GoodId | 'frame' | 'grievance', number][]).filter(([, v]) => (v ?? 0) > 0).sort((a, b) => b[1] - a[1])
+  const most = Math.max(1, ...made.map(([, v]) => v))
+  panel.append(section('This turn', made.length ? h('div', { class: 'tally' }, made.map(([g, v]) => h('div', { class: 'tally-row' },
+    goodMark(g, 'pill'), h('b', {}, signed(v)), fillBar(v / most, 'plain', null, 'made'), h('span', { class: 'sr' }, ` ${goodWord(g).toLowerCase()} made`)))) : h('p', { class: 'muted' }, 'Nothing is being made. Assign the colonists below.')))
+  // what is in store: each good's icon and number, with its fullness bar and the rule's tick
+  const shelf = goodsShelf(s, st, STORE_WARM).filter(g => g.good !== 'food' && g.stock > 0)
   panel.append(section('In store' + (consignable.ok ? '' : ' (haul to the coast to consign)'),
-    goods.length ? goods.map(g => {
-      const traded = C.market.goods[g].traded
-      const spoil = g !== 'food' && st.stock[g] > cap ? ' spoiling' : ''
-      return line([T(app, g, GOOD_NAMES[g]), spoil ? h('span', { class: 'warn' }, spoil) : ''], [`${st.stock[g]}`, traded ? muted(` · ${sellPrice(s, g)}`) : ''], traded && consignable.ok ? () => app.open({ kind: 'consign', settlement: st.id, good: g }) : undefined)
-    }) : h('p', { class: 'muted' }, 'Nothing in store.'),
+    shelf.length ? h('div', { class: 'tally' }, shelf.map(g => h('div', {
+      class: 'tally-row tappable ' + g.state, role: 'button', 'aria-label': `${GOOD_NAMES[g.good]}: ${g.stock} of ${g.capacity}${g.state === 'spoils' ? ', spoiling' : ''}`,
+      onClick: () => app.open({ kind: 'goodActions', settlement: st.id, good: g.good }),
+    }, goodMark(g.good, 'pill'), h('b', {}, fmt(g.stock)), fillBar(g.fill, g.state, g.tick), g.state === 'spoils' ? h('span', { class: 'warn small-print' }, 'spoiling') : null))) : h('p', { class: 'muted' }, 'Nothing in store.'),
     row(button('Market', () => app.open({ kind: 'market', settlement: st.id }), 'small'), consignable.ok ? null : muted(consignable.reason ?? '')),
   ))
-  // colonists
+  // the people, as their figures with what each does now
   panel.append(section('Colonists',
-    st.colonists.map((c, i) => line([h('b', {}, colonistLabel(c)), c.job.kind === 'idle' ? h('span', { class: 'warn' }, ' idle') : ''], jobLabel(s, c), () => app.open({ kind: 'workers', settlement: st.id, colonist: i }))),
+    h('div', { class: 'people' }, st.colonists.map((c, i) => h('button', {
+      class: 'person-tile', type: 'button', 'aria-label': `${standingWords(c)}, ${jobWords(s, st, c)}. Change their work.`,
+      onClick: () => app.open({ kind: 'workers', settlement: st.id, colonist: i }),
+    }, personPicture(c, 'var(--tile-figure-h)'), h('span', { class: 'standing' }, standingWords(c)), nowFigure(s, st, c)))),
     clerksNeed > 0 ? muted(`${plural(clerksNeed, 'clerk')} needed at this size; ${buildingWorkers(st, 'meeting') + buildingWorkers(st, 'press')} civic workers.`) : null,
     row(button('Assign all', () => app.dispatch({ t: 'autoAssign', settlement: st.id }, 'Assigned'), 'small'),
       button('Equip', () => app.open({ kind: 'equip', settlement: st.id }), 'small'),
       st.buildings.school > 0 ? button('School', () => app.open({ kind: 'educate', settlement: st.id }), 'small') : null,
       st.education ? muted(`schooling, ${st.education.turnsLeft} turns left`) : null),
   ))
-  // buildings
+  // the buildings, as their pictures, with who works in each and what it makes
   const held = BUILDING_LINES.filter(l => st.buildings[l] > 0)
+  const outputs = buildingSlots(s, st)
   panel.append(section('Buildings',
     held.map(l => {
       const def = C.buildings.lines[l]
       const workers = buildingWorkers(st, l)
       const imported = st.imported[l]
-      return line([buildingName({ line: l, tier: st.buildings[l] as 1 | 2 | 3 }), imported ? muted(imported.starved > 0 ? ' starved of instruments' : ' imported') : ''], def.output ? `${workers}/${C.labour.workersPerBuilding} workers` : '')
+      const slot = outputs.find(x => x.line === l)
+      return h('div', { class: 'line in-building' },
+        buildingPicture(l, 'var(--row-building-h)'),
+        h('span', { class: 'l' }, h('span', { class: 'name' }, buildingName({ line: l, tier: st.buildings[l] as 1 | 2 | 3 })),
+          def.output && slot ? fig(def.output, fmt(slot.output), `${def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output].toLowerCase()} this turn`) : h('span', { class: 'muted small-role' }, describeLine(l)),
+          imported ? muted(imported.starved > 0 ? ' starved of instruments' : ' imported') : ''),
+        takesWorkers(l) ? h('span', { class: 'r' }, pips(workers, C.labour.workersPerBuilding, 'places'), h('span', { class: 'sr' }, `${workers} of ${C.labour.workersPerBuilding} workers`)) : null,
+      )
     }),
-    st.building ? line(['Building ', buildingName(st.building.id)], `${st.building.frame}/${C.buildings.costs[st.building.id.tier]!.frame} frame, ${st.building.tooling}/${C.buildings.costs[st.building.id.tier]!.tooling} tooling`) : muted(st.buildQueue.length ? '' : 'Nothing in the build order.'),
+    st.building ? h('div', { class: 'line in-building' }, buildingPicture(null, 'var(--row-building-h)'),
+      h('span', { class: 'l' }, h('span', { class: 'name' }, 'Building ', buildingName(st.building.id)), fillBar(st.building.frame / Math.max(1, C.buildings.costs[st.building.id.tier]!.frame), 'plain', null, 'progress')),
+      h('span', { class: 'r' }, fig('frame', `${st.building.frame}/${C.buildings.costs[st.building.id.tier]!.frame}`, 'frame'))) : muted(st.buildQueue.length ? '' : 'Nothing in the build order.'),
     row(button('Build order' + (st.buildQueue.length ? ` (${st.buildQueue.length})` : ''), () => app.open({ kind: 'build', settlement: st.id }), 'small'), st.buildings.wharf > 0 ? button('Hulls', () => app.open({ kind: 'hulls', settlement: st.id }), 'small') : null),
   ))
   // orders
@@ -210,16 +227,26 @@ function settlementDetailSheet(app: App, s: GameState, st: Settlement): HTMLElem
     line([T(app, 'surplus'), ': above ', String(o.surplus.threshold), ', ', o.surplus.destination.kind === 'ship' ? `ship to ${s.settlements[o.surplus.destination.settlement]?.name ?? '?'}` : o.surplus.destination.kind === 'offer' ? `offer to ${s.predecessors[o.surplus.destination.predecessor]?.name ?? '?'}` : o.surplus.destination.kind], undefined, () => app.open({ kind: 'orders', settlement: st.id })),
     line([T(app, 'growth'), ': ', o.growth.kind === 'send' ? `send to ${s.settlements[o.growth.settlement]?.name ?? '?'}` : o.growth.kind], undefined, () => app.open({ kind: 'orders', settlement: st.id })),
   ))
-  // passages
+  // passages: the Word held as a bar toward the next passage
   if (landing && landing.id === st.id) {
     const ch = s.charters[0]
     const wc = passageCost(s), gc = goldPassageCost(s)
     panel.append(section('Passages',
-      muted(`${fmt(ch.word)} Word held. The next passage needs ${wc} Word or ${gc} gold. Word passages come by themselves when they can.`),
+      h('div', { class: 'meter' }, fillBar(wc ? Math.min(1, ch.word / wc) : 0, 'plain', null, 'wide'),
+        h('div', { class: 'meter-words' }, h('span', {}, icon('word', 'pill'), h('b', {}, fmt(ch.word)), ` Word of ${wc} for the next passage`))),
+      muted(`Or ${gc} gold now. Word passages come by themselves when they can.`),
       row(button(`Buy a passage (${gc} gold)`, () => app.dispatch({ t: 'buyPassage' }, 'Passage bought'), 'small')),
     ))
   }
-  if (st.grievance > 0 || st.buildings.meeting > 0) panel.append(section('Grievance', line([T(app, 'resolve')], `${Math.round(st.resolve * 100)} per cent`), line([T(app, 'grievance'), ' gathered here'], fmt(Math.round(st.grievance)))))
+  // resolve as a bar with the flame, and the tick where the declaration can be made
+  if (st.grievance > 0 || st.buildings.meeting > 0) {
+    const gate = C.grievance.declarationGate
+    panel.append(section('Grievance',
+      h('div', { class: 'meter' }, fillBar(Math.min(1, st.resolve), 'plain', gate, 'wide resolve'),
+        h('div', { class: 'meter-words' }, h('span', {}, icon('resolve', 'pill'), T(app, 'resolve'), ' ', h('b', {}, `${Math.round(st.resolve * 100)}%`)), h('span', { class: 'rule-at' }, h('i', { class: 'tick-key' }), `${Math.round(gate * 100)}% to declare`))),
+      h('div', { class: 'meter-words' }, h('span', {}, icon('grievance', 'pill'), T(app, 'grievance'), ' gathered here ', h('b', {}, fmt(Math.round(st.grievance))))),
+    ))
+  }
   return panel
 }
 
@@ -234,14 +261,39 @@ function renameSheet(app: App, s: GameState, st: Settlement): HTMLElement {
 // place, then tap the person. The second, tap the person then the place, lives on the settlement
 // screen itself. Reassignment is the same gesture and offers a move or a swap.
 
-function candidateRow(app: App, st: Settlement, c: Candidate, unit: string, act: (swapWith?: number) => void, holders: { index: number; label: string }[]): HTMLElement {
-  const right: (HTMLElement | string)[] = []
+// People as figures, build brief phase 3: each person is their figure, with their standing as
+// chevrons at their feet and in a word, what they do now as an icon and a number, and then what
+// they would do here and the actions.
+
+/** What a colonist does now, as an icon and a number: what a tile gives them, what they make in a
+ *  building with the building's name, or the word idle. */
+function nowFigure(s: GameState, st: Settlement, c: Colonist): HTMLElement {
+  if (c.job.kind === 'idle') return h('span', { class: 'now idle' }, 'idle')
+  if (c.job.kind === 'tile') return h('span', { class: 'now' }, fig(c.job.good, String(tileYield(s, c.job.tile, c.job.good, c)), `${GOOD_NAMES[c.job.good].toLowerCase()} a turn`))
+  const line = c.job.line
+  const out = C.buildings.lines[line].output
+  const name = buildingName({ line, tier: 1 })
+  const mark = out ? fig(out, fmt(makesIn(s, st, c, line)), `${out === 'frame' ? 'frame' : GOOD_NAMES[out].toLowerCase()} a turn`) : LINE_ICONS[line] ? icon(LINE_ICONS[line]!, 'pill') : null
+  return h('span', { class: 'now' }, mark, h('small', {}, name))
+}
+
+/** One person in a list: their figure, their standing in a word, what they do now, what they would
+ *  make here if anything, and the actions at the end. */
+function personRow(s: GameState, st: Settlement, c: Colonist, here: HTMLElement | null, actions: (HTMLElement | null)[], cls = ''): HTMLElement {
+  return h('div', { class: 'line person-row' + (cls ? ' ' + cls : '') },
+    personPicture(c, 'var(--row-figure-h)'),
+    h('span', { class: 'l who' }, h('b', {}, standingWords(c)), nowFigure(s, st, c)),
+    here ? h('span', { class: 'here' }, here) : null,
+    h('span', { class: 'acts' }, ...actions),
+  )
+}
+
+function candidateRow(app: App, s: GameState, st: Settlement, c: Candidate, made: GoodId | 'frame' | null, act: (swapWith?: number) => void, holders: { index: number; label: string }[]): HTMLElement {
+  const right: HTMLElement[] = []
   if (holders.length === 0) right.push(button('Put here', () => act(), 'tiny'))
   else for (const hd of holders) right.push(button(c.colonist.job.kind === 'idle' ? `Take ${hd.label}'s place` : `Swap with ${hd.label}`, () => act(hd.index), 'tiny'))
-  return h('div', { class: 'line' },
-    h('span', { class: 'l' }, h('b', {}, standingWords(c.colonist)), muted(` · now ${c.now}`)),
-    h('span', { class: 'r' }, `${c.amount} ${unit}`, ' ', ...right),
-  )
+  const here = made ? fig(made, fmt(c.amount), `${made === 'frame' ? 'frame' : GOOD_NAMES[made].toLowerCase()} a turn here`, 'would') : null
+  return personRow(s, st, c.colonist, here, right)
 }
 
 function assignTileSheet(app: App, s: GameState, st: Settlement, tile: number, good?: TileGood): HTMLElement {
@@ -251,24 +303,22 @@ function assignTileSheet(app: App, s: GameState, st: Settlement, tile: number, g
   const offers = tileGoodOrder(s, tile, cell.offers).filter(g => tileYield(s, tile, g, null) > 0)
   const chosen: TileGood | undefined = good ?? cell.worker?.good ?? offers[0]
   const holderIdx = st.colonists.findIndex(c => c.job.kind === 'tile' && c.job.tile === tile)
-  const panel = h('div', { class: 'panel' }, header(app, 'Who works this ground', cell.words))
+  const panel = h('div', { class: 'panel' }, heroHeader(app, chosen ? goodMark(chosen, 'hero') : h('span', {}), 'Who works this ground', cell.words))
   if (!chosen) { panel.append(h('p', { class: 'muted' }, 'Nothing grows or is dug here.')); return panel }
   if (cell.reason && !cell.available) panel.append(h('p', { class: 'warn' }, cell.reason))
   if (offers.length > 1) {
     panel.append(section('For what', h('div', { class: 'chips' }, offers.map(g => h('button', {
-      class: 'chip' + (g === chosen ? ' on' : ''), type: 'button',
+      class: 'chip' + (g === chosen ? ' on' : ''), type: 'button', 'aria-label': `${GOOD_NAMES[g]}, ${tileYield(s, tile, g, null)} a turn`,
       onClick: () => app.open({ kind: 'assignTile', settlement: st.id, tile, good: g }),
-    }, `${GOOD_NAMES[g]} ${tileYield(s, tile, g, null)}`)))))
+    }, goodMark(g, 'pill'), `${GOOD_NAMES[g]} ${tileYield(s, tile, g, null)}`)))))
   }
   const holders: { index: number; label: string }[] = holderIdx >= 0 ? [{ index: holderIdx, label: standingWords(st.colonists[holderIdx]) }] : []
   if (holderIdx >= 0) {
-    panel.append(section('Working it now', line(
-      [h('b', {}, standingWords(st.colonists[holderIdx])), muted(` · ${jobWords(s, st, st.colonists[holderIdx])}`)],
-      button('Leave it empty', () => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: holderIdx, job: { kind: 'idle' } }, 'Set idle')) app.back() }, 'tiny ghost'),
-    )))
+    panel.append(section('Working it now', personRow(s, st, st.colonists[holderIdx], null,
+      [button('Leave it empty', () => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: holderIdx, job: { kind: 'idle' } }, 'Set idle')) app.back() }, 'tiny ghost')], 'holder')))
   }
   const rows = tileCandidates(s, st, tile, chosen)
-  panel.append(section('Best here first', ...(rows.length ? rows.map(c => candidateRow(app, st, c, GOOD_NAMES[chosen].toLowerCase(), (swapWith) => {
+  panel.append(section('Best here first', ...(rows.length ? rows.map(c => candidateRow(app, s, st, c, chosen, (swapWith) => {
     app.assign(st.id, c.index, { kind: 'tile', tile, good: chosen }, `Set to ${chosen}`, swapWith)
   }, holders)) : [muted('Nobody else is here.')])))
   return panel
@@ -283,19 +333,17 @@ function assignBuildingSheet(app: App, s: GameState, st: Settlement, l: Building
   const inside: { index: number; label: string }[] = []
   st.colonists.forEach((c, i) => { if (c.job.kind === 'building' && c.job.line === l) inside.push({ index: i, label: standingWords(c) }) })
   const full = inside.length >= C.labour.workersPerBuilding
-  const panel = h('div', { class: 'panel' }, header(app, `Who works the ${name.toLowerCase()}`, def.output ? `${def.input ? GOOD_NAMES[def.input].toLowerCase() + ' to ' : ''}${def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output].toLowerCase()}` : describeLine(l)))
+  const panel = h('div', { class: 'panel' }, heroHeader(app, buildingPicture(l, 'var(--hero-box)'), `Who works the ${name.toLowerCase()}`, doesWhat(l)))
   if (!takesWorkers(l)) { panel.append(h('p', { class: 'muted' }, 'This one needs nobody.')); return panel }
   if (def.input && st.stock[def.input] <= 0) panel.append(h('p', { class: 'warn' }, `No ${GOOD_NAMES[def.input].toLowerCase()} in store, so it makes nothing this turn.`))
   if (inside.length) {
-    panel.append(section('Inside now', ...inside.map(w => line(
-      [h('b', {}, w.label), muted(` · ${jobWords(s, st, st.colonists[w.index])}`)],
-      button('Send out', () => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: w.index, job: { kind: 'idle' } }, 'Set idle')) app.back() }, 'tiny ghost'),
-    ))))
+    panel.append(section('Inside now', ...inside.map(w => personRow(s, st, st.colonists[w.index], null,
+      [button('Send out', () => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: w.index, job: { kind: 'idle' } }, 'Set idle')) app.back() }, 'tiny ghost')], 'holder'))))
   }
   const rows = buildingCandidates(s, st, l)
-  const unit = def.output ? (def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output].toLowerCase()) : 'a turn'
+  const made = def.output ?? null
   panel.append(section(full ? 'Full: someone must trade places' : 'Best here first',
-    ...(rows.length ? rows.map(c => candidateRow(app, st, c, unit, (swapWith) => {
+    ...(rows.length ? rows.map(c => candidateRow(app, s, st, c, made, (swapWith) => {
       app.assign(st.id, c.index, { kind: 'building', line: l }, `Set to ${name}`, swapWith)
     }, full ? inside : [])) : [muted('Nobody else is here.')])))
   return panel
@@ -380,64 +428,130 @@ export function destinationWords(s: GameState, d: SurplusDestination): string {
   }
 }
 
+/** A colonist in a title: "A debtor", "A free colonist", "A master of timber". */
+function personTitle(c: Colonist): string {
+  return c.standing === 'debtor' || c.standing === 'master' ? `A ${standingWords(c)}` : `A ${c.standing} colonist`
+}
+
+/** One colonist's places, the other path into assignment (settlement screen brief section 3): every
+ *  tile they could work, as what it gives them, best first, and every building that takes workers,
+ *  as its picture with what they would make there and how many work there now. */
 function workersSheet(app: App, s: GameState, st: Settlement, idx: number): HTMLElement {
   const c = st.colonists[idx]
   if (!c) return app.renderQueue()
   const w = s.world.width
-  const panel = h('div', { class: 'panel' }, header(app, [`A ${colonistLabel(c)}`], `now: ${jobLabel(s, c)}`))
+  const panel = h('div', { class: 'panel' }, heroHeader(app, personPicture(c, 'var(--hero-box)'), personTitle(c), h('span', { class: 'figs' }, 'now', nowFigure(s, st, c))))
   const assign = (job: Colonist['job'], label: string) => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: idx, job }, label)) app.back() }
-  const tiles: HTMLElement[] = []
+  const options: { tile: number; good: TileGood; y: number; blocked: boolean; where: string }[] = []
   for (const t of workableTiles(s, st)) {
     const tile = s.world.tiles[t]
     const takenBy = st.colonists.findIndex((o, j) => j !== idx && o.job.kind === 'tile' && o.job.tile === t)
     const other = tile.worked !== null && tile.worked !== st.id
+    const dx = (t % w) - (st.tile % w), dz = Math.floor(t / w) - Math.floor(st.tile / w)
+    const dir = t === st.tile ? 'here' : `${dz < 0 ? 'N' : dz > 0 ? 'S' : ''}${dx < 0 ? 'W' : dx > 0 ? 'E' : ''}`
     for (const g of tileOffers(tile)) {
       const y = tileYield(s, t, g, c)
-      if (y <= 0) continue
-      const dx = (t % w) - (st.tile % w), dz = Math.floor(t / w) - Math.floor(st.tile / w)
-      const dir = t === st.tile ? 'here' : `${dz < 0 ? 'N' : dz > 0 ? 'S' : ''}${dx < 0 ? 'W' : dx > 0 ? 'E' : ''}`
-      const blocked = takenBy >= 0 || other
-      tiles.push(line([`${GOOD_NAMES[g]} ${y}`, muted(` · ${TERRAIN_NAMES[tile.terrain]}${tile.forest ? ', ' + FOREST_NAMES[tile.forest] : ''} ${dir}`), blocked ? h('span', { class: 'warn' }, ' taken') : ''], undefined, blocked ? undefined : () => assign({ kind: 'tile', tile: t, good: g }, `Set to ${g}`)))
+      if (y > 0) options.push({ tile: t, good: g, y, blocked: takenBy >= 0 || other, where: `${TERRAIN_NAMES[tile.terrain]}${tile.forest ? ', ' + FOREST_NAMES[tile.forest] : ''} ${dir}` })
     }
   }
-  tiles.sort((a, b) => Number((b.querySelector('.l') as HTMLElement).textContent!.split(' ')[1]) - Number((a.querySelector('.l') as HTMLElement).textContent!.split(' ')[1]))
-  panel.append(section('On the land', ...tiles))
+  options.sort((a, b) => b.y - a.y)
+  panel.append(section('On the land', ...options.map(o => line(
+    [fig(o.good, String(o.y), `${GOOD_NAMES[o.good].toLowerCase()} a turn`), muted(` · ${o.where}`), o.blocked ? h('span', { class: 'warn' }, ' taken') : ''],
+    undefined, o.blocked ? undefined : () => assign({ kind: 'tile', tile: o.tile, good: o.good }, `Set to ${o.good}`)))))
   const builds: HTMLElement[] = []
   for (const l of BUILDING_LINES) {
-    if (st.buildings[l] === 0) continue
+    if (st.buildings[l] === 0 || !takesWorkers(l)) continue
     const def = C.buildings.lines[l]
     const n = buildingWorkers(st, l) - (c.job.kind === 'building' && c.job.line === l ? 1 : 0)
     const full = n >= C.labour.workersPerBuilding
-    const out = def.output ? `${workerOutput(c, l) * C.labour.tierMultiplier[st.buildings[l]]} ${def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output as GoodId]} from ${def.input ? GOOD_NAMES[def.input] : ''}` : l === 'meeting' || l === 'press' ? 'gathers grievance' : l === 'school' ? 'teaches' : l === 'agentOffice' ? 'more Word per consignment' : 'no workers needed'
-    if (!def.output && !['meeting', 'press', 'school', 'agentOffice'].includes(l)) continue
-    builds.push(line([buildingName({ line: l, tier: st.buildings[l] as 1 | 2 | 3 }), muted(` · ${out}`), full ? h('span', { class: 'warn' }, ' full') : ''], `${n}/${C.labour.workersPerBuilding}`, full ? undefined : () => assign({ kind: 'building', line: l }, `Set to ${buildingName({ line: l, tier: 1 })}`)))
+    const name = buildingName({ line: l, tier: st.buildings[l] as 1 | 2 | 3 })
+    const makes = def.output ? fig(def.output, fmt(makesIn(s, st, c, l)), `${def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output].toLowerCase()} a turn`) : h('span', { class: 'muted small-role' }, describeLine(l))
+    builds.push(h('div', { class: 'line in-building' + (full ? '' : ' tappable'), onClick: full ? undefined : () => assign({ kind: 'building', line: l }, `Set to ${buildingName({ line: l, tier: 1 })}`) },
+      buildingPicture(l, 'var(--row-building-h)'),
+      h('span', { class: 'l' }, h('span', { class: 'name' }, name), makes, full ? h('span', { class: 'warn' }, ' full') : ''),
+      h('span', { class: 'r' }, pips(n, C.labour.workersPerBuilding, 'places'), h('span', { class: 'sr' }, `${n} of ${C.labour.workersPerBuilding} at work`)),
+    ))
   }
   panel.append(section('In a building', ...(builds.length ? builds : [muted('No building here takes workers yet.')])))
   panel.append(row(button('Leave idle', () => assign({ kind: 'idle' }, 'Set idle'), 'small ghost')))
   return panel
 }
 
+// ---- the build order: a catalogue --------------------------------------------------------------
+// Build brief phase 3. What is under way leads, as the frame the map draws, with a bar for each cost
+// and that cost's icon at the end of it; then what is queued, as the buildings' pictures in order;
+// then everything that could be built, as a catalogue of cards two across: the building's picture,
+// its name, what it turns into what as icons or its role in a word and an icon, and its cost as icons
+// and numbers. A gated card is faint and gives its gate on tap.
 function buildSheet(app: App, s: GameState, st: Settlement): HTMLElement {
-  const panel = h('div', { class: 'panel' }, header(app, 'Build order', `${st.name} · ${st.frame} frame, ${st.stock.tooling} tooling in store`))
+  const panel = h('div', { class: 'panel' }, heroHeader(app, buildingPicture(null, 'var(--hero-box)'), 'Build order',
+    h('span', { class: 'figs' }, `${st.name}`, fig('frame', fmt(st.frame), 'frame in store'), fig('tooling', fmt(st.stock.tooling), 'tooling in store'))))
   if (st.building) {
-    const cost = C.buildings.costs[st.building.id.tier]!
-    panel.append(section('Under way', line([buildingName(st.building.id)], `${st.building.frame}/${cost.frame} frame, ${st.building.tooling}/${cost.tooling} tooling`)))
+    const b = st.building
+    const cost = C.buildings.costs[b.id.tier]!
+    const bar = (name: 'frame' | 'tooling', have: number, need: number) => h('div', { class: 'cost-bar' },
+      fillBar(need > 0 ? have / need : 1, 'plain', null, 'progress'), icon(name, 'pill'),
+      h('span', {}, h('b', {}, fmt(have)), `/${need}`), h('span', { class: 'sr' }, ` ${name}`))
+    panel.append(section('Under way', h('div', { class: 'underway' },
+      buildingPicture(null, 'var(--underway-h)'),
+      h('span', { class: 'what' }, h('span', { class: 'name' }, buildingName(b.id)), bar('frame', b.frame, cost.frame), cost.tooling ? bar('tooling', b.tooling, cost.tooling) : null),
+    )))
   }
-  panel.append(section('Queued', ...(st.buildQueue.length ? st.buildQueue.map((b, i) => {
+  panel.append(section('Queued', st.buildQueue.length ? h('div', { class: 'queued' }, st.buildQueue.map((b, i) => {
     const ok = canStart(st, b)
-    return line([buildingName(b), ok.ok ? '' : h('span', { class: 'warn' }, ` ${ok.reason}`)], 'remove', () => app.dispatch({ t: 'setBuildOrder', settlement: st.id, queue: st.buildQueue.filter((_, j) => j !== i) }, 'Removed from the build order'))
-  }) : [muted('Nothing queued. The carpenter keeps making frame regardless.')])))
-  const options = buildable(s, st)
-  panel.append(section('Can be built', ...(options.length ? options.map(b => {
-    const cost = C.buildings.costs[b.tier]!
-    const def = C.buildings.lines[b.line]
-    const what = def.output ? `${def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output as GoodId]} from ${GOOD_NAMES[def.input!]}` : describeLine(b.line)
-    return line([buildingName(b), muted(` · ${what}`)], b.imported ? `${C.buildings.importedMachineGold} gold` : `${cost.frame} frame, ${cost.tooling} tooling`, () => {
-      if (b.imported) app.dispatch({ t: 'buyImported', settlement: st.id, line: b.line }, 'Imported machine bought')
-      else app.dispatch({ t: 'setBuildOrder', settlement: st.id, queue: [...st.buildQueue, { line: b.line, tier: b.tier }] }, `${buildingName(b)} queued`)
-    })
-  }) : [muted('Nothing new can be built at this size.')])))
+    const name = buildingName(b)
+    return h('div', { class: 'qitem' + (ok.ok ? '' : ' blocked') },
+      buildingPicture(b.line, 'var(--queued-h)'),
+      h('span', { class: 'name' }, name),
+      ok.ok ? null : h('span', { class: 'warn small-print' }, ok.reason ?? ''),
+      h('button', { class: 'btn tiny ghost', type: 'button', 'aria-label': `Take ${name} out of the build order`, onClick: () => app.dispatch({ t: 'setBuildOrder', settlement: st.id, queue: st.buildQueue.filter((_, j) => j !== i) }, 'Removed from the build order') }, 'Remove'),
+    )
+  })) : muted('Nothing queued. The carpenter keeps making frame regardless.')))
+  const options = catalogue(s, st)
+  panel.append(section('Can be built', options.length ? h('div', { class: 'board catalogue' }, options.map(e => buildCard(app, st, e))) : muted('Nothing new can be built at this size.')))
   return panel
+}
+
+/** What a line does when it makes no good, as an icon where one fits. */
+const LINE_ICONS: Partial<Record<BuildingLine, IconName>> = {
+  meeting: 'grievance', press: 'grievance', school: 'colonist', storage: 'crate', stable: 'horses',
+  wharf: 'sail', works: 'cannon', agentOffice: 'word', consignment: 'coin',
+}
+
+/** What a building turns into what, as icons with an arrow between, or its role in words with its
+ *  icon. */
+function doesWhat(l: BuildingLine): HTMLElement {
+  const def = C.buildings.lines[l]
+  if (def.output && def.input) {
+    const words = `${GOOD_NAMES[def.input].toLowerCase()}${def.secondInput ? ` and ${GOOD_NAMES[def.secondInput].toLowerCase()}` : ''} to ${def.output === 'frame' ? 'frame' : GOOD_NAMES[def.output].toLowerCase()}`
+    return h('span', { class: 'does', title: words }, goodMark(def.input, 'pill'), def.secondInput ? goodMark(def.secondInput, 'pill') : null, intoArrow(), goodMark(def.output, 'pill'), h('span', { class: 'sr' }, words))
+  }
+  const name = LINE_ICONS[l]
+  return h('span', { class: 'does' }, name ? icon(name, 'pill') : null, describeLine(l))
+}
+
+/** One card of the catalogue. */
+function buildCard(app: App, st: Settlement, e: CatalogueEntry): HTMLElement {
+  const b = e.id
+  const cost = C.buildings.costs[b.tier]!
+  const name = buildingName(b)
+  const price = b.imported
+    ? [fig('coin', String(C.buildings.importedMachineGold), 'gold')]
+    : [fig('frame', String(cost.frame), 'frame'), cost.tooling ? fig('tooling', String(cost.tooling), 'tooling') : null]
+  const words = `${name}, ${b.imported ? `${C.buildings.importedMachineGold} gold` : `${cost.frame} frame${cost.tooling ? ` and ${cost.tooling} tooling` : ''}`}.${e.gate ? ` ${e.gate}` : b.imported ? ' Buy it now.' : ' Add it to the build order.'}`
+  return h('button', {
+    class: 'bcard' + (e.gate ? ' gated' : ''), type: 'button', 'aria-label': words,
+    onClick: () => {
+      if (e.gate) app.toast(e.gate)
+      else if (b.imported) app.dispatch({ t: 'buyImported', settlement: st.id, line: b.line }, 'Imported machine bought')
+      else app.dispatch({ t: 'setBuildOrder', settlement: st.id, queue: [...st.buildQueue, { line: b.line, tier: b.tier }] }, `${name} queued`)
+    },
+  },
+    buildingPicture(b.line, 'var(--card-pic-h)'),
+    h('span', { class: 'name' }, name),
+    doesWhat(b.line),
+    h('span', { class: 'cost' }, ...price),
+  )
 }
 
 function describeLine(l: BuildingLine): string {
@@ -581,42 +695,106 @@ function buySheet(app: App, s: GameState, st: Settlement, g: GoodId): HTMLElemen
     row(button('Buy', () => { if (amount > 0 && app.dispatch({ t: 'buy', settlement: st.id, good: g, amount }, `${amount} ${g} bought`)) app.back() }, 'primary')))
 }
 
+/** Equip, build brief phase 3: who, as their figures, one chosen; and as what, as the units' own
+ *  pictures with what each costs as icons, what it does, and its moves as pips. Equipment makes the
+ *  unit, so the choice is a tap on the unit. */
 function equipSheet(app: App, s: GameState, st: Settlement): HTMLElement {
   const kinds: LandKind[] = ['militia', 'outrider', 'battery', 'improver', 'hauler']
-  const panel = h('div', { class: 'panel' }, header(app, 'Equip a colonist', `${st.name} · arms ${st.stock.arms}, horses ${st.stock.horses}, tooling ${st.stock.tooling}`),
+  const panel = h('div', { class: 'panel' }, heroHeader(app, unitPicture('militia', 'var(--hero-person)'), 'Equip a colonist',
+    h('span', { class: 'figs' }, st.name, fig('arms', fmt(st.stock.arms), 'arms'), fig('horses', fmt(st.stock.horses), 'horses'), fig('tooling', fmt(st.stock.tooling), 'tooling'))),
     h('p', { class: 'muted' }, 'Equipment makes the unit. Take it off and the colonist is a colonist again.'))
   if (!st.colonists.length) { panel.append(muted('No one here to equip.')); return panel }
   let chosen = 0
-  const list = h('div', { class: 'chips' })
-  const renderList = () => list.replaceChildren(...st.colonists.map((c, i) => h('button', { class: 'chip' + (i === chosen ? ' on' : ''), type: 'button', onClick: () => { chosen = i; renderList() } }, `${colonistLabel(c)} (${jobLabel(s, c)})`)))
-  renderList()
-  panel.append(section('Who', list))
-  panel.append(section('As what', ...kinds.map(k => {
+  const who = h('div', { class: 'people' })
+  const renderWho = () => who.replaceChildren(...st.colonists.map((c, i) => h('button', {
+    class: 'person-tile' + (i === chosen ? ' on' : ''), type: 'button', 'aria-pressed': i === chosen ? 'true' : 'false',
+    'aria-label': `${standingWords(c)}, ${jobWords(s, st, c)}`, onClick: () => { chosen = i; renderWho() },
+  }, personPicture(c, 'var(--tile-figure-h)'), h('span', { class: 'standing' }, standingWords(c)), nowFigure(s, st, c))))
+  renderWho()
+  panel.append(section('Who', who))
+  panel.append(section('As what', h('div', { class: 'board catalogue' }, kinds.map(k => {
     const cost = equipCost(k)
-    const parts = Object.entries(cost).map(([g, n]) => `${n} ${g}`).join(', ')
-    const can = Object.entries(cost).every(([g, n]) => st.stock[g as GoodId] >= (n ?? 0))
-    const u = C.military.units[k as keyof typeof C.military.units] as { attack?: number; defence?: number; moves: number }
-    return line([T(app, k), muted(` · ${parts || 'nothing'}${u.attack !== undefined ? `, ${u.attack}/${u.defence}` : ''}, ${u.moves} moves`)], can ? 'equip' : h('span', { class: 'warn' }, 'short'), can ? () => { if (app.dispatch({ t: 'equip', settlement: st.id, colonist: chosen, as: k }, `${k} equipped`)) app.back() } : undefined)
-  })))
+    const parts = Object.entries(cost) as [GoodId, number][]
+    const short = parts.filter(([g, n]) => st.stock[g] < n).map(([g, n]) => `${n - st.stock[g]} ${GOOD_NAMES[g].toLowerCase()}`)
+    const u = C.military.units[k as keyof typeof C.military.units] as { attack?: number; defence?: number; moves: number; capacity?: number }
+    const does = k === 'battery' ? 'strong against settlements' : u.attack ? `attack ${u.attack}, defence ${u.defence}` : k === 'hauler' ? `carries ${u.capacity}` : 'roads, clearing, ploughing'
+    const bare = unitLabel(k).replace(/^(A|An) /, '')
+    const name = bare[0].toUpperCase() + bare.slice(1)
+    return h('button', {
+      class: 'bcard unit-card' + (short.length ? ' gated' : ''), type: 'button',
+      'aria-label': `${name}: ${parts.map(([g, n]) => `${n} ${GOOD_NAMES[g].toLowerCase()}`).join(' and ') || 'nothing'}; ${does}; ${plural(u.moves, 'move')}.${short.length ? ` Short of ${short.join(' and ')}.` : ''}`,
+      onClick: () => {
+        if (short.length) { app.toast(`Short of ${short.join(' and ')}.`); return }
+        if (app.dispatch({ t: 'equip', settlement: st.id, colonist: chosen, as: k }, `${k} equipped`)) app.back()
+      },
+    },
+      unitPicture(k, 'var(--card-person)'),
+      h('span', { class: 'name' }, name),
+      h('span', { class: 'does' }, k === 'hauler' ? fig('crate', String(u.capacity), 'carried') : null, h('small', {}, `${k === 'hauler' ? '' : does + ', '}${plural(u.moves, 'move')}`)),
+      h('span', { class: 'cost' }, ...parts.map(([g, n]) => fig(g, String(n), GOOD_NAMES[g].toLowerCase()))),
+    )
+  }))))
   return panel
 }
 
+/** The standing a colonist would be taught to, in a word. */
+function taughtTo(c: Colonist): string {
+  return c.standing === 'debtor' ? 'contracted' : c.standing === 'contracted' ? 'free' : c.standing === 'free' ? 'a master, if a master teaches' : 'already a master'
+}
+
+/** School, build brief phase 3: the people as their figures, each with what schooling would make of
+ *  them; or the one being taught, with how far through they are. */
 function educateSheet(app: App, s: GameState, st: Settlement): HTMLElement {
-  const panel = h('div', { class: 'panel' }, header(app, 'School', `${st.name} · ${buildingName({ line: 'school', tier: st.buildings.school as 1 | 2 | 3 })}, ${C.labour.educationCycle[st.buildings.school]} turns a step`))
-  if (st.education) { panel.append(muted(`A ${colonistLabel(st.colonists[st.education.colonist])} is being taught, ${st.education.turnsLeft} turns left.`)); return panel }
+  const tier = st.buildings.school
+  const cycle = C.labour.educationCycle[tier]
+  const panel = h('div', { class: 'panel' }, heroHeader(app, buildingPicture('school', 'var(--hero-box)'), 'School',
+    `${st.name} · ${tier ? buildingName({ line: 'school', tier: tier as 1 | 2 | 3 }) : 'no school'}, ${plural(cycle, 'turn')} a step`))
+  const student = st.education ? st.colonists.find(c => c.id === st.education!.colonist) : undefined
+  if (st.education && student) {
+    const done = Math.max(0, cycle - st.education.turnsLeft)
+    panel.append(section('Being taught', h('div', { class: 'line person-row' },
+      personPicture(student, 'var(--row-figure-h)'),
+      h('span', { class: 'l who' }, h('b', {}, standingWords(student)), h('span', { class: 'now' }, `to ${taughtTo(student)}`)),
+      h('span', { class: 'r schooling' }, fillBar(cycle ? done / cycle : 0, 'plain', null, 'progress'), `${plural(st.education.turnsLeft, 'turn')} left`),
+    )))
+    return panel
+  }
   panel.append(h('p', { class: 'muted' }, 'Schooling raises one colonist one standing. A master is made only from a colonist of free standing, by a master.'))
-  panel.append(section('Who', ...st.colonists.map((c, i) => line([colonistLabel(c), muted(` · ${jobLabel(s, c)}`)], c.standing === 'master' ? muted('already a master') : 'teach', c.standing === 'master' ? undefined : () => { if (app.dispatch({ t: 'educate', settlement: st.id, colonist: i }, 'Schooling begun')) app.back() }))))
+  panel.append(section('Who', ...st.colonists.map((c, i) => personRow(s, st, c, h('small', { class: 'muted' }, `to ${taughtTo(c)}`),
+    [c.standing === 'master' ? null : button('Teach', () => { if (app.dispatch({ t: 'educate', settlement: st.id, colonist: i }, 'Schooling begun')) app.back() }, 'tiny')]))))
   return panel
 }
 
+/** Hulls, build brief phase 3: each hull as its own picture, at its size against the others, with its
+ *  speed as pips beside the sail, its guns beside the cannon, its hold beside the crate, what it costs
+ *  as icons, and the wharf it needs. A hull this wharf cannot lay down is faint and says why. */
 function hullsSheet(app: App, s: GameState, st: Settlement): HTMLElement {
   const hulls: HullKind[] = ['lighter', 'trader', 'raider', 'cutter']
-  return h('div', { class: 'panel' }, header(app, 'Hulls', `${st.name} · wharf tier ${st.buildings.wharf}`),
+  const wharf = st.buildings.wharf
+  const fastest = Math.max(...hulls.map(k => C.naval.hulls[k].speed))
+  return h('div', { class: 'panel' }, heroHeader(app, buildingPicture('wharf', 'var(--hero-box)'), 'Hulls',
+    `${st.name} · ${wharf ? buildingName({ line: 'wharf', tier: wharf as 1 | 2 | 3 }) : 'no wharf'}`),
     C.flags.naval ? null : notYet(app, 'Shipbuilding'),
-    section('Hulls', ...hulls.map(k => {
+    h('div', { class: 'hulls' }, hulls.map(k => {
       const d = C.naval.hulls[k]
-      const cost = Object.entries(d.cost).filter(([, n]) => n).map(([g, n]) => `${n} ${g}`).join(', ')
-      return line([T(app, 'hull', k), muted(` · speed ${d.speed}, guns ${d.guns}, holds ${d.capacity}`)], `${cost} · wharf ${d.wharfTier}`, () => app.dispatch({ t: 'buildHull', settlement: st.id, hull: k }, `${k} laid down`))
+      const parts = (Object.entries(d.cost) as [GoodId, number][]).filter(([, n]) => n > 0)
+      const yard = buildingName({ line: 'wharf', tier: d.wharfTier as 1 | 2 | 3 })
+      const short = parts.filter(([g, n]) => st.stock[g] < n).map(([g, n]) => `${n - st.stock[g]} ${GOOD_NAMES[g].toLowerCase()}`)
+      const gate = wharf < d.wharfTier ? `Needs a ${yard.toLowerCase()}.` : short.length ? `Short of ${short.join(' and ')}.` : null
+      const name = k[0].toUpperCase() + k.slice(1)
+      return h('button', {
+        class: 'hull-card' + (gate ? ' gated' : ''), type: 'button',
+        'aria-label': `${name}: speed ${d.speed}, ${plural(d.guns, 'gun')}, holds ${d.capacity}; ${parts.map(([g, n]) => `${n} ${GOOD_NAMES[g].toLowerCase()}`).join(', ')}; at a ${yard.toLowerCase()}.${gate ? ' ' + gate : ' Lay it down.'}`,
+        onClick: () => { if (gate) app.toast(gate); else app.dispatch({ t: 'buildHull', settlement: st.id, hull: k }, `${k} laid down`) },
+      },
+        unitPicture(k, 'var(--hull-person)'),
+        h('span', { class: 'stats' },
+          h('span', { class: 'name' }, T(app, 'hull', name)),
+          h('span', { class: 'row-figs' }, icon('sail', 'pill'), pips(d.speed, fastest, 'speed')),
+          h('span', { class: 'row-figs' }, fig('cannon', String(d.guns), 'guns'), fig('crate', String(d.capacity), 'hold')),
+          h('span', { class: 'row-figs cost' }, ...parts.map(([g, n]) => fig(g, String(n), GOOD_NAMES[g].toLowerCase())), h('small', { class: 'muted' }, `at a ${yard.toLowerCase()}`)),
+        ),
+      )
     })))
 }
 
@@ -626,10 +804,13 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   const here = s.settlements.find(x => x.tile === u.tile)
   const mine = u.owner === 0
   const lander = u.kind === 'lander'
-  const sub = lander
-    ? `yours · ${u.moves}/${maxMoves(u)} moves · ${plural(u.aboard.length, 'colonist')} aboard`
-    : `${mine ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name} · ${u.moves}/${maxMoves(u)} moves · ${u.quality}${u.colonist ? ` · ${colonistLabel(u.colonist)}` : ''}`
-  const panel = h('div', { class: 'panel' }, header(app, [T(app, u.kind, unitLabel(u.kind))], sub))
+  // its picture, whose it is, its quality, and its moves as pips: whole for the moves it has left
+  const whose = lander || mine ? 'yours' : u.owner === -1 ? 'the Company' : s.charters[u.owner]?.name ?? 'a rival'
+  const sub = h('span', { class: 'figs' }, whose,
+    lander ? `${plural(u.aboard.length, 'colonist')} aboard` : h('span', {}, T(app, 'quality', u.quality)),
+    !lander && u.colonist ? standingWords(u.colonist) : null,
+    h('span', { class: 'moves' }, pips(u.moves, maxMoves(u), 'moves'), h('small', { 'aria-hidden': 'true' }, 'moves'), h('span', { class: 'sr' }, `${u.moves} of ${maxMoves(u)} moves left`)))
+  const panel = h('div', { class: 'panel' }, heroHeader(app, unitPicture(u.kind, isHull(u.kind) || lander ? 'var(--hull-person)' : 'var(--hero-person)'), [T(app, u.kind, unitLabel(u.kind))], sub))
   if (!mine) { panel.append(muted(`Attack ${unitAttack(u, 'open')}, defence ${unitDefence(u, !!here)}.`)); return panel }
   // the route plotted for it, or why there is none; otherwise how to plot one. Feel brief section 4
   const r = app.route && app.route.unit === u.id && !('ashore' in app.route) ? app.route : null
@@ -686,12 +867,23 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   if (u.order && u.order.kind === 'haul') actions.push(muted(`On a circuit of ${u.order.stops.length}: ${u.order.stops.map(st => s.settlements[st.settlement]?.name ?? '?').join(', ')}. Posture: ${RISK_WORDS[u.order.risk]}.`))
   if (u.order && u.order.kind !== 'garrison') actions.push(button(STOP_LABELS[u.order.kind] ?? 'Stop', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: null }, 'Order cleared'), 'small ghost'))
   if (u.kind === 'colonist' && !u.order) actions.push(button('Explore by itself', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: { kind: 'explore' } }, 'Exploring'), 'small ghost'))
-  const carrying = Object.keys(u.cargo).length ? 'Carrying ' + Object.entries(u.cargo).map(([g, n]) => `${n} ${g}`).join(', ') + '.' : null
-  // the lander's detail keeps to what sailing and founding need
-  if (lander && carrying) panel.append(h('p', { class: 'muted small' }, carrying))
-  else if (carrying) actions.push(muted(carrying))
+  // what it carries, as icons with amounts, and a bar for how full its hold is; the lander's detail
+  // keeps to what sailing and founding need, so its stores are one quiet line
+  const cargo = (Object.entries(u.cargo) as [GoodId, number][]).filter(([, n]) => n)
+  if (lander && cargo.length) panel.append(h('p', { class: 'muted small' }, 'Carrying ' + cargo.map(([g, n]) => `${n} ${GOOD_NAMES[g].toLowerCase()}`).join(', ') + '.'))
+  else if (cargo.length || cargoCapacity(u) > 0) panel.append(holdBlock(u, cargo))
   if (actions.length) panel.append(section('Do', ...actions))
   return panel
+}
+
+/** A hold: what is in it as icons with amounts, and a bar for how full it is. */
+function holdBlock(u: Unit, cargo: [GoodId, number][]): HTMLElement {
+  const cap = cargoCapacity(u)
+  const carried = cargo.reduce((a, [, n]) => a + n, 0)
+  return h('div', { class: 'meter hold' },
+    h('div', { class: 'goods-row' }, cargo.length ? cargo.map(([g, n]) => fig(g, fmt(n), GOOD_NAMES[g].toLowerCase())) : muted('The hold is empty.')),
+    fillBar(cap ? carried / cap : 0, carried > cap ? 'spoils' : 'plain', null, 'wide'),
+    h('div', { class: 'meter-words' }, h('span', {}, icon('crate', 'pill'), 'Holds ', h('b', {}, fmt(carried)), ` of ${cap}`)))
 }
 
 /** The route in the sheet: where it goes as far as the player knows, how many turns and where they
@@ -783,8 +975,10 @@ function aboardSection(app: App, s: GameState, u: Unit): HTMLElement | null {
   const shore = neighbours8(w, h2, u.tile).some(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored && s.world.tiles[n].terrain !== 'mountain')
   const n = u.aboard.length
   return section(`Aboard, ${n}`,
-    ...u.aboard.map((c, k) => ({ c, k })).reverse().map(({ c, k }) => line([h('b', {}, standingWords(c)), k === n - 1 && n > 1 ? muted(' · next off') : null],
-      shore ? button('Choose', () => app.choosePassenger(u.id, k), 'tiny') : undefined)),
+    ...u.aboard.map((c, k) => ({ c, k })).reverse().map(({ c, k }) => h('div', { class: 'line person-row' },
+      personPicture(c, 'var(--row-figure-h)'),
+      h('span', { class: 'l who' }, h('b', {}, standingWords(c)), k === n - 1 && n > 1 ? h('span', { class: 'now' }, 'next off') : null),
+      shore ? h('span', { class: 'acts' }, button('Choose', () => app.choosePassenger(u.id, k), 'tiny')) : null)),
     muted(shore ? 'Choose one, then hold the shore beside the lander and let go to send them ashore. The aboard count on the card chooses the next one off.' : 'Beside a shore, any of them can be sent ashore to look about.'),
   )
 }
@@ -817,24 +1011,47 @@ function stackSheet(app: App, s: GameState, tile: number): HTMLElement {
   const units = s.units.filter(u => u.tile === tile && u.owner === 0)
   if (units.length === 1) { app.scene.cam.view.activeUnit = units[0].id; return unitSheet(app, s, units[0]) }
   const here = s.settlements.find(x => x.tile === tile)
+  // each unit as the map draws it, with its quality and what it carries in words and its moves as pips
   return h('div', { class: 'panel' }, header(app, here ? `At ${here.name}` : 'On this tile', plural(units.length, 'unit')),
-    ...units.map(u => line([h('b', {}, unitLabel(u.kind)), muted(` · ${u.quality}${u.colonist ? ', ' + colonistLabel(u.colonist) : ''}`)],
-      u.order ? u.order.kind : `${u.moves}/${maxMoves(u)} moves`,
-      () => app.select(u.id))))
+    ...units.map(u => h('div', { class: 'line tappable in-building', role: 'button', 'aria-label': `${unitLabel(u.kind)}, ${u.quality}, ${u.moves} of ${maxMoves(u)} moves. Choose it.`, onClick: () => app.select(u.id) },
+      unitPicture(u.kind, isHull(u.kind) ? 'var(--hull-person)' : 'var(--row-figure-h)'),
+      h('span', { class: 'l' }, h('b', {}, unitLabel(u.kind)), muted(`${u.quality}${u.colonist ? ', ' + standingWords(u.colonist) : ''}`)),
+      h('span', { class: 'r' }, u.order ? u.order.kind : pips(u.moves, maxMoves(u), 'moves')))))
 }
 
+/** Cargo, build brief phase 3: the hold as a bar, and the goods to unload and to load as their icons
+ *  with amounts, one tap each. */
 function cargoSheet(app: App, s: GameState, u: Unit): HTMLElement {
   const here = s.settlements.find(x => x.tile === u.tile && x.owner === 0)
   const cap = cargoCapacity(u)
-  const carried = Object.values(u.cargo).reduce((a, b) => a + (b ?? 0), 0)
-  const panel = h('div', { class: 'panel' }, header(app, 'Cargo', `${unitLabel(u.kind)} · ${carried}/${cap}`))
+  const cargo = (Object.entries(u.cargo) as [GoodId, number][]).filter(([, n]) => n)
+  const carried = cargo.reduce((a, [, n]) => a + n, 0)
+  const panel = h('div', { class: 'panel' }, heroHeader(app, unitPicture(u.kind, isHull(u.kind) ? 'var(--hull-person)' : 'var(--hero-person)'), 'Cargo', `${unitLabel(u.kind)} · ${carried} of ${cap}`), holdBlock(u, cargo))
   if (!here) { panel.append(muted('Load and unload at a settlement.')); return panel }
-  panel.append(section('Unload', ...(Object.entries(u.cargo).filter(([, n]) => n).map(([g, n]) => line([GOOD_NAMES[g as GoodId]], `${n}`, () => app.dispatch({ t: 'unload', unit: u.id, good: g as GoodId, amount: n! }, `${n} ${g} unloaded`))))))
-  panel.append(section('Load from ' + here.name, ...GOODS.filter(g => here.stock[g] > 0).map(g => line([GOOD_NAMES[g]], `${here.stock[g]}`, () => app.dispatch({ t: 'load', unit: u.id, good: g, amount: Math.min(here.stock[g], cap - carried) }, `${g} loaded`)))))
+  const chip = (g: GoodId, n: number, verb: string, act: () => void) => h('button', { class: 'chip good-chip', type: 'button', 'aria-label': `${verb} ${n} ${GOOD_NAMES[g].toLowerCase()}`, onClick: act }, goodMark(g, 'pill'), h('b', {}, fmt(n)))
+  panel.append(section('Unload', cargo.length ? h('div', { class: 'chips' }, cargo.map(([g, n]) => chip(g, n, 'Unload', () => app.dispatch({ t: 'unload', unit: u.id, good: g, amount: n }, `${n} ${g} unloaded`)))) : muted('Nothing aboard.')))
+  const room = cap - carried
+  panel.append(section('Load from ' + here.name, h('div', { class: 'chips' }, GOODS.filter(g => here.stock[g] > 0).map(g => chip(g, here.stock[g], 'Load up to', () => app.dispatch({ t: 'load', unit: u.id, good: g, amount: Math.min(here.stock[g], room) }, `${g} loaded`)))),
+    room <= 0 ? muted('The hold is full.') : null))
   return panel
 }
 
 // ---- tiles ------------------------------------------------------------------------------------
+/** The place itself, small, as the map draws it: the ring's picture of the tile and the eight round
+ *  it (Scene.drawRing), cropped to the tile in the middle and a little of its neighbours. Where the
+ *  renderer cannot draw, the tile's own swatch in the map's palette. */
+function placePicture(app: App, s: GameState, tile: number): HTMLElement {
+  const box = h('span', { class: 'place' })
+  const across = 3 + 2 * RING_PICTURE.margin
+  const zoom = across / PLACE_TILES_SHOWN
+  box.style.setProperty('--place-zoom', zoom.toFixed(4))
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const canvas = app.scene.canDraw ? app.scene.drawRing(tile, ringPixels(PLACE_BOX_REM * rem * zoom)) : null
+  if (canvas) box.append(canvas)
+  else box.append(h('span', { class: 'cell' }, ...terrainLayers(tileLook(s, tile))))
+  return box
+}
+
 function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
   const t = s.world.tiles[tile]
   const w = s.world.width
@@ -855,9 +1072,11 @@ function tileSheet(app: App, s: GameState, tile: number): HTMLElement {
   if (t.workings) bits.push('old workings')
   const owner = t.owner !== null ? s.charters[t.owner] : null
   const pred = s.predecessors.find(p => p.territory.includes(tile))
-  const panel = h('div', { class: 'panel' }, header(app, title, `${x}, ${z}${bits.length ? ' · ' + bits.join(', ') : ''}`))
-  const yields = tileOffers(t).map(g => ({ g, y: tileYield(s, tile, g, null) })).filter(e => e.y > 0)
-  panel.append(section('Yields', yields.length ? yields.map(e => line([T(app, e.g, GOOD_NAMES[e.g])], String(e.y))) : muted('Nothing to work here.')))
+  const panel = h('div', { class: 'panel' }, heroHeader(app, placePicture(app, s, tile), title, `${x}, ${z}${bits.length ? ' · ' + bits.join(', ') : ''}`))
+  const yields = tileOffers(t).map(g => ({ g, y: tileYield(s, tile, g, null) })).filter(e => e.y > 0).sort((a, b) => b.y - a.y)
+  panel.append(section('Yields', yields.length ? h('div', { class: 'chips' }, yields.map(e => h('button', {
+    class: 'chip good-chip', type: 'button', 'aria-label': `${GOOD_NAMES[e.g]}, ${e.y} a turn`, onClick: () => app.open({ kind: 'glossary', key: e.g }),
+  }, goodMark(e.g, 'pill'), h('b', {}, String(e.y)), h('span', { class: 'word' }, GOOD_NAMES[e.g])))) : muted('Nothing to work here.')))
   if (owner) panel.append(muted(`${owner.player ? 'Your' : owner.name + "'s"} ground.`))
   if (pred) panel.append(line([T(app, 'predecessor', pred.name), muted(' ground')], 'open', () => app.open({ kind: 'predecessor', id: pred.id })))
   const st = s.settlements.find(x => x.tile === tile)

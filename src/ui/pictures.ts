@@ -12,6 +12,7 @@ import { SETTLEMENT_ATLAS } from '../render/settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
 import { manifestFrom, type AtlasManifest } from '../render/billboards'
 import { UNIT_SPRITE } from '../render/look'
+import { STREET_SHEET_PX } from './theme'
 import { h, fmt } from './dom'
 import { standingLevel } from './selectors'
 import { icon, type IconSize } from './icons'
@@ -87,6 +88,46 @@ export const BUILDING_PICTURE: Record<BuildingLine, string> = {
 /** The drawing of something being built: the frame the map draws at the settlement. */
 export const FRAME_PICTURE = 'frame'
 
+/** How many pixels of the settlement sheet a sheet's picture box stands for, so every building in a
+ *  catalogue is drawn at one scale, as the street draws them (STREET_SHEET_PX in src/ui/theme.ts). */
+const BUILDING_BOX_SHEET_PX = STREET_SHEET_PX
+
+/** A building's drawing for a sheet, standing at the foot of a box `box` tall (any CSS length) at the
+ *  one scale every building is drawn at, so a hall stands taller than a barn. The line's picture
+ *  comes from the one table, BUILDING_PICTURE; `piece` names another drawing, such as the frame. */
+export function buildingPicture(line: BuildingLine | null, box: string, piece?: string): HTMLElement {
+  const name = piece ?? (line ? BUILDING_PICTURE[line] : FRAME_PICTURE)
+  const p = SETTLEMENT_SHEET.pieces[name]
+  const holder = h('span', { class: 'pic-box building' })
+  holder.style.height = box
+  if (p) holder.append(atlasPicture(SETTLEMENT_SHEET, name, `calc(${box} * ${(p.h / BUILDING_BOX_SHEET_PX).toFixed(4)})`, 'drawing'))
+  return holder
+}
+
+/** A unit drawn as the map draws it, at its own size against a person `person` tall (any CSS length):
+ *  the drawing's height in people is on the sheet's manifest, and a hull that borrows the trader's
+ *  drawing is drawn at the share the map draws it at (UNIT_SPRITE.scale), so a lighter is a small
+ *  ship and a cutter nearly a trader. Empty where the sheet has no drawing for the kind. */
+export function unitPicture(kind: UnitKind, person: string): HTMLElement {
+  const piece = unitPiece(kind)
+  const holder = h('span', { class: 'pic-box unit' })
+  const p = piece ? UNITS_SHEET.pieces[piece] : null
+  if (!piece || !p) return holder
+  const people = p.h / (p.personPx ?? p.h)
+  const scale = UNIT_SPRITE.scale[kind] ?? 1
+  holder.append(atlasPicture(UNITS_SHEET, piece, `calc(${person} * ${(people * scale).toFixed(4)})`, 'drawing'))
+  return holder
+}
+
+/** A colonist standing in a box of their own, for a list of people: the figure `height` tall on its
+ *  feet at the foot of the box, with its standing as chevrons beside them. */
+export function personPicture(c: Colonist, height: string, cls = ''): HTMLElement {
+  const holder = h('span', { class: 'pic-box person' + (cls ? ' ' + cls : '') })
+  holder.style.setProperty('--fig-box', height)
+  holder.append(standingFigure(c, height))
+  return holder
+}
+
 // ---- people standing, and what things make ---------------------------------------------------------
 
 /** A colonist standing on a point: the element is the point, and the drawing stands on it with a
@@ -136,6 +177,19 @@ export function chevrons(n: number): Element {
       svg.append(line)
     }
   }
+  return svg
+}
+
+/** "Turns into", between what goes into a building and what comes out: a small arrow in the colour of
+ *  the words around it. */
+export function intoArrow(): Element {
+  const svg = document.createElementNS(SVG, 'svg')
+  svg.setAttribute('class', 'into')
+  svg.setAttribute('viewBox', '0 0 16 10')
+  svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS(SVG, 'path')
+  path.setAttribute('d', 'M1.5 5 H13.5 M9.5 1.5 L13.5 5 L9.5 8.5')
+  svg.append(path)
   return svg
 }
 
