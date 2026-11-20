@@ -550,6 +550,64 @@ p { margin: var(--space-3) 0; }
 .schooling { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); min-width: var(--qitem-w); font-size: var(--text-small); }
 .schooling .bar { align-self: stretch; }
 
+/* ---- meters and tallies of the whole charter, build brief phase 4 ---------------------------- */
+/* a card led by an icon for its kind: the icon beside everything the card says */
+.card.led { display: flex; align-items: flex-start; gap: var(--space-5); }
+.card.led .card-main { flex: 1; min-width: 0; }
+.card-lead { flex: none; display: flex; }
+#queuebar .top .ic { flex: none; }
+/* the twelve as seals in a row, whole for those who have signed and faint for those who have not */
+.seal-row { display: grid; grid-template-columns: repeat(var(--seals), minmax(0, 1fr)); gap: var(--space-1); justify-items: center; }
+.seal-row .ic { width: 100%; height: auto; aspect-ratio: 1; max-width: var(--ic-tile); }
+.ic.faint { opacity: var(--seal-faint); filter: grayscale(1); }
+.signatory { gap: var(--space-4); }
+.signatory .l { display: flex; flex-direction: column; gap: var(--space-1); }
+.signatory .what { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-small); color: var(--ink-dim); }
+.signatory.signed .r { color: var(--ink); }
+/* the other charters: each its banner, where it stands on the track, and how many settlements */
+.rivals { display: flex; flex-direction: column; gap: var(--board-gap); margin: var(--space-5) 0; }
+.rival {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "flag who count" "flag track count";
+  align-items: center; column-gap: var(--space-5); row-gap: var(--space-2);
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--board-tile);
+}
+.rival > .ic { grid-area: flag; }
+.rival .who { grid-area: who; display: flex; flex-direction: column; min-width: 0; }
+.rival .relation { grid-area: track; }
+.rival .count { grid-area: count; display: flex; flex-direction: column; align-items: center; font-variant-numeric: tabular-nums; }
+.rival .count b { font-size: var(--text-display); line-height: var(--leading-tight); }
+.rival .count small { font-size: var(--text-tiny); color: var(--ink-dim); }
+.relation { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; max-width: var(--relation-w); }
+.relation .rail { position: relative; display: flex; justify-content: space-between; align-items: center; height: var(--relation-dot); }
+.relation .rail::before {
+  content: ''; position: absolute; left: calc(var(--relation-dot) / 2); right: calc(var(--relation-dot) / 2);
+  top: calc(50% - var(--line-hair)); height: calc(var(--line-hair) * 2); background: var(--fill-track);
+}
+.relation .rail i { position: relative; display: block; width: var(--relation-dot); height: var(--relation-dot); border-radius: var(--radius-pill); background: var(--surface-raised); box-shadow: inset 0 0 0 var(--line-hair) var(--line); }
+.relation .rail i.at { box-shadow: 0 0 0 var(--tick-w) var(--gauge-knob-edge); }
+.relation .rail i.at.peace { background: var(--gain); }
+.relation .rail i.at.tense { background: var(--warn); }
+.relation .rail i.at.war { background: var(--loss); }
+.relation .words { display: flex; justify-content: space-between; font-size: var(--text-micro); color: var(--ink-faint); }
+.relation .words .at { color: var(--ink); font-weight: var(--weight-medium); }
+/* the recall fleet as small hulls, one for each of its strength up to a dozen */
+.fleet { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--fleet-gap); margin: var(--space-4) 0 var(--space-2); }
+.fleet .more { align-self: center; margin-left: var(--space-3); font-size: var(--text-head); }
+.wave { align-items: flex-start; }
+.wave .l { display: flex; flex-direction: column; gap: var(--space-2); }
+.wave .soldiers { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-1); }
+/* what a predecessor people want, most and too */
+.wants { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-7); margin: var(--space-3) 0; }
+.wants > span { display: inline-flex; align-items: center; gap: var(--space-3); }
+.wants > span > span { display: flex; flex-direction: column; }
+.wants small { font-size: var(--text-tiny); color: var(--ink-dim); }
+.wants .most b { font-size: var(--text-lead); }
+.figs.foot { margin-top: var(--space-5); color: var(--ink-dim); font-size: var(--text-small); }
+.figs.foot > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+/* the resume card: the season leads the date, each line its kind's icon */
+.screen .when { display: flex; align-items: center; gap: var(--space-3); }
+.screen .line.led { display: flex; justify-content: flex-start; align-items: center; gap: var(--space-3); }
+
 /* while a move is drawn the sheet keeps what it said before it, and nothing on it can be pressed */
 #sheet.held > * { pointer-events: none; }
 /* a plotted route's controls: go, put away, and the shortcut said quietly beside them */

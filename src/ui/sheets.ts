@@ -1,7 +1,7 @@
 // The sheets. Each is a function of the app and a spec, returning DOM for the bottom third.
 // Everything that changes state goes through app.dispatch, so it is undoable and never a dialog.
 
-import type { GameState, Settlement, Unit, Colonist, GoodId, BuildId, BuildingLine, TileGood, LandKind, Purpose, HullKind, Difficulty, MapSize, LandShape, GoodRule, SurplusDestination } from '../sim/state'
+import type { GameState, Settlement, Unit, Colonist, GoodId, BuildId, BuildingLine, TileGood, LandKind, Purpose, HullKind, Difficulty, MapSize, LandShape, GoodRule, SurplusDestination, SignatoryCategory } from '../sim/state'
 import { GOODS, BUILDING_LINES } from '../sim/state'
 import { C } from '../sim/constants'
 import { unitLabel } from '../sim/queue'
@@ -12,7 +12,7 @@ import { turnsToCoast } from '../sim/autopilot'
 import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, consignPreview, dumpedGoods } from '../sim/market'
 import { maxMoves, cargoCapacity, equipCost, isHull, isArmed, unitAttack, unitDefence } from '../sim/units'
 import { sightMask } from '../sim/fog'
-import { signatoryList } from '../sim/grievance'
+import { signatoryList, signatoryCost } from '../sim/grievance'
 import { predecessorStore, offerTerms } from '../sim/predecessors'
 import { term, TERMS } from './glossary'
 import { h, button, row, muted, fmt, signed, plural } from './dom'
@@ -29,8 +29,8 @@ import type { RoutePlan } from '../sim/route'
 import { oddsWords } from './route'
 import { icon, isGood, SEASON_ICONS, type IconName } from './icons'
 import { season } from '../sim/turn'
-import { goodMark, buildingPicture, unitPicture, personPicture, intoArrow } from './pictures'
-import { priceGauge, fillBar, pips } from './meters'
+import { goodMark, buildingPicture, unitPicture, personPicture, intoArrow, dispatchIcon, queueIcon } from './pictures'
+import { priceGauge, fillBar, pips, sealRow, relationTrack } from './meters'
 import { STORE_WARM, PLACE_BOX_REM, PLACE_TILES_SHOWN } from './theme'
 import { ringPixels } from './ring'
 import { RING_PICTURE } from '../render/look'
@@ -1102,7 +1102,7 @@ function demandSheet(app: App, s: GameState): HTMLElement {
   const d = s.company.demand
   if (!d) return h('div', { class: 'panel' }, header(app, 'No demand'), muted('The Company is not asking for anything at present.'))
   const left = d.turnOffered + C.market.demandDeadline - s.turn
-  return h('div', { class: 'panel' }, header(app, [T(app, 'demand', 'A demand from the Company')], `${plural(Math.max(0, left), 'turn')} to answer; silence is acceptance`),
+  return h('div', { class: 'panel' }, heroHeader(app, icon('coin', 'hero'), [T(app, 'demand', 'A demand from the Company')], `${plural(Math.max(0, left), 'turn')} to answer; silence is acceptance`),
     h('p', {}, `The Company asks that the charge rise by ${Math.round(d.rise * 100)} points, to ${Math.round((s.company.charge + d.rise) * 100)} per cent of everything you consign.`),
     h('p', { class: 'muted' }, `Refuse and the Company will not buy ${GOOD_NAMES[d.good]} for a time, and the refusal is remembered as grievance.`),
     row(button('Accept', () => { if (app.dispatch({ t: 'answerDemand', accept: true }, 'Demand accepted')) app.back() }, 'small'), button('Refuse', () => { if (app.dispatch({ t: 'answerDemand', accept: false }, 'Demand refused')) app.back() }, 'danger')))
@@ -1130,21 +1130,48 @@ function dispatchSheet(app: App, s: GameState): HTMLElement {
   const entries = s.dispatch.slice(-40).reverse()
   return h('div', { class: 'panel' }, header(app, [T(app, 'dispatch', 'The dispatch')], 'what moved, newest first'),
     entries.length ? entries.map(d => {
-      const el = h('div', { class: 'card small-card ' + d.kind })
-      el.append(h('div', { class: 'card-body' }, muted(`Turn ${d.turn} · `), app.withTerms(d.text)))
-      if (d.why) { const why = h('div', { class: 'why' }, d.why); why.style.display = 'none'; el.append(button('Why', () => { why.style.display = why.style.display === 'none' ? 'block' : 'none' }, 'tiny ghost'), why) }
-      if (d.settlement !== undefined && s.settlements[d.settlement]) el.append(button(s.settlements[d.settlement].name, () => { app.focus(s.settlements[d.settlement!].tile); if (s.settlements[d.settlement!].owner === 0) app.open({ kind: 'settlement', id: d.settlement! }) }, 'tiny ghost'))
+      const lead = dispatchIcon(s, d.kind, d.text)
+      const el = h('div', { class: 'card small-card ' + d.kind + (lead ? ' led' : '') })
+      const main = h('div', { class: 'card-main' })
+      if (lead) el.append(h('span', { class: 'card-lead' }, lead))
+      el.append(main)
+      main.append(h('div', { class: 'card-body' }, muted(`Turn ${d.turn} · `), app.withTerms(d.text)))
+      if (d.why) { const why = h('div', { class: 'why' }, d.why); why.style.display = 'none'; main.append(button('Why', () => { why.style.display = why.style.display === 'none' ? 'block' : 'none' }, 'tiny ghost'), why) }
+      if (d.settlement !== undefined && s.settlements[d.settlement]) main.append(button(s.settlements[d.settlement].name, () => { app.focus(s.settlements[d.settlement!].tile); if (s.settlements[d.settlement!].owner === 0) app.open({ kind: 'settlement', id: d.settlement! }) }, 'tiny ghost'))
       return el
     }) : muted('Nothing yet.'))
 }
 
+/** What each kind of signatory seeks, as the icon that stands for it: trade the coin, land the
+ *  sprout, arms the rifle, voice the letter. */
+const SEEK_ICONS: Record<SignatoryCategory, IconName> = { trade: 'coin', land: 'sprout', arms: 'arms', voice: 'word' }
+
+/** The signatories, build brief phase 4: twelve seals in a row, whole for those who have signed and
+ *  faint for those who have not; the grievance toward the next name as a bar; what is sought, with
+ *  its icon; and each of the twelve led by a seal of their own. */
 function signatoriesSheet(app: App, s: GameState): HTMLElement {
   const ch = s.charters[0]
   const list = signatoryList()
-  const panel = h('div', { class: 'panel' }, header(app, [T(app, 'signatory', 'Signatories')], `${ch.signatories.length} of twelve · ${Math.round(ch.grievance)} grievance unspent`))
+  const signed = ch.signatories.length
+  const panel = h('div', { class: 'panel' }, heroHeader(app, icon('seal', 'hero'), [T(app, 'signatory', 'Signatories')], `${signed} of twelve have signed`))
   if (!list.length) { panel.append(notYet(app, 'Recruiting signatories')); return panel }
-  panel.append(section('Seeking', h('div', { class: 'chips' }, (['trade', 'land', 'arms', 'voice'] as const).map(c => h('button', { class: 'chip' + (ch.signatoryTarget === c ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setSignatoryTarget', category: c }, `Seeking ${c}`) }, c)))))
-  panel.append(section('The twelve', ...list.map(e => line([h('b', {}, e.name), muted(` · ${e.category}`)], ch.signatories.includes(e.index) ? 'signed' : muted(e.effect)))))
+  panel.append(h('div', { class: 'meter' }, sealRow(signed, list.length)))
+  if (signed < list.length) {
+    const cost = signatoryCost(signed)
+    panel.append(h('div', { class: 'meter' }, fillBar(Math.min(1, ch.grievance / cost), 'plain', null, 'wide progress'),
+      h('div', { class: 'meter-words' }, h('span', {}, icon('grievance', 'pill'), h('b', {}, fmt(Math.round(ch.grievance))), ` of ${cost} grievance toward the next name`))))
+  }
+  panel.append(section('Seeking', h('div', { class: 'chips' }, (['trade', 'land', 'arms', 'voice'] as const).map(c => h('button', {
+    class: 'chip' + (ch.signatoryTarget === c ? ' on' : ''), type: 'button', onClick: () => app.dispatch({ t: 'setSignatoryTarget', category: c }, `Seeking ${c}`),
+  }, icon(SEEK_ICONS[c], 'pill'), c)))))
+  panel.append(section('The twelve', ...list.map(e => {
+    const has = ch.signatories.includes(e.index)
+    return h('div', { class: 'line signatory' + (has ? ' signed' : '') },
+      icon('seal', 'tile', has ? 'whole' : 'faint'),
+      h('span', { class: 'l' }, h('b', {}, e.name), h('span', { class: 'what' }, icon(SEEK_ICONS[e.category], 'pill'), e.effect)),
+      h('span', { class: 'r' }, has ? 'signed' : muted(e.category)),
+    )
+  })))
   return panel
 }
 
@@ -1199,13 +1226,20 @@ function predecessorSheet(app: App, s: GameState, id: number): HTMLElement {
   const u = s.units.find(x => x.id === app.scene.cam.view.activeUnit && x.owner === 0)
   const w = s.world.width
   const adjacent = u ? Math.abs((p.tile % w) - (u.tile % w)) <= 1 && Math.abs(Math.floor(p.tile / w) - Math.floor(u.tile / w)) <= 1 : false
-  const panel = h('div', { class: 'panel' }, header(app, [T(app, 'predecessor', p.name)], `teaches ${p.teaches}${p.taught ? ' (taught)' : ''} · wants ${GOOD_NAMES[p.strong]} most, ${p.minor.map(g => GOOD_NAMES[g]).join(' and ')} too`))
-  panel.append(line([T(app, 'alarm')], p.alarm > 0.66 ? 'high' : p.alarm > 0.33 ? 'rising' : 'low'))
+  // led by the crop they teach; what they want and what they have as icons (build brief phase 4)
+  const panel = h('div', { class: 'panel' }, heroHeader(app, goodMark(p.teaches, 'hero'), [T(app, 'predecessor', p.name)],
+    h('span', { class: 'figs' }, h('span', {}, 'teaches ', h('span', { class: 'ic-word' }, goodMark(p.teaches), GOOD_NAMES[p.teaches].toLowerCase())), p.taught ? muted('taught') : null)))
+  panel.append(section('They want', h('div', { class: 'wants' },
+    h('span', { class: 'most' }, goodMark(p.strong, 'tile'), h('span', {}, h('b', {}, GOOD_NAMES[p.strong]), h('small', {}, 'most'))),
+    ...p.minor.map(g => h('span', { class: 'also' }, goodMark(g, 'tile'), h('span', {}, GOOD_NAMES[g], h('small', {}, 'too')))))))
+  const alarmWord = p.alarm > 0.66 ? 'high' : p.alarm > 0.33 ? 'rising' : 'low'
+  panel.append(h('div', { class: 'meter' }, fillBar(Math.min(1, p.alarm), p.alarm > C.predecessors.alarmRefuse ? 'spoils' : p.alarm > 0.33 ? 'warm' : 'plain', C.predecessors.alarmRefuse, 'wide'),
+    h('div', { class: 'meter-words' }, h('span', {}, T(app, 'alarm'), ' ', h('b', {}, alarmWord)), h('span', { class: 'rule-at' }, h('i', { class: 'tick-key' }), 'they stop trading'))))
   if (p.agent) panel.append(muted('An agent of yours is stationed here.'))
   if (!C.flags.predecessors) panel.append(notYet(app, 'Trading and learning with predecessor peoples'))
   // what they have to give in kind, and what the unit beside them could offer, for gold or for goods
   const store = (Object.entries(predecessorStore(p)) as [GoodId, number][]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])
-  if (store.length) panel.append(section('They have', h('div', { class: 'chips' }, store.map(([g, n]) => h('span', { class: 'chip' }, `${n} ${GOOD_NAMES[g].toLowerCase()}`)))))
+  if (store.length) panel.append(section('They have', h('div', { class: 'chips' }, store.map(([g, n]) => h('span', { class: 'chip good-chip' }, goodMark(g, 'pill'), h('b', {}, fmt(n)), h('span', { class: 'word' }, GOOD_NAMES[g].toLowerCase()))))))
   if (u && adjacent) {
     const goods = (Object.entries(u.cargo).filter(([, n]) => n) as [GoodId, number][]).filter(([g]) => C.market.goods[g].predecessor || g === 'metal' || g === 'tooling' || g === 'arms' || g === 'horses')
     const carries = cargoCapacity(u) > 0
@@ -1213,12 +1247,12 @@ function predecessorSheet(app: App, s: GameState, id: number): HTMLElement {
     for (const [g, n] of goods) {
       const forGold = offerTerms(s, p, u, g, n, null)
       const same = p.lastBought === g
-      rows.push(line([`Offer ${n} ${GOOD_NAMES[g]}`, same ? h('span', { class: 'warn' }, ' they took that last time') : ''], same ? '' : `${forGold.gold} gold`, same ? undefined : () => app.dispatch({ t: 'offer', unit: u.id, predecessor: p.id, good: g, amount: n, haggle: false }, 'Offered')))
+      rows.push(line(['Offer ', fig(g, fmt(n), GOOD_NAMES[g].toLowerCase()), same ? h('span', { class: 'warn' }, ' they took that last time') : ''], same ? '' : fig('coin', String(forGold.gold), 'gold'), same ? undefined : () => app.dispatch({ t: 'offer', unit: u.id, predecessor: p.id, good: g, amount: n, haggle: false }, 'Offered')))
       if (!same && carries) for (const [want] of store) {
         if (want === g) continue
         const terms = offerTerms(s, p, u, g, n, want)
         if (terms.inKind <= 0) continue
-        rows.push(line([muted('  for '), `${terms.inKind} ${GOOD_NAMES[want].toLowerCase()}`, terms.gold > 0 ? muted(` and ${terms.gold} gold`) : ''], 'barter', () => app.dispatch({ t: 'offer', unit: u.id, predecessor: p.id, good: g, amount: n, haggle: false, want }, `Offered for ${GOOD_NAMES[want].toLowerCase()}`)))
+        rows.push(line([muted('  for '), fig(want, fmt(terms.inKind), GOOD_NAMES[want].toLowerCase()), terms.gold > 0 ? h('span', {}, muted(' and '), fig('coin', String(terms.gold), 'gold')) : ''], 'barter', () => app.dispatch({ t: 'offer', unit: u.id, predecessor: p.id, good: g, amount: n, haggle: false, want }, `Offered for ${GOOD_NAMES[want].toLowerCase()}`)))
       }
     }
     panel.append(section(`With your ${unitLabel(u.kind)}`,
@@ -1231,28 +1265,60 @@ function predecessorSheet(app: App, s: GameState, id: number): HTMLElement {
   return panel
 }
 
+/** The other charters, build brief phase 4: each led by its banner in its own colour, its relation
+ *  as a marker on a three step track, and its settlements as a number. */
 function rivalsSheet(app: App, s: GameState): HTMLElement {
-  return h('div', { class: 'panel' }, header(app, [T(app, 'rival', 'The other charters')]),
-    ...s.charters.slice(1).map(c => line([h('span', { class: 'swatch', style: { background: c.colour } }), ' ', c.name], `${c.relation} · ${plural(s.settlements.filter(x => x.owner === c.id).length, 'settlement')}${c.fell ? ' · fell' : c.independent ? ' · independent' : ''}`)),
+  return h('div', { class: 'panel' }, heroHeader(app, icon('banner', 'hero'), [T(app, 'rival', 'The other charters')], 'peace, tense or war with each'),
+    h('div', { class: 'rivals' }, s.charters.slice(1).map(c => {
+      const n = s.settlements.filter(x => x.owner === c.id).length
+      const banner = icon('banner', 'tile')
+      banner.style.color = c.colour
+      return h('div', { class: 'rival' },
+        banner,
+        h('span', { class: 'who' }, h('b', {}, c.name), c.fell ? muted('fell to its Company') : c.independent ? muted('independent') : null),
+        relationTrack(c.relation),
+        h('span', { class: 'count' }, h('b', {}, String(n)), h('small', {}, n === 1 ? 'settlement' : 'settlements')),
+      )
+    })),
     C.flags.rivals ? null : notYet(app, 'Rival expansion and diplomacy'))
 }
 
+/** At most this many hulls stand for the recall fleet's strength, one each; past it, a number. */
+const FLEET_SHIPS_DRAWN = 12
+
+/** The declaration, build brief phase 4: resolve as a bar with the flame and a tick at the threshold
+ *  it needs; the recall fleet's strength as small hulls, one each up to a dozen and then a number;
+ *  once declared, each wave as its soldiers and when it lands. */
 function declarationSheet(app: App, s: GameState): HTMLElement {
   const ch = s.charters[0]
   const mine = s.settlements.filter(x => x.owner === 0)
   const pop = mine.reduce((a, st) => a + st.colonists.length, 0)
   const resolve = pop ? mine.reduce((a, st) => a + st.resolve * st.colonists.length, 0) / pop : 0
+  const gate = C.grievance.declarationGate
   const d = s.declaration
-  const panel = h('div', { class: 'panel' }, header(app, [T(app, 'declaration', 'The declaration')], d?.declared ? 'declared' : `resolve ${Math.round(resolve * 100)} per cent of ${Math.round(C.grievance.declarationGate * 100)} needed`))
-  panel.append(line([T(app, 'fleet', 'The recall fleet')], `strength ${Math.round(s.company.fleetStrength)}`))
+  const panel = h('div', { class: 'panel' }, heroHeader(app, icon('resolve', 'hero'), [T(app, 'declaration', 'The declaration')], d?.declared ? 'Declared' : resolve >= gate ? 'It can be made when you are ready' : 'Not yet within reach'))
+  panel.append(h('div', { class: 'meter' }, fillBar(Math.min(1, resolve), resolve >= gate ? 'warm' : 'plain', gate, 'wide resolve'),
+    h('div', { class: 'meter-words' }, h('span', {}, icon('resolve', 'pill'), T(app, 'resolve'), ' ', h('b', {}, `${Math.round(resolve * 100)}%`), ' across your settlements'),
+      h('span', { class: 'rule-at' }, h('i', { class: 'tick-key' }), `${Math.round(gate * 100)}% needed`))))
+  const strength = Math.round(s.company.fleetStrength)
+  const drawn = Math.min(strength, FLEET_SHIPS_DRAWN)
+  const fleet = h('div', { class: 'fleet', role: 'img', 'aria-label': `The recall fleet's strength is ${strength}.` })
+  for (let k = 0; k < drawn; k++) fleet.append(unitPicture('companyShip', 'var(--fleet-person)'))
+  if (strength > FLEET_SHIPS_DRAWN) fleet.append(h('b', { class: 'more' }, `${strength} in all`))
+  panel.append(section('The recall fleet', fleet, h('div', { class: 'meter-words' }, h('span', {}, 'Strength ', h('b', {}, String(strength)), '. It grows with every grievance gathered.'))))
   if (d?.declared) {
-    panel.append(section('The war', ...d.waves.map(wv => line([`Wave ${wv.id}, ${plural(wv.units.length, 'unit')}`], wv.landed ? 'landed' : `lands in ${wv.turnsToLand}`)), muted(`Intervention ${Math.round(d.interventionProgress)}`)))
+    panel.append(section('The war', ...d.waves.map(wv => h('div', { class: 'line wave' },
+      h('span', { class: 'l' }, h('b', {}, `Wave ${wv.id}`), h('span', { class: 'soldiers' }, wv.units.map(u => unitPicture(u.kind, 'var(--wave-person)')))),
+      h('span', { class: 'r' }, wv.landed ? 'landed' : `lands in ${plural(wv.turnsToLand, 'turn')}`))),
+      muted(`Intervention ${Math.round(d.interventionProgress)}`)))
   } else {
     panel.append(h('p', { class: 'muted' }, 'Tearing up the charter ends consignments at the full rate and brings the fleet. It is never forced, and it can wait until you are ready.'))
     if (C.flags.fleet) panel.append(row(button('Declare', () => app.dispatch({ t: 'declare' }, 'Declared'), 'danger')))
     else panel.append(notYet(app, 'The declaration and the recall fleet'))
   }
-  panel.append(muted(`${ch.signatories.length} signatories, ${Math.round(ch.grievanceTotal)} grievance gathered in all.`))
+  panel.append(h('div', { class: 'figs foot' },
+    h('span', {}, icon('seal', 'pill'), plural(ch.signatories.length, 'signatory', 'signatories')),
+    h('span', {}, icon('grievance', 'pill'), `${fmt(Math.round(ch.grievanceTotal))} grievance gathered in all`)))
   return panel
 }
 
@@ -1323,11 +1389,13 @@ function groupSheet(app: App, group: string): HTMLElement {
   if (!g) return app.renderQueue()
   return h('div', { class: 'panel' }, header(app, g.title),
     ...g.items.map(it => {
-      const card = h('div', { class: 'card small-card' }, h('div', { class: 'card-title' }, it.title), h('div', { class: 'card-body' }, app.withTerms(it.body)))
+      const lead = queueIcon(app.state, it.group, it.key)
+      const main = h('div', { class: 'card-main' }, h('div', { class: 'card-title' }, it.title), h('div', { class: 'card-body' }, app.withTerms(it.body)))
+      const card = h('div', { class: 'card small-card' + (lead ? ' led' : '') }, lead ? h('span', { class: 'card-lead' }, lead) : null, main)
       const actions = h('div', { class: 'card-actions' })
       for (const c of it.choices) actions.append(button(c.label, () => app.dispatch(c.action as Action, c.label), 'small'))
       actions.append(button('Open', () => app.openItem(it), 'small ghost'))
-      card.append(actions)
+      main.append(actions)
       return card
     }))
 }

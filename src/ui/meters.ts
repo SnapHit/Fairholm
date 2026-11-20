@@ -10,6 +10,7 @@
 import type { GameState, GoodId } from '../sim/state'
 import { C } from '../sim/constants'
 import { h } from './dom'
+import { icon } from './icons'
 
 /** A mark at a share of a track, nought to one. */
 function at(cls: string, share: number, extra: Record<string, string> = {}): HTMLElement {
@@ -60,6 +61,22 @@ export function pips(have: number, of: number, cls = ''): HTMLElement {
   const row = h('span', { class: 'pips' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true' })
   for (let k = 0; k < of; k++) row.append(h('i', { class: k < have ? 'on' : '' }))
   return row
+}
+
+/** A tally of the twelve: a seal for each, whole for those who have signed and faint for those who
+ *  have not, the whole ones first, so the row fills from the left as names are put to the cause. */
+export function sealRow(signed: number, of: number): HTMLElement {
+  const row = h('span', { class: 'seal-row', role: 'img', 'aria-label': `${signed} of ${of} have signed` })
+  for (let k = 0; k < of; k++) row.append(icon('seal', 'tile', k < signed ? 'whole' : 'faint'))
+  return row
+}
+
+/** Where a charter stands with you, as a marker on a three step track: peace, tense, war. */
+export function relationTrack(relation: 'peace' | 'tense' | 'war'): HTMLElement {
+  const steps = ['peace', 'tense', 'war'] as const
+  return h('span', { class: `relation ${relation}`, role: 'img', 'aria-label': `Relation: ${relation}` },
+    h('span', { class: 'rail' }, steps.map(r => h('i', { class: r + (r === relation ? ' at' : '') }))),
+    h('span', { class: 'words', 'aria-hidden': 'true' }, steps.map(r => h('span', { class: r === relation ? 'at' : '' }, r))))
 }
 
 /** How full something is, as a bar: plain, warm as it nears full, and the loss colour once it is

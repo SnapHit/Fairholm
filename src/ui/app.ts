@@ -41,7 +41,7 @@ import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
 import { SHEET_DISMISS_PX, TAP_MIN_PX, installTheme } from './theme'
 import { installIcons, icon, isGood, SEASON_ICONS, type IconName } from './icons'
-import { goodMark } from './pictures'
+import { goodMark, queueIcon, dispatchIcon } from './pictures'
 import { mountOpening, type Opening } from './opening'
 import * as Save from '../io/save'
 import * as Telemetry from '../io/telemetry'
@@ -1310,9 +1310,11 @@ export class App {
       const total = q.shown.reduce((a, g) => a + g.items.length, 0) + q.folded.reduce((a, g) => a + g.items.length, 0)
       const top = q.shown[0]
       const typeClass = top ? ['', 'loss', 'company', 'stuck', 'idle', 'chance'][top.type] : ''
+      const lead = top ? queueIcon(s, top.group, top.items[0]?.key ?? '', 'pill') : null
       this.queuebar.append(
         h('button', { class: 'top', type: 'button', onClick: () => { if (this.queueExpanded && this.sheet.kind === 'queue') this.closeSheet(); else this.open({ kind: 'queue' }) } },
           h('span', { class: 'mark ' + typeClass }),
+          lead,
           h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? top.title : 'A quiet turn'),
           total > 1 ? h('span', { class: 'count' }, String(total)) : null,
         ),
@@ -1441,10 +1443,13 @@ export class App {
   renderGroup(g: QueueGroup): HTMLElement {
     const typeClass = ['', 'loss', 'company', 'stuck', 'idle', 'chance'][g.type]
     const single = g.items.length === 1 ? g.items[0] : null
-    const card = h('div', { class: 'card ' + typeClass })
-    card.append(h('div', { class: 'card-title' }, g.title))
-    card.append(h('div', { class: 'card-body' }, this.withTerms(g.body)))
-    if (g.explain) card.append(h('div', { class: 'explain' }, g.explain))
+    // led by an icon for its kind where one fits (build brief phase 4); the coloured edge stays
+    const lead = queueIcon(this.state, g.group, (single ?? g.items[0])?.key ?? '')
+    const main = h('div', { class: 'card-main' })
+    const card = h('div', { class: 'card ' + typeClass + (lead ? ' led' : '') }, lead ? h('span', { class: 'card-lead' }, lead) : null, main)
+    main.append(h('div', { class: 'card-title' }, g.title))
+    main.append(h('div', { class: 'card-body' }, this.withTerms(g.body)))
+    if (g.explain) main.append(h('div', { class: 'explain' }, g.explain))
     const actions = h('div', { class: 'card-actions' })
     if (single) {
       for (const c of single.choices) actions.append(button(c.label, () => { this.resolved(() => this.dispatch(c.action as Action, c.label)) }, 'small'))
@@ -1455,7 +1460,7 @@ export class App {
     } else {
       actions.append(button(`Open ${g.items.length}`, () => this.open({ kind: 'group', group: g.group }), 'small ghost'))
     }
-    card.append(actions)
+    main.append(actions)
     return card
   }
 
@@ -1516,12 +1521,14 @@ export class App {
     const s = this.state
     const last = s.dispatch.filter(d => d.turn === s.turn).slice(-3)
     const three = this.queue.shown.slice(0, 3)
+    // the season leads the date, and each line what moved and what waits leads with its kind's icon
+    const led = (lead: SVGSVGElement | null, text: string) => h('div', { class: 'line' + (lead ? ' led' : '') }, lead, h('span', {}, text))
     const box = h('div', { class: 'screen' },
       h('h1', {}, 'Fairholm'),
-      h('p', { class: 'muted' }, `Turn ${s.turn}, year ${year(s.turn)}, ${SEASON_NAMES[season(s.turn)]}.`),
+      h('p', { class: 'muted when' }, icon(SEASON_ICONS[season(s.turn)], 'tile'), h('span', {}, `Turn ${s.turn}, year ${year(s.turn)}, ${SEASON_NAMES[season(s.turn)]}.`)),
       h('p', { class: 'lead' }, s.intent),
-      last.length ? h('div', {}, h('div', { class: 'card-title' }, 'What moved'), last.map(d => h('div', { class: 'line' }, d.text))) : null,
-      three.length ? h('div', {}, h('div', { class: 'card-title' }, 'Three things'), three.map(g => h('div', { class: 'line' }, g.title))) : h('p', {}, 'A quiet turn waits.'),
+      last.length ? h('div', {}, h('div', { class: 'card-title' }, 'What moved'), last.map(d => led(dispatchIcon(s, d.kind, d.text, 'pill'), d.text))) : null,
+      three.length ? h('div', {}, h('div', { class: 'card-title' }, 'Three things'), three.map(g => led(queueIcon(s, g.group, g.items[0]?.key ?? '', 'pill'), g.title))) : h('p', {}, 'A quiet turn waits.'),
       row(button('Continue', () => this.hideScreen(), 'primary'), button('Start again', () => { this.hideScreen(); this.open({ kind: 'newgame' }) }, 'ghost')),
     )
     this.showScreen(box)

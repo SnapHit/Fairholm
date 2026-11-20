@@ -313,6 +313,16 @@ export const TOKENS: Record<string, string> = {
   /** Progress toward something being built or taught, and what a turn makes. */
   '--progress': 'var(--accent)',
   '--made': 'var(--gain)',
+  /** Tallies of the whole charter, build brief phase 4: how many seals a row holds and how faint an
+   *  unsigned one is; the relation track's width and its steps; the recall fleet's hulls, drawn
+   *  against a person this tall and this far apart, and a wave's soldiers against a person this tall. */
+  '--seals': '12',
+  '--seal-faint': '0.28',
+  '--relation-w': '9rem',
+  '--relation-dot': '12px',
+  '--fleet-person': '0.42rem',
+  '--fleet-gap': '3px',
+  '--wave-person': '1rem',
   /** The arrow between what goes into a building and what comes out: its width and its line. */
   '--into-w': '0.875rem',
   '--into-h': '0.625',

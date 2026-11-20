@@ -7,7 +7,7 @@
 // drawing is right at whatever size that comes to. Its anchor, where it meets the ground, rides along
 // as two custom properties, so it can be stood on a point.
 
-import type { Colonist, GoodId, BuildingLine, UnitKind } from '../sim/state'
+import type { Colonist, GoodId, BuildingLine, UnitKind, GameState, DispatchKind } from '../sim/state'
 import { SETTLEMENT_ATLAS } from '../render/settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
 import { manifestFrom, type AtlasManifest } from '../render/billboards'
@@ -15,7 +15,7 @@ import { UNIT_SPRITE } from '../render/look'
 import { STREET_SHEET_PX } from './theme'
 import { h, fmt } from './dom'
 import { standingLevel } from './selectors'
-import { icon, type IconSize } from './icons'
+import { icon, isGood, type IconSize, type IconName } from './icons'
 
 /** The people's sheet, as the map reads it, and the early era's buildings. */
 export const UNITS_SHEET: AtlasManifest = manifestFrom(UNITS_ATLAS_JSON, 'units.json')
@@ -178,6 +178,67 @@ export function chevrons(n: number): Element {
     }
   }
   return svg
+}
+
+// ---- what leads a card, a line of the dispatch, the resume card --------------------------------
+// Build brief phase 4: a leading icon by kind where one fits. The good for goods, the cannon for
+// raiders and war, the frame for build orders, the colonist for people and idleness, the coin for
+// money owed or due, the letter for Word and passage, the seal for signatories, the banner for rivals
+// in the rival's own colour, the flame for the declaration. Where nothing fits there is no icon, and
+// the card's coloured edge says its kind as it always has.
+
+/** A queue card's group, by the icon that leads it. */
+const QUEUE_ICONS: Record<string, IconName> = {
+  hunger: 'food', spoilage: 'crate', haulStopped: 'crate', orderBlocked: 'crate', orderUnsat: 'crate',
+  demand: 'coin', firstConsignment: 'coin',
+  sail: 'cannon', threat: 'cannon', wave: 'cannon', muster: 'cannon', blockade: 'cannon',
+  tense: 'banner', unitContact: 'banner',
+  buildEmpty: 'frame', buildBlocked: 'frame',
+  idle: 'colonist', unitIdle: 'colonist', growthAsk: 'colonist',
+  signatory: 'seal', declaration: 'resolve', meeting: 'grievance', learn: 'sprout',
+}
+
+/** The first good a sentence names, gold aside: in a sentence gold is as often money as the good. */
+function goodNamed(text: string): GoodId | null {
+  for (const m of text.toLowerCase().matchAll(/[a-z]+/g)) if (m[0] !== 'gold' && isGood(m[0])) return m[0]
+  return null
+}
+
+/** A banner in a charter's own colour, or in the colour of the words round it. */
+function bannerFor(s: GameState, charter: number | null, size: IconSize): SVGSVGElement {
+  const el = icon('banner', size)
+  const c = charter !== null ? s.charters[charter] : undefined
+  if (c && !c.player) el.style.color = c.colour
+  return el
+}
+
+/** What leads a queue card: its good where it is about one (the dumping card names it in its key),
+ *  else the icon for its kind. */
+export function queueIcon(s: GameState, group: string, key: string, size: IconSize = 'tile'): SVGSVGElement | null {
+  if (group === 'dumping') { const g = key.split(':')[1]; if (g && isGood(g)) return icon(g, size) }
+  if (group === 'tense') return bannerFor(s, Number(key.split(':')[1]), size)
+  const name = QUEUE_ICONS[group]
+  return name ? icon(name, size) : null
+}
+
+/** What leads a line of the dispatch: the good it names where it is about goods, the letter for
+ *  passage and Word, the seal for a signature, the flame for the declaration, else its kind's. */
+export function dispatchIcon(s: GameState, kind: DispatchKind, text: string, size: IconSize = 'tile'): SVGSVGElement | null {
+  if (/passage|\bWord\b/.test(text)) return icon('word', size)
+  if (/\bsignator|\bsigned\b|\bsigns\b/i.test(text)) return icon('seal', size)
+  if (/declar/i.test(text) && kind !== 'war') return icon('resolve', size)
+  const good = kind === 'market' || kind === 'loss' || kind === 'predecessor' || kind === 'note' || kind === 'event' ? goodNamed(text) : null
+  if (good) return icon(good, size)
+  switch (kind) {
+    case 'market': case 'company': return icon('coin', size)
+    case 'loss': return icon('crate', size)
+    case 'growth': return icon('colonist', size)
+    case 'build': return icon('frame', size)
+    case 'rival': return bannerFor(s, s.charters.findIndex(c => !c.player && text.includes(c.name)), size)
+    case 'war': return icon('cannon', size)
+    case 'predecessor': return icon('sprout', size)
+    default: return null
+  }
 }
 
 /** "Turns into", between what goes into a building and what comes out: a small arrow in the colour of
