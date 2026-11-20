@@ -1,5 +1,10 @@
 # Settlement screen and screen layout
 
+**Changed 21 November 2026.** The goods have pictures: an icon for every good, drawn for the game
+(art direction brief section 11a). The goods strip becomes a shelf of them, and every yield and
+output pill on this screen is an icon and a number. The buildings and trades sheets are still
+awaited.
+
 **Corrected 7 November 2026, after the build.** Two claims in section 2 were wrong and are corrected
 where they stand: the ring's size and its cells, because the soft edge takes a quarter tile on each
 side, and a hull at the far end of the street, because a hull never stands on a settlement's own
@@ -165,10 +170,11 @@ ring's picture shows it.*
 
 ### What the goods strip shows
 
-Each good as its mark and its stock, with what it is making this turn, and a thin bar under it for
-how full the store is: plain when there is room, warm as it nears capacity, the warning colour when
-it spoils. Price and the surplus rule move to the good's own sheet, one tap away. Market sits at the
-head of the strip.
+**A shelf of goods.** Each good stands on it as its icon, with its stock under it in large figures,
+what it is making this turn beside that, and a thin bar for how full the store is: plain when there
+is room, warm as it nears capacity, the warning colour when it spoils, with a tick where its surplus
+rule starts to sell. Price and the rule itself are in the good's own sheet, one tap away. Market sits
+at the head of the shelf. *Changed 21 November 2026: the marks were words until the icons existed.*
 
 ### The header
 
@@ -183,7 +189,8 @@ the layout changing:
 
 - **Buildings**: three sheets of six, one picture per building. Until then each building line draws
   the nearest of the seven early era pictures, from one table, and the name carries the difference
-- **Goods**: one sheet of icons. Until then each good is its word
+- **Goods**: drawn, 21 November 2026, as the icon set in `src/ui/icons.svg`. A painted sheet can
+  still replace it through the same seam
 - **Trades**: one sheet of the colonist holding the tool of each trade. Until then every worker is
   the same figure
 

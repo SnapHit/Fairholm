@@ -1,5 +1,8 @@
 # Art direction and rendering brief
 
+**Changed 21 November 2026.** Section 11a is new: how data looks once it is in a sheet, the icon set
+drawn for the interface, and the rules for using it.
+
 **Changed 1 October 2026.** The opening is now the one the original is loved for: you begin at sea in fog with no knowledge of the world, sail until you find land and choose your own ground, anchorages are gone and settlements may be founded almost anywhere. This brief gains a section on how unexplored ground is drawn, and the schematic view no longer lists anchorages.
 
 Written 21 August 2026. Self-contained. Companion to the browser game architecture brief, whose section
@@ -240,6 +243,49 @@ threat, show freight routes. Each one is a temporary recolouring of the terrain 
 effectively free, and none of them is the default view.
 
 The default view is the country.
+
+---
+
+## 11a. Pictures in the interface
+
+**Added 21 November 2026.** Section 11 keeps data off the map. This section says how data looks once it
+is in a sheet, because "it lives in sheets" had been read as "it lives in sentences".
+
+**The principle: wherever the interface names something the player could see or hold, it shows it.**
+Pictures carry, words confirm, numbers stay numbers. A goods shelf rather than a list of goods; a
+catalogue of buildings rather than a table of costs; a row of seals rather than "2 of twelve".
+
+### The icon set
+
+`src/ui/icons.svg`, drawn for this game: the eighteen goods, frame and grievance (what buildings make
+that are not goods), and the things the interface counts that are not goods: the treasury's coin,
+Word, resolve, a colonist, the four seasons, a hold, guns, speed, a signatory's seal and a charter's
+banner. `src/ui/icons.ts` is the only way to draw one.
+
+- **A 64 unit square, lit from the upper left** like the painted sheets, in flat planes and soft
+  gradients, with no outlines. Each icon stands on its own soft shadow, so it reads as a thing on a
+  table rather than a symbol on a button
+- **The palette is the world's**: timber, iron, linen, wax, brass. Bloom, Attar and Cores are the only
+  icons that glow. The setting's wonder is the one thing drawn as light, everywhere it appears
+- **The banner takes its charter's colour.** Nothing else is recoloured
+- **One drawing at every size**: legible at 16 pixels inline in a sentence, rich at 64 in a header
+
+People, hulls and buildings in the interface are the painted sheets the map already uses, drawn in
+the DOM through `src/ui/pictures.ts`. There is one picture of each thing in the game, wherever it
+appears.
+
+### The rules
+
+1. **Icon and number, not repeated icons.** Three food is the food icon and a 3
+2. **Levels are bars, and a bar shows where a rule acts**: a tick where the surplus rule starts to
+   sell, a tick at the declaration's threshold, the price's floor and ceiling at the ends of its track
+3. **An icon has its word wherever the player is choosing between things**, the first time it is met
+   in a list; in a dense row of numbers, the icon and the number are enough and the word is one tap
+   away
+4. **No chrome.** No plates, frames, bevels or coloured discs behind an icon. It stands on the panel
+5. **Decorative to a screen reader.** Every control an icon sits in says what it is in words
+6. **When painted goods art exists, it replaces a symbol in one place** (`goodMark` in
+   `src/ui/pictures.ts`) and nothing else changes
 
 ---
 
