@@ -60,6 +60,54 @@ export function previewProduction(s: GameState, st: Settlement): Partial<Record<
   return out
 }
 
+/** Everything this settlement's people and buildings would move this turn, as the turn's own
+ *  production step moves it (`produce` below): what is made, the settlement's own tile included,
+ *  what the buildings use up, what each line makes, and the horses that breed (their whole number,
+ *  without the chance of one more). Read-only. The problems a settlement has are read from this
+ *  (src/sim/problems.ts), so they and the turn agree. */
+export interface Flows {
+  made: Partial<Record<GoodId | 'frame', number>>
+  used: Partial<Record<GoodId, number>>
+  byLine: Partial<Record<BuildingLine, number>>
+  food: number
+}
+
+export function previewFlows(s: GameState, st: Settlement): Flows {
+  const mod = outputModifier(s, st)
+  const made: Flows['made'] = {}, used: Flows['used'] = {}, byLine: Flows['byLine'] = {}
+  const add = (g: GoodId | 'frame', v: number) => { if (v > 0) made[g] = (made[g] ?? 0) + v }
+  let food = tileYield(s, st.tile, 'food', null)
+  const own = s.world.tiles[st.tile]
+  let bestG: TileGood | null = null, bestV = 0
+  for (const g of tileOffers(own)) { if (g === 'food' || g === 'gold') continue; const v = tileYield(s, st.tile, g, null); if (v > bestV) { bestV = v; bestG = g } }
+  if (bestG) add(bestG, Math.floor(bestV / 2))
+  for (const c of st.colonists) {
+    if (c.job.kind !== 'tile') continue
+    let v = Math.max(0, tileYield(s, c.job.tile, c.job.good, c) + mod)
+    if (c.job.good === 'gold') v = Math.min(v, s.world.tiles[c.job.tile].goldReserve)
+    if (c.job.good === 'food') food += v
+    else add(c.job.good, v)
+  }
+  for (const line of Object.keys(C.buildings.lines) as BuildingLine[]) {
+    const def = C.buildings.lines[line]
+    if (!def.output || st.buildings[line] === 0) continue
+    const tier = effectiveTier(st, line)
+    let cap = 0
+    for (const c of st.colonists) if (c.job.kind === 'building' && c.job.line === line) cap += Math.max(0, workerOutput(c, line) + mod) * C.labour.tierMultiplier[tier]
+    if (cap <= 0) continue
+    // the stock as the production step finds it: the tiles' yield is added before the buildings work
+    let amount = Math.min(cap, st.stock[def.input!] + (made[def.input!] ?? 0) - (used[def.input!] ?? 0))
+    if (def.secondInput) amount = Math.min(amount, st.stock[def.secondInput] + (made[def.secondInput] ?? 0) - (used[def.secondInput] ?? 0))
+    if (amount <= 0) { byLine[line] = 0; continue }
+    used[def.input!] = (used[def.input!] ?? 0) + amount
+    if (def.secondInput) used[def.secondInput] = (used[def.secondInput] ?? 0) + amount
+    byLine[line] = amount
+    add(def.output, amount)
+  }
+  if (st.stock.horses >= 2) add('horses', Math.floor(st.stock.horses * C.buildings.horseBreedBase + (st.buildings.stable > 0 ? C.buildings.stableHorseBonus : 0)))
+  return { made, used, byLine, food }
+}
+
 /** Which lines this settlement could add to its build order right now. */
 export function buildable(s: GameState, st: Settlement): BuildId[] {
   const out: BuildId[] = []
@@ -338,14 +386,11 @@ export function canStart(st: Settlement, id: BuildId): { ok: boolean; reason?: s
 function construct(s: GameState, st: Settlement, ctx: TurnContext) {
   if (!st.building && st.buildQueue.length) {
     const id = st.buildQueue[0]
+    // a head of the queue that cannot start waits there, and src/sim/problems.ts says why
     if (canStart(st, id).ok) {
       st.buildQueue.shift()
       st.building = { id, frame: 0, tooling: 0 }
-      delete st.conditions['buildBlocked']
-    } else {
-      st.conditions['buildBlocked'] = st.conditions['buildBlocked'] ?? s.turn
-      return
-    }
+    } else return
   }
   if (!st.building) return
   const b = st.building
@@ -370,7 +415,6 @@ export function completeBuilding(s: GameState, st: Settlement, id: BuildId, ctx:
   st.building = null
   if (id.imported) st.imported[id.line] = { boughtTurn: s.turn, starved: 0 }
   ctx.log({ kind: 'build', text: `${st.name} finished its ${buildingName(id)}.`, settlement: st.id })
-  if (st.buildQueue.length === 0) st.conditions['buildEmpty'] = st.conditions['buildEmpty'] ?? s.turn
 }
 
 function spoil(s: GameState, st: Settlement, ctx: TurnContext) {
@@ -384,12 +428,7 @@ function spoil(s: GameState, st: Settlement, ctx: TurnContext) {
       spoiled.push(`${lost} ${g}`)
     }
   }
-  if (spoiled.length) {
-    st.conditions['spoilage'] = st.conditions['spoilage'] ?? s.turn
-    ctx.log({ kind: 'loss', text: `${st.name} lost ${spoiled.join(', ')} to spoilage.`, why: `Storage holds ${cap} of each good. Build storage or ship the surplus.`, settlement: st.id })
-  } else {
-    delete st.conditions['spoilage']
-  }
+  if (spoiled.length) ctx.log({ kind: 'loss', text: `${st.name} lost ${spoiled.join(', ')} to spoilage.`, why: `Storage holds ${cap} of each good. Build storage or ship the surplus.`, settlement: st.id })
 }
 
 /** Turn loop steps 2 to 5 for every player settlement. Rival settlements are abstract, rivals.ts. */
@@ -400,27 +439,16 @@ export const settlementSystem: System = {
     syncWorkedTiles(s)
     for (const st of s.settlements) {
       if (st.owner !== 0) continue
+      // a new colonist to place is news for the turn they arrive, and only that turn
+      delete st.conditions['growthAsk']
       const food = produce(s, st, ctx)
       consume(s, st, food, ctx)
       grow(s, st, ctx)
       construct(s, st, ctx)
-      if (st.buildQueue.length === 0 && !st.building) st.conditions['buildEmpty'] = st.conditions['buildEmpty'] ?? s.turn
-      else delete st.conditions['buildEmpty']
-      const idle = st.colonists.filter(c => c.job.kind === 'idle').length - clerksRequired(st.colonists.length)
-      if (idle > 0) st.conditions['idle'] = st.conditions['idle'] ?? s.turn
-      else delete st.conditions['idle']
-      const fb = foodBalance(s, st)
-      if (fb < 0 && st.foodStore + fb * 2 < 0) st.conditions['hunger'] = st.conditions['hunger'] ?? s.turn
-      else delete st.conditions['hunger']
       if (!st.orders.reviewed && s.turn - st.founded >= C.queue.reviewOrdersAfter && s.settlements.filter(x => x.owner === 0).length > 1) st.conditions['reviewOrders'] = st.conditions['reviewOrders'] ?? s.turn
       else delete st.conditions['reviewOrders']
-      // purpose unsatisfiable: no free tile yields the purpose good
-      const p = st.orders.purpose
-      if (p !== 'ask' && p !== 'industry' && p !== 'civic') {
-        const any = workableTiles(s, st).some(t => tileYield(s, t, p, null) > 0)
-        if (!any) st.conditions['purposeLost'] = st.conditions['purposeLost'] ?? s.turn
-        else delete st.conditions['purposeLost']
-      }
+      // what is not working here, hunger, spoilage, the build order, idleness and the rest, is read
+      // from the state as it stands by src/sim/problems.ts, which also notes since when
     }
   },
   queueItems(s: GameState): QueueItem[] {
@@ -428,34 +456,6 @@ export const settlementSystem: System = {
     for (const st of s.settlements) {
       if (st.owner !== 0) continue
       const c = st.conditions
-      if (c.hunger !== undefined) out.push({
-        key: `hunger:${st.id}`, group: 'hunger', type: 1, title: `${st.name} is running short of food`,
-        body: `Food eaten outpaces food grown and the store is nearly empty.`, settlement: st.id, magnitude: st.colonists.length, since: c.hunger, choices: [], opens: 'settlement',
-        explain: `Each person eats ${C.labour.eats === 1 ? 'one' : C.labour.eats} food a turn. Put more people on food tiles, or fewer on everything else.`,
-      })
-      if (c.spoilage !== undefined) out.push({
-        key: `spoilage:${st.id}`, group: 'spoilage', type: 1, title: `${st.name} is losing goods`,
-        body: `Storage is full and the surplus spoils each turn.`, settlement: st.id, magnitude: 2, since: c.spoilage, choices: [], opens: 'settlement',
-        explain: 'Goods above storage capacity are lost. Consign them, ship them, or build storage.',
-      })
-      if (c.purposeLost !== undefined) out.push({
-        key: `purposeLost:${st.id}`, group: 'purposeLost', type: 3, title: `${st.name} cannot pursue its purpose`,
-        body: `Nothing around it yields ${st.orders.purpose} any more.`, settlement: st.id, magnitude: 1, since: c.purposeLost, choices: [], opens: 'orders',
-      })
-      if (c.buildBlocked !== undefined && st.buildQueue.length) out.push({
-        key: `buildBlocked:${st.id}`, group: 'buildBlocked', type: 3, title: `${st.name} cannot start ${buildingName(st.buildQueue[0])}`,
-        body: canStart(st, st.buildQueue[0]).reason ?? '', settlement: st.id, magnitude: 1, since: c.buildBlocked, choices: [], opens: 'settlement',
-      })
-      if (c.buildEmpty !== undefined && s.turn > st.founded) out.push({
-        key: `buildEmpty:${st.id}`, group: 'buildEmpty', type: 4, title: `${st.name} has nothing in its build order`,
-        body: `Choose what it builds next.`, settlement: st.id, magnitude: 1, since: c.buildEmpty, choices: [], opens: 'settlement',
-        explain: 'Buildings cost Frame, which a carpenter makes from timber. Higher tiers also need Tooling.',
-      })
-      if (c.idle !== undefined) out.push({
-        key: `idle:${st.id}`, group: 'idle', type: 4, title: `Someone at ${st.name} has nothing to do`,
-        body: `Put them to work on a tile or in a building.`, settlement: st.id, magnitude: 1, since: c.idle, choices: [], opens: 'settlement',
-        explain: 'Tap a person, then pick a tile or a building. One body, one job.',
-      })
       if (c.reviewOrders !== undefined) out.push({
         key: `reviewOrders:${st.id}`, group: 'reviewOrders', type: 5, title: `Review ${st.name}'s standing orders`,
         body: `Its orders were inferred from the ground. Confirm or change them.`, settlement: st.id, magnitude: 1, since: c.reviewOrders, choices: [], opens: 'orders',

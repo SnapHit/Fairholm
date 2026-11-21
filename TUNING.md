@@ -84,6 +84,10 @@ the pictures: its measures print the share of the height each part takes and wha
 | A quiet turn ends before the player has finished looking | The quiet wait | `AUTO_TURN_QUIET_MS` in `src/ui/theme.ts` | Raise | The time left to undo before the turn takes the undo with it |
 | Turns running on blur past, or drag | The rest between turns of a run | `AUTO_TURN_PAUSE_MS` | Raise, lower | Nothing else; it waits after the moves are drawn |
 | Runs stop too often, or let something slip by | Which standing items always stop a run | `ALWAYS_STOPS` in `src/ui/turns.ts` | Remove, add a group | Nothing else |
+| A card offers to move someone who was needed, or none when someone was spare | Who counts as spare | `C.problems.inputTurns`, and the order in `spareFor` in `src/sim/problems.ts` | Raise to move input producers less readily | Every card that moves someone (DECISIONS.md 192) |
+| A haul circuit is called empty too soon, or too late | Laps without moving anything | `C.problems.emptyHaulLaps` | Raise, lower | Only the haulEmpty card |
+| A starved machine's card buys too few or too many instruments | Turns of running bought | `C.problems.instrumentsTurns` | Lower, raise | Only that card's fix |
+| Ships and offers move goods in dribbles, or wait too long | The least surplus moved at once | `C.orders.surplusMinimum` | Lower, raise | Shipping, offering, the shelf's tick for a send, and the orders cards |
 | The street reads as a shelf | Too little stagger | `--lot-stagger` | Raise | The ground line stays put; only the drawings lift |
 | A worker at a door looks too large or too small for the building | The street's scale | `STREET_SHEET_PX`, `STREET_GROUND` | Raise to shrink everything | People follow the buildings through `SPRITE.eave` |
 | The ground under the street is a heavy band | Its height and fades | `--street-band`, `--street-fade`, `--street-hold` | Lower the band | Nothing else |

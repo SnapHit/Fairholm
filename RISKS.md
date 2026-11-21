@@ -147,6 +147,13 @@ These are finished and might be wrong. Unfinished things are in the README and a
 
 Places where a change in one file breaks something in a distant file without the structure saying so.
 
+- **The problems read ahead of the turn (DECISIONS.md 192).** `previewFlows` in
+  `src/sim/settlement.ts` mirrors `produce` in the same file, and the spoilage forecast in
+  `src/sim/problems.ts` adds the standing orders' sales (`standingSale`, shared with the market
+  step) and the ship rule's (`shipRuleState`, shared with the orders step). Change how production,
+  consignment or shipping works without changing `previewFlows`, and a card warns of a loss that
+  will not come, or misses one that will. The offer rule's one good a turn is not forecast.
+
 - **Signatory indices are hard-coded in seven files.** `SIGNATORIES` in `src/sim/grievance.ts` is
   the list; its effects are checked by bare integers elsewhere: 0 and 9 in `src/sim/settlement.ts`
   (`buildable`), 1 in `src/sim/market.ts` (`buyPrice`), 3 in `src/sim/orders.ts`, 4 in

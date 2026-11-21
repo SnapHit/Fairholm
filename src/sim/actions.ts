@@ -29,7 +29,9 @@ import { signatoryList } from './grievance'
 
 export type Action =
   | { t: 'assignWorker'; settlement: number; colonist: number; job: Job }
-  | { t: 'autoAssign'; settlement: number }
+  /** Everyone idle put to the work a new arrival would be given; with `only`, just those people,
+   *  by their place in the settlement's list, whatever they do now (a problem's fix, src/sim/problems.ts). */
+  | { t: 'autoAssign'; settlement: number; only?: number[] }
   | { t: 'setBuildOrder'; settlement: number; queue: BuildId[] }
   | { t: 'setStandingOrder'; settlement: number; rule: 'purpose' | 'surplus' | 'growth'; value: unknown }
   /** A surplus rule for one good at one settlement, or at every settlement of the player's when
@@ -222,7 +224,12 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
     }
     case 'autoAssign': {
       const st = settlementOf(s, a.settlement)
-      for (const c of st.colonists) if (c.job.kind === 'idle') c.job = defaultJob(s, st)
+      if (a.only) {
+        const who = a.only.map(i => st.colonists[i]).filter(c => !!c)
+        for (const c of who) c.job = { kind: 'idle' }
+        syncWorkedTiles(s)
+        for (const c of who) { c.job = defaultJob(s, st); syncWorkedTiles(s) }
+      } else for (const c of st.colonists) if (c.job.kind === 'idle') c.job = defaultJob(s, st)
       syncWorkedTiles(s)
       s.actionsThisTurn++
       return s

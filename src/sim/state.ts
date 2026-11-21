@@ -207,7 +207,7 @@ export type UnitOrder =
   | { kind: 'goto'; tile: number }
   | { kind: 'garrison'; settlement: number }
   | { kind: 'patrol'; tiles: number[]; next: number }
-  | { kind: 'haul'; stops: HaulStop[]; next: number; risk: 'avoid' | 'run' | 'escort' }
+  | { kind: 'haul'; stops: HaulStop[]; next: number; risk: 'avoid' | 'run' | 'escort'; empty?: number }
   | { kind: 'improve'; tasks: ImproveTask[] }
   | { kind: 'reserve' }
   | { kind: 'screen'; settlement: number }
@@ -487,7 +487,7 @@ export interface QueueItem {
   magnitude: number
   since: number                // turn the condition began
   choices: QueueChoice[]
-  opens?: 'settlement' | 'unit' | 'market' | 'demand' | 'signatories' | 'predecessor' | 'declaration' | 'orders'
+  opens?: 'settlement' | 'unit' | 'market' | 'demand' | 'signatories' | 'predecessor' | 'declaration' | 'orders' | 'build' | 'school'
 }
 
 export interface QueueGroup {

@@ -17,26 +17,40 @@ import { unitLabel } from './queue'
 /** Goods in transit between settlements under a surplus rule. Abstract, arriving after a few turns. */
 function transits(s: GameState) { if (!s.transits) s.transits = []; return s.transits }
 
-function hostileNear(s: GameState, tile: number, radius: number): boolean {
+export function hostileNear(s: GameState, tile: number, radius: number): boolean {
   const w = s.world.width
   return s.units.some(u => u.owner !== 0 && isArmed(u.kind) && !isHull(u.kind) && isHostileTo(s, u.owner, 0) && dist(w, u.tile, tile) <= radius)
 }
 
+/** Whether a ship rule can be followed now: 'gone' when the settlement it names is no longer the
+ *  player's, 'blocked' while hostile units stand near either end, else 'ok'. The one test, for the
+ *  turn and for the card that says so (src/sim/problems.ts). */
+export function shipRuleState(s: GameState, st: Settlement, to: number): 'ok' | 'gone' | 'blocked' {
+  const dest = s.settlements[to]
+  if (!dest || dest.owner !== 0) return 'gone'
+  if (hostileNear(s, st.tile, 3) || hostileNear(s, dest.tile, 3)) return 'blocked'
+  return 'ok'
+}
+
+/** Whether a good ships under a ship rule at all: tooling, arms, horses and instruments only under a
+ *  rule of their own, never under the settlement's. */
+export function shipsUnder(g: GoodId, own: boolean): boolean {
+  return own || !(g === 'tooling' || g === 'arms' || g === 'horses' || g === 'instruments')
+}
+
 /** Surplus shipped to a named settlement, good by good: a good's own rule where the player set one,
- *  else the settlement's. Tooling, arms and instruments ship only under a rule of their own. */
+ *  else the settlement's. Tooling, arms and instruments ship only under a rule of their own. What
+ *  cannot be shipped waits, and src/sim/problems.ts says so. */
 function shipSurplus(s: GameState, st: Settlement, ctx: TurnContext) {
   const w = s.world.width
-  let blocked = false, unsatisfiable = false, any = false
   for (const g of GOODS) {
     const rule = surplusRuleFor(st, g)
     if (rule.destination.kind !== 'ship') continue
-    if (!rule.own && (g === 'tooling' || g === 'arms' || g === 'horses' || g === 'instruments')) continue
-    any = true
+    if (!shipsUnder(g, rule.own)) continue
+    if (shipRuleState(s, st, rule.destination.settlement) !== 'ok') continue
     const to = s.settlements[rule.destination.settlement]
-    if (!to || to.owner !== 0) { unsatisfiable = true; continue }
-    if (hostileNear(s, st.tile, 3) || hostileNear(s, to.tile, 3)) { blocked = true; continue }
     const surplus = st.stock[g] - rule.threshold
-    if (surplus < 10) continue
+    if (surplus < C.orders.surplusMinimum) continue
     // a road most of the way halves the time
     const d = dist(w, st.tile, to.tile)
     const roaded = neighbours8(w, s.world.height, st.tile).filter(n => s.world.tiles[n].road).length > 0 && neighbours8(w, s.world.height, to.tile).filter(n => s.world.tiles[n].road).length > 0
@@ -45,9 +59,6 @@ function shipSurplus(s: GameState, st: Settlement, ctx: TurnContext) {
     transits(s).push({ to: to.id, good: g, amount: surplus, due: s.turn + turns })
     ctx.log({ kind: 'note', text: `${st.name} sent ${surplus} ${g} to ${to.name} under standing orders, ${turns} turns on the road.`, settlement: st.id })
   }
-  if (!any) { delete st.conditions['orderBlocked']; delete st.conditions['orderUnsatisfiable']; return }
-  if (unsatisfiable) st.conditions['orderUnsatisfiable'] = st.conditions['orderUnsatisfiable'] ?? s.turn; else delete st.conditions['orderUnsatisfiable']
-  if (blocked) st.conditions['orderBlocked'] = st.conditions['orderBlocked'] ?? s.turn; else delete st.conditions['orderBlocked']
 }
 
 function runImprover(s: GameState, u: Unit, ctx: TurnContext) {
@@ -122,18 +133,21 @@ function runHaul(s: GameState, u: Unit, ctx: TurnContext) {
     u.path = path; advance(s, u)
     if (u.tile !== to.tile) return
   }
-  // at the stop: unload then load
+  // at the stop: unload then load, counting the stops in a row where nothing moved either way, so a
+  // circuit that carries nothing is said to (src/sim/problems.ts)
+  let moved = 0
   for (const [g, n] of Object.entries(stop.unload) as [GoodId, number][]) {
     const have = u.cargo[g] ?? 0
     const take = Math.min(have, n)
-    if (take > 0) { u.cargo[g] = have - take; to.stock[g] += take; if (u.cargo[g]! <= 0) delete u.cargo[g] }
+    if (take > 0) { u.cargo[g] = have - take; to.stock[g] += take; moved += take; if (u.cargo[g]! <= 0) delete u.cargo[g] }
   }
   let held = Object.values(u.cargo).reduce((a, b) => a + (b ?? 0), 0)
   for (const [g, n] of Object.entries(stop.load) as [GoodId, number][]) {
     const room = cargoCapacity(u) - held
     const take = Math.max(0, Math.min(n, to.stock[g], room))
-    if (take > 0) { to.stock[g] -= take; u.cargo[g] = (u.cargo[g] ?? 0) + take; held += take }
+    if (take > 0) { to.stock[g] -= take; u.cargo[g] = (u.cargo[g] ?? 0) + take; held += take; moved += take }
   }
+  o.empty = moved > 0 ? 0 : (o.empty ?? 0) + 1
   o.next = (o.next + 1) % o.stops.length
   delete u.since['contact']
 }
@@ -195,11 +209,8 @@ export const ordersSystem: System = {
   },
   queueItems(s: GameState): QueueItem[] {
     const out: QueueItem[] = []
-    for (const st of s.settlements) {
-      if (st.owner !== 0) continue
-      if (st.conditions['orderBlocked'] !== undefined) out.push({ key: `orderBlocked:${st.id}`, group: 'orderBlocked', type: 3, title: `${st.name} cannot ship its surplus`, body: 'Hostile units are near the road. The goods wait until it is clear.', settlement: st.id, magnitude: 1, since: st.conditions['orderBlocked'], choices: [], opens: 'orders', explain: 'Automation never fights. A blocked order waits and tells you.' })
-      if (st.conditions['orderUnsatisfiable'] !== undefined) out.push({ key: `orderUnsat:${st.id}`, group: 'orderUnsat', type: 3, title: `${st.name} has an order it cannot follow`, body: 'The destination settlement is gone or not yours. Set a new surplus rule.', settlement: st.id, magnitude: 1, since: st.conditions['orderUnsatisfiable'], choices: [], opens: 'orders' })
-    }
+    // a settlement's orders that cannot be followed are in src/sim/problems.ts, with everything else
+    // that is not working
     for (const u of s.units) {
       if (u.owner !== 0 || !u.order) continue
       if (u.since['contact'] !== undefined && (u.order.kind === 'haul' || u.order.kind === 'goto')) {

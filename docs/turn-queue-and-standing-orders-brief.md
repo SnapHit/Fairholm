@@ -101,6 +101,32 @@ Five types, in priority order.
 5. **Opportunity.** Something newly possible: a building unlocked, a specialist trainable, a predecessor
    settlement now wanting something you make
 
+### Nothing that is not working is silent
+
+*Added 21 November 2026, at the owner's request, after a settlement sold its timber for turns while
+its palisade waited for frame that nobody was making, and the only card said the timber was being
+dumped. `DECISIONS.md` 192 has the list and the reasons.*
+
+**Whatever is not working, or is going to waste, is a queue item, and says how to fix it.** Every
+way the simulation can stall or waste is one check in `src/sim/problems.ts`, which the queue and the
+settlement screen both read, so the two never disagree. Each card says what is wrong, then why, in
+plain words, and offers the fix as one tap where one fix is plainly right: an ordinary action the
+player could have taken by hand, never a dialog. A card goes the moment its fix is made, because
+every check reads the state as it stands. They use the types above:
+
+- **Type 1, a loss this turn:** food running out, goods that will spoil at the end of the turn,
+  a good the player's own orders are dumping
+- **Type 3, something set going that makes no progress:** a building getting no frame or no tooling,
+  the head of the build order unable to start, schooling with no teacher or teaching in vain, a
+  standing order that cannot be followed or is held up, an imported machine short of instruments,
+  a purpose the ground can no longer serve
+- **Type 4, waste:** people idle or working for nothing, a master away from their trade, a building
+  standing empty while its input spoils or is sold for a build waiting on it, a school with nobody to
+  teach, an explorer with nothing left to find, a haul circuit that carries nothing
+
+Where a good is being let go and a building here could work it, the card about the good offers that
+building first: the cause before the symptom.
+
 ---
 
 ## 6. Grouping, which is what actually makes the ceiling hold

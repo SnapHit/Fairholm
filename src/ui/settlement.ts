@@ -27,6 +27,7 @@ import {
   ringCells, goodsShelf, destinationsFor, ownSettlements, consignable, goodWord, type GoodFill,
 } from './selectors'
 import type { App } from './app'
+import { settlementProblems } from '../sim/problems'
 
 export { terrainLayers }
 
@@ -125,6 +126,12 @@ function moreMenu(app: App, st: Settlement): HTMLElement {
 function notesLine(app: App, s: GameState, st: Settlement, pick: number | null): HTMLElement | null {
   const notes: string[] = []
   if (pick !== null && st.colonists[pick]) notes.push('Tap a marked tile or building to put them to work.')
+  // what is not working here comes first, as the queue says it, and opens its fixes (src/sim/problems.ts)
+  const problems = pick === null ? settlementProblems(s, st) : []
+  if (problems.length) {
+    const text = `${problems[0].title}${problems.length > 1 ? `, and ${problems.length - 1} more` : ''}`
+    return h('button', { class: 'st-note problem', type: 'button', 'aria-label': `${text}. Opens what needs you here.`, onClick: () => app.open({ kind: 'problems', settlement: st.id }) }, h('span', { class: 'flag', 'aria-hidden': 'true' }, '!'), text)
+  }
   if (st.hunger > 0) notes.push(`Short of food for ${plural(st.hunger, 'turn')}.`)
   const ok = consignable(s, st)
   if (!ok.ok && ok.reason) notes.push(ok.reason)

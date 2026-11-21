@@ -10,6 +10,7 @@ import { predecessorsSystem } from './predecessors'
 import { fleetSystem } from './fleet'
 import { militarySystem } from './military'
 import { navalSystem } from './naval'
+import { problemsSystem } from './problems'
 
 export const SYSTEMS: System[] = [
   settlementSystem,     // 2 production, 3 consumption, 4 growth, 5 construction
@@ -23,4 +24,5 @@ export const SYSTEMS: System[] = [
   navalSystem,          // 13a naval contact
   militarySystem,       // 13 combat
   spoilageSystem,       // 14 spoilage
+  problemsSystem,       // 15 what is not working, and since when (DECISIONS.md 192); changes nothing else
 ]

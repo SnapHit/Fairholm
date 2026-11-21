@@ -3286,6 +3286,79 @@ make a chase mean anything, and the lighter has no guns to fight one. The pace t
 for this: the machine players hardly sail lighters, and the unit tests, the pins and the pace test
 pass unchanged.
 
+## Nothing not working is silent, 21 November 2026
+
+Asked for by the owner, after a test game: the Landing sold its timber turn after turn and its
+palisade got no frame, because nobody worked the carpenter's shop, and the only card said the timber
+was being dumped. "The player is always prompted to fix something that isn't working properly or is
+inefficient. Make it consistent across the entire game."
+
+### 192. Every stall and every waste is one check, with its fix, in one place
+
+**What.** `src/sim/problems.ts`: every way the simulation can stall or waste, read live from the
+state, as one list the queue (`problemsSystem`, last in the turn) and the settlement screen both
+read. Each problem says what is wrong and why in plain words, and offers its fix as one tap where one
+fix is plainly right, as an ordinary action: put someone in a building or on a tile, buy the
+tooling, timber or instruments, consign or send what will spoil, build storage first, start the
+next building that can start, teach someone, change the order that cannot be followed, clear a
+unit's order. The checks, by type:
+
+- **Loss (1):** `hunger`, `spoilage` (now what *will* spoil at the end of the turn, after this
+  turn's making, using and selling, so it warns before the loss and the shelf's red bar is the same
+  list), `dumping` (moved here from the market)
+- **Stuck (3):** `buildStalled` (new: what is going up, or about to, gets no frame or no tooling),
+  `buildBlocked`, `schoolStalled` (new: a pupil and no teacher, so the schooling does not go on),
+  `schoolFutile` (new: a pupil of free standing and no master teaching, or the pupil gone, so it
+  will come to nothing), `machineStarved` (new), `purposeLost`, `orderUnsat` and `orderBlocked`
+  (live now, and wider: a ship or offer rule to somewhere gone, a consign rule at an inland
+  settlement or for an embargoed good, a growth rule to somewhere gone)
+- **Waste (4):** `idle`, `workerWasted` (new: people in a building with nothing to work, or on
+  ground that gives them nothing), `masterMisplaced` (new), `inputWasted` (new: a building standing
+  empty while its input spoils, or while timber is sold and a build waits for frame), `schoolIdle`
+  (new), `buildEmpty`, `exploreDone` and `haulEmpty` (new, for units)
+
+Who a fix moves is one rule, `spareFor`: someone idle past the clerks the ledger needs, then someone
+working for nothing, then someone making a good the settlement is letting go (sold, dumped or
+spoiling) or the very input of the building they would go to where enough is held, then someone
+on food where the settlement stays fed without them. Hunger takes anyone not already on food. Where
+nobody is spare the card says so and offers no move.
+
+The dumping card names the cause before the symptom: where a building of the player's could work
+the dumped good and someone is spare, its first fix is to staff it, and the old "hold everywhere"
+comes second. `inputWasted` does not raise the dumped case again.
+
+The street's warning marks, the building going up and the settlement screen's note line all come
+from the same list: a building with a problem carries its mark with the card's title, the frame says
+"No frame" or "No tooling" when it stalls, and the note line names the settlement's problems and
+opens a sheet of them with their fixes (`problems` in `src/ui/sheets.ts`). Queue cards open the build
+order or the school where that is the fix (`opens: 'build'`, `'school'`).
+
+**Why.** The owner's rule. Live checks rather than conditions noted in the turn, because a card that
+outlives its fix teaches the player that cards lie; the conditions now hold only since when, for the
+queue's persistence boost. One place, because the old cards each lived in the system that noticed
+them and said things differently, and some never cleared (a new colonist to place stayed for the
+rest of the game; it now lasts the turn they arrive).
+
+**How it was checked.** `tests/problems.test.ts` makes each problem happen in a real game, finds its
+card, takes its fix and sees the card gone at once, and on a messy state checks that every fix
+offered is an action that applies. A sample of two machine-played games printed every card at four
+points: the cards fired where something was stuck (the competent player left a granary without
+frame for over a hundred turns) and nowhere else.
+
+### 193. A new arrival staffs an empty carpenter's shop whenever a build waits
+
+**What.** `defaultJob` in `src/sim/labour.ts` sent a new arrival to an empty carpenter's shop only
+while timber was short of what the build needed. With timber to spare nobody went, so a settlement
+like the owner's sold its timber and built nothing. It now staffs an empty shop whenever a build
+waits and there is timber to work, and sends someone to the forest only while timber is short.
+
+**What it did to the pace table.** Only one game moved: the lazy player on a standard map, which
+relies on `defaultJob` for everyone. Before the fix its settlements finished no building at all in
+480 turns while selling timber at the floor price. After it they build a press, a smelter, a
+toolworks, an armoury and a linen shop; the press raises resolve, the declaration opens at a quarter
+of the game rather than three quarters, and the lazy player, which declares the moment it can,
+declares and loses. Every other row of the table is unchanged.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

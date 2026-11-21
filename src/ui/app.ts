@@ -1179,6 +1179,8 @@ export class App {
       case 'predecessor': this.open({ kind: 'predecessor', id: it.tile !== undefined ? (this.state.predecessors.find(p => p.tile === it.tile)?.id ?? 0) : 0 }); return
       case 'declaration': this.open({ kind: 'declaration' }); return
       case 'orders': if (it.settlement !== undefined) this.open({ kind: 'orders', settlement: it.settlement }); return
+      case 'build': if (it.settlement !== undefined) this.open({ kind: 'build', settlement: it.settlement }); return
+      case 'school': if (it.settlement !== undefined) this.open({ kind: 'educate', settlement: it.settlement }); return
       default: if (it.settlement !== undefined) this.open({ kind: 'settlement', id: it.settlement })
     }
   }

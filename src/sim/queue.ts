@@ -27,6 +27,20 @@ const GROUP_TITLES: Record<string, (n: number) => string> = {
   predecessorWants: n => `${n} predecessor settlements want something you make`,
   rivalFounded: n => `${n} rival settlements were founded on your ground`,
   buildingUnlocked: n => `${n} new buildings are available`,
+  // what is not working, and what is going to waste: src/sim/problems.ts
+  buildStalled: n => `${n} buildings are getting nothing to rise with`,
+  inputWasted: n => `${n} settlements let go of goods their buildings could use`,
+  workerWasted: n => `${n} settlements have people working for nothing`,
+  masterMisplaced: n => `${n} masters are away from their trade`,
+  schoolStalled: n => `${n} schools have stopped teaching`,
+  schoolFutile: n => `${n} schools are teaching in vain`,
+  schoolIdle: n => `${n} schools have nobody to teach`,
+  machineStarved: n => `${n} imported machines are short of instruments`,
+  orderUnsat: n => `${n} settlements have orders they cannot follow`,
+  orderBlocked: n => `${n} settlements have orders held up`,
+  dumping: n => `Your standing orders are dumping ${n} goods`,
+  exploreDone: n => `${n} explorers have nothing left to find`,
+  haulEmpty: n => `${n} circuits carry nothing`,
 }
 
 /** Queue items that come from units rather than systems. */

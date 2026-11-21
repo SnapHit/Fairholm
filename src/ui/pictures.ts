@@ -196,6 +196,10 @@ const QUEUE_ICONS: Record<string, IconName> = {
   buildEmpty: 'frame', buildBlocked: 'frame',
   idle: 'colonist', unitIdle: 'colonist', growthAsk: 'colonist',
   signatory: 'seal', declaration: 'resolve', meeting: 'grievance', learn: 'sprout',
+  // what is not working, and what is going to waste (src/sim/problems.ts)
+  buildStalled: 'frame', inputWasted: 'crate', workerWasted: 'colonist', masterMisplaced: 'colonist',
+  schoolStalled: 'colonist', schoolFutile: 'colonist', schoolIdle: 'colonist', machineStarved: 'instruments',
+  purposeLost: 'sprout', exploreDone: 'colonist', haulEmpty: 'crate',
 }
 
 /** The first good a sentence names, gold aside: in a sentence gold is as often money as the good. */

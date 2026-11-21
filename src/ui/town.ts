@@ -25,6 +25,7 @@ import { tileLook } from '../render/tiles'
 import { h, button, plural } from './dom'
 import { STREET_SHEET_PX } from './theme'
 import { buildingSlots, standingWords, type BuildingSlot } from './selectors'
+import { settlementProblems } from '../sim/problems'
 import {
   SETTLEMENT_SHEET, UNITS_SHEET, BUILDING_PICTURE, FRAME_PICTURE, atlasPicture, standingFigure, emptyPlace,
   standingUnit, unitPiece, yieldPill,
@@ -112,8 +113,9 @@ function withWidth(box: HTMLElement, lot: HTMLElement): HTMLElement {
   return lot
 }
 
-/** The building going up, as its frame, with what it still needs under it. */
-function frameLot(app: App, st: Settlement): HTMLElement {
+/** The building going up, as its frame, with what it still needs under it, and the problem the queue
+ *  raises about it, if it has one, as a warning mark and in the line under it. */
+function frameLot(app: App, st: Settlement, stalled: string | null): HTMLElement {
   const b = st.building!
   const cost = C.buildings.costs[b.id.tier]!
   const name = buildingName(b.id)
@@ -122,11 +124,14 @@ function frameLot(app: App, st: Settlement): HTMLElement {
   const toolShare = cost.tooling > 0 ? Math.min(1, b.tooling / cost.tooling) : 1
   const progress = h('span', { class: 'progress' }, h('i', { style: { width: `${Math.round(Math.min(share, toolShare) * 100)}%` } }))
   const needs = `${b.frame}/${cost.frame} frame${cost.tooling ? `, ${b.tooling}/${cost.tooling} tooling` : ''}`
+  const sign = stalled ? h('span', { class: 'sign' }, h('span', { class: 'flag', title: stalled }, '!')) : null
   return withWidth(box, h('button', {
-    class: 'lot building-up', type: 'button',
-    'aria-label': `Building ${name}: ${needs}. Opens the build order.`,
+    class: 'lot building-up' + (stalled ? ' stalled' : ''), type: 'button',
+    'aria-label': `Building ${name}: ${needs}.${stalled ? ` ${stalled}.` : ''} Opens the build order.`,
     onClick: () => app.open({ kind: 'build', settlement: st.id }),
-  }, box, h('span', { class: 'name' }, name, progress, h('span', { class: 'needs' }, needs))))
+  // stalled, the line under the bar says why instead of what it needs: the bar already shows how far
+  // it has got, and the street has room for one line there
+  }, sign, box, h('span', { class: 'name' }, name, progress, stalled ? h('span', { class: 'stall' }, stalled) : h('span', { class: 'needs' }, needs))))
 }
 
 /** Something that could be built, as a faint plot with its cost; a gated one gives its gate on tap. */
@@ -189,7 +194,10 @@ export function townView(app: App, s: GameState, st: Settlement, pick: number | 
   const idle = st.colonists.map((c, i) => ({ c, i })).filter(x => x.c.job.kind === 'idle')
   if (idle.length) street.append(idleLot(app, st, idle, pick, settling))
   slots.filter(x => x.built).forEach((slot, k) => street.append(buildingLot(app, s, st, slot, k, lit.has(slot.line), settling)))
-  if (st.building) street.append(frameLot(app, st))
+  if (st.building) {
+    const stalled = settlementProblems(s, st).find(p => p.frame)
+    street.append(frameLot(app, st, stalled ? stalled.short : null))
+  }
   for (const slot of slots.filter(x => !x.built)) street.append(plotLot(app, st, slot))
   const here = s.units.filter(u => u.owner === 0 && u.tile === st.tile && unitPiece(u.kind))
   if (here.length) street.append(unitsLot(app, here))

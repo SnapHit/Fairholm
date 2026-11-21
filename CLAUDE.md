@@ -69,6 +69,12 @@ end, no drag and drop. No confirmation dialogs: undo instead. Below 44 px a tile
 tappable; a destination hold still works down to the overview zoom, because it commits nothing until
 the release.
 
+## Nothing that is not working is silent
+
+Every way the game can stall or waste is one live check in `src/sim/problems.ts`, with its fix as an
+ordinary action, read by both the queue and the settlement screen (`DECISIONS.md` 192). A new system
+that can stall or waste adds its check there, and a test in `tests/problems.test.ts`.
+
 ## Turns run on
 
 Turns end by themselves while nothing new needs the player (`src/ui/turns.ts`, `DECISIONS.md` 190):

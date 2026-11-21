@@ -16,6 +16,7 @@ import {
 } from '../sim/settlement'
 import { signatoryList } from '../sim/grievance'
 import { sellPrice, canConsign } from '../sim/market'
+import { settlementProblems, spoilsThisTurn } from '../sim/problems'
 import { tileLook, tileWords, type TileLook } from '../render/tiles'
 
 /** The one place a good becomes a word. A good with no entry here renders as its id, not undefined. */
@@ -235,6 +236,9 @@ function conversionWords(line: BuildingLine): string {
  *  left flank top to bottom, then the right, then the overflow row. */
 export function buildingSlots(s: GameState, st: Settlement): BuildingSlot[] {
   const outputs = buildingOutputs(s, st)
+  // a building's warning mark is the problem the queue raises about it, word for word, so the street
+  // and the queue never disagree (src/sim/problems.ts)
+  const problems = settlementProblems(s, st)
   const slots: BuildingSlot[] = []
   for (const line of BUILDING_LINES) {
     const tier = st.buildings[line]
@@ -242,9 +246,10 @@ export function buildingSlots(s: GameState, st: Settlement): BuildingSlot[] {
     const def = C.buildings.lines[line]
     const workers: { index: number; colonist: Colonist }[] = []
     st.colonists.forEach((c, i) => { if (c.job.kind === 'building' && c.job.line === line) workers.push({ index: i, colonist: c }) })
-    let warning: string | null = null
-    if (def.input && workers.length > 0 && st.stock[def.input] <= 0) warning = `No ${GOOD_WORDS[def.input].toLowerCase()} to work with.`
-    if (machineNearFailure(s, st, line)) warning = st.imported[line]!.starved > 0 ? 'The machine is starved of instruments.' : 'The machine is wearing out.'
+    const problem = problems.find(p => p.line === line)
+    let warning: string | null = problem ? problem.title : null
+    if (!warning && machineNearFailure(s, st, line)) warning = st.imported[line]!.starved > 0 ? 'The machine is starved of instruments.' : 'The machine is wearing out.'
+    void def
     slots.push({
       line, tier, name: buildingName({ line, tier: tier as 1 | 2 | 3 }), built: true,
       conversion: conversionWords(line),
@@ -514,6 +519,8 @@ export function goodsShelf(s: GameState, st: Settlement, warmAt: number): GoodFi
   }
   const free: Partial<Record<GoodId, number>> = {}
   for (const y of centreYield(s, st)) if (y.good !== 'food') free[y.good] = (free[y.good] ?? 0) + y.yield
+  // what spoils is what the spoilage card says will spoil: after this turn's making, using and selling
+  const spoils = spoilsThisTurn(s, st)
   const out: GoodFill[] = []
   for (const g of GOODS) {
     if (g === 'food') {
@@ -525,7 +532,7 @@ export function goodsShelf(s: GameState, st: Settlement, warmAt: number): GoodFi
     const stock = st.stock[g]
     const change = (made[g] ?? 0) + (free[g] ?? 0) - (used[g] ?? 0)
     if (stock <= 0 && change === 0) continue
-    const state = stock > cap ? 'spoils' : Math.max(stock, stock + change) >= warmAt * cap ? 'warm' : 'plain'
+    const state = stock > cap || (spoils[g] ?? 0) > 0 ? 'spoils' : Math.max(stock, stock + change) >= warmAt * cap ? 'warm' : 'plain'
     const starts = ruleStarts(s, st, g)
     out.push({ good: g, stock, capacity: cap, change, fill: Math.max(0, Math.min(1, stock / cap)), state, tick: starts === null ? null : Math.min(1, starts / cap) })
   }

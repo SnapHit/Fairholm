@@ -248,6 +248,22 @@ export const C = {
     /** How near a hostile armed unit has to be, in tiles, for a haul route's avoid or escort
      *  posture to stop the hauler. */
     hostileRadius: 3,
+    /** The least surplus a ship or an offer rule moves at once. It was the literal 10 in
+     *  src/sim/orders.ts and src/sim/predecessors.ts until 21 November 2026; same value. */
+    surplusMinimum: 10,
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // What is not working, and what is going to waste: src/sim/problems.ts, DECISIONS.md 192
+  // -------------------------------------------------------------------------------------------
+  problems: {
+    /** A worker making a building's input can be moved into that building when this many turns of
+     *  their work there are already held. */
+    inputTurns: 10,
+    /** A haul circuit that has gone round this many times without moving anything is said to. */
+    emptyHaulLaps: 2,
+    /** The instruments a starved imported machine's card offers to buy, in turns of its running. */
+    instrumentsTurns: 10,
   },
 
   // -------------------------------------------------------------------------------------------

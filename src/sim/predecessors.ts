@@ -4,7 +4,7 @@
 // teaches one of the four crops to one colonist, ever. Taking their ground raises their alarm;
 // an agent stationed with them slows it and improves the terms. They are never conquerable.
 
-import type { GameState, TurnContext, Unit, GoodId, QueueItem, PredecessorSettlement } from './state'
+import type { GameState, TurnContext, Unit, GoodId, QueueItem, PredecessorSettlement, Settlement } from './state'
 import type { System } from './turn'
 import { C, difficultyOf } from './constants'
 import { dist } from './worldgen'
@@ -13,7 +13,8 @@ import { cargoCapacity } from './units'
 import { surplusRuleFor } from './settlement'
 import { chance, pick } from './rng'
 
-const MANUFACTURED: GoodId[] = ['metal', 'tooling', 'arms', 'linen', 'cordage', 'dye', 'attar', 'cores', 'horses']
+/** The goods a surplus rule can offer to a people within reach. */
+export const MANUFACTURED: GoodId[] = ['metal', 'tooling', 'arms', 'linen', 'cordage', 'dye', 'attar', 'cores', 'horses']
 
 function adjacent(s: GameState, u: Unit, p: PredecessorSettlement): boolean {
   const w = s.world.width
@@ -121,20 +122,27 @@ export function offerToPredecessor(s: GameState, u: Unit, pi: number, g: GoodId,
  *  threshold, carried to a people within reach and sold for gold on their terms, the anti-repetition
  *  rule included, one good a turn. Nothing moves when they are alarmed or closed, and the queue says
  *  so through the settlement's order conditions. */
+/** Whether an offer rule can be followed now: 'gone' when the people it names are gone or out of
+ *  reach, 'blocked' while they are alarmed or closed, else 'ok'. The one test, for the turn and for
+ *  the card that says so (src/sim/problems.ts). */
+export function offerRuleState(s: GameState, st: Settlement, pi: number): 'ok' | 'gone' | 'blocked' {
+  const p = s.predecessors[pi]
+  if (!p || dist(s.world.width, st.tile, p.tile) > C.predecessors.offerReach) return 'gone'
+  if (p.closed || p.alarm > C.predecessors.alarmRefuse) return 'blocked'
+  return 'ok'
+}
+
 function offerSurplus(s: GameState, ctx: TurnContext) {
   for (const st of s.settlements) {
     if (st.owner !== 0) continue
-    let any = false, blocked = false, unsatisfiable = false
     for (const g of MANUFACTURED) {
       const rule = surplusRuleFor(st, g)
       if (rule.destination.kind !== 'offer') continue
-      any = true
+      if (offerRuleState(s, st, rule.destination.predecessor) !== 'ok') continue
       const p = s.predecessors[rule.destination.predecessor]
-      if (!p || dist(s.world.width, st.tile, p.tile) > C.predecessors.offerReach) { unsatisfiable = true; continue }
-      if (p.closed || p.alarm > C.predecessors.alarmRefuse) { blocked = true; continue }
       if (p.lastBought === g) continue
       const surplus = st.stock[g] - rule.threshold
-      if (surplus < 10) continue
+      if (surplus < C.orders.surplusMinimum) continue
       const terms = offerTerms(s, p, null, g, surplus, null)
       if (terms.amount <= 0) continue
       st.stock[g] -= terms.amount
@@ -148,9 +156,6 @@ function offerSurplus(s: GameState, ctx: TurnContext) {
       ctx.log({ kind: 'predecessor', text: `${st.name} offered ${terms.amount} ${g} to ${p.name} under standing orders, for ${terms.gold} gold.`, why: 'A surplus rule can offer a good to a people within reach instead of the Company. No charge is paid, and they will not take the same good twice running.', settlement: st.id, tile: p.tile })
       break
     }
-    if (!any) continue
-    if (unsatisfiable) st.conditions['orderUnsatisfiable'] = st.conditions['orderUnsatisfiable'] ?? s.turn
-    if (blocked) st.conditions['orderBlocked'] = st.conditions['orderBlocked'] ?? s.turn
   }
 }
 

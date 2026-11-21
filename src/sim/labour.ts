@@ -145,11 +145,14 @@ export function defaultJob(s: GameState, st: Settlement): Colonist['job'] {
   // a settlement keeps itself fed first
   const fed = foodBalance(s, st)
   if (fed < C.labour.eats) { const j = want('food'); if (j) return j }
-  // then, while something is being built and the shop has no timber for its frame, the forest
+  // then, while something is being built: someone in the carpenter's shop whenever it stands empty
+  // with timber to work, and someone in the forest while there is not timber enough for the frame
+  // still to make. The shop was staffed only while timber was short until 21 November 2026, so a
+  // settlement with timber to spare sold it and built nothing (DECISIONS.md 192)
   const need = st.building && !st.building.id.imported ? (C.buildings.costs[st.building.id.tier]?.frame ?? 0) - st.building.frame - st.frame : st.buildQueue.length ? (C.buildings.costs[st.buildQueue[0].tier]?.frame ?? 0) - st.frame : 0
-  if (need > 0 && st.stock.timber < need && st.buildings.carpenter > 0) {
+  if (need > 0 && st.buildings.carpenter > 0) {
     if (buildingWorkers(st, 'carpenter') === 0 && st.stock.timber >= C.labour.baseBuildingOutput) return { kind: 'building', line: 'carpenter' }
-    if (!st.colonists.some(c => c.job.kind === 'tile' && c.job.good === 'timber')) { const j = want('timber'); if (j) return j }
+    if (st.stock.timber < need && !st.colonists.some(c => c.job.kind === 'tile' && c.job.good === 'timber')) { const j = want('timber'); if (j) return j }
   }
   if (purpose !== 'ask' && purpose !== 'industry' && purpose !== 'civic') { const j = want(purpose); if (j) return j }
   if (purpose === 'industry') {

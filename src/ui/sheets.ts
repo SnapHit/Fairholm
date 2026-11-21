@@ -15,6 +15,7 @@ import { sightMask } from '../sim/fog'
 import { signatoryList, signatoryCost } from '../sim/grievance'
 import { predecessorStore, offerTerms } from '../sim/predecessors'
 import { term, TERMS } from './glossary'
+import { settlementProblems } from '../sim/problems'
 import { h, button, row, muted, fmt, signed, plural } from './dom'
 import { TERRAIN_WORDS, FOREST_WORDS, PRIME_WORDS, tileLook, tileWords } from '../render/tiles'
 import {
@@ -38,6 +39,8 @@ import type { Action } from '../sim/actions'
 
 export type SheetSpec =
   | { kind: 'queue' } | { kind: 'fold' } | { kind: 'group'; group: string }
+  /** What is not working at one settlement, each with its fix (src/sim/problems.ts). */
+  | { kind: 'problems'; settlement: number }
   | { kind: 'settlement'; id: number } | { kind: 'settlementDetail'; id: number }
   | { kind: 'workers'; settlement: number; colonist: number }
   | { kind: 'assignTile'; settlement: number; tile: number; good?: TileGood }
@@ -150,6 +153,7 @@ export function renderSheet(app: App, spec: SheetSpec): HTMLElement {
     case 'intent': return intentSheet(app, s)
     case 'settings': return settingsSheet(app, s)
     case 'group': return groupSheet(app, spec.group)
+    case 'problems': return problemsSheet(app, s, spec.settlement)
     case 'fold': return foldSheet(app)
     default: return app.renderQueue()
   }
@@ -1424,6 +1428,29 @@ function groupSheet(app: App, group: string): HTMLElement {
       main.append(actions)
       return card
     }))
+}
+
+/** What needs the player at one settlement: every problem its screen's note line counts, as the queue
+ *  shows it, each with its fix and the place to go to change it by hand. A fix taken is gone from
+ *  the list at once; an empty list says so. */
+function problemsSheet(app: App, s: GameState, id: number): HTMLElement {
+  const st = s.settlements[id]
+  if (!st) return app.renderQueue()
+  const problems = settlementProblems(s, st)
+  const panel = h('div', { class: 'panel' }, header(app, `What needs you at ${st.name}`))
+  if (!problems.length) { panel.append(muted('Nothing here needs you.')); return panel }
+  for (const p of problems) {
+    const it = { key: p.key, group: p.group, type: p.type, title: p.title, body: p.body, settlement: p.settlement, unit: p.unit, tile: p.tile, magnitude: p.magnitude, since: s.turn, choices: p.choices, opens: p.opens }
+    const lead = queueIcon(s, p.group, p.key)
+    const typeClass = ['', 'loss', 'company', 'stuck', 'idle', 'chance'][p.type]
+    const main = h('div', { class: 'card-main' }, h('div', { class: 'card-title' }, p.title), h('div', { class: 'card-body' }, app.withTerms(p.body)))
+    const actions = h('div', { class: 'card-actions' })
+    for (const c of p.choices) actions.append(button(c.label, () => app.dispatch(c.action as Action, c.label), 'small'))
+    if (p.opens && p.opens !== 'settlement') actions.append(button('Open', () => app.openItem(it), 'small ghost'))
+    main.append(actions)
+    panel.append(h('div', { class: `card small-card ${typeClass}` + (lead ? ' led' : '') }, lead ? h('span', { class: 'card-lead' }, lead) : null, main))
+  }
+  return panel
 }
 
 function foldSheet(app: App): HTMLElement {

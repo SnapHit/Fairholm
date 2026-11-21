@@ -699,6 +699,12 @@ input[type=text] {
   text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
 }
 .st-note.placing { color: var(--accent); }
+/* what is not working here, as the queue says it: warm, with the street's warning mark before it */
+.st-note.problem { color: var(--warn); }
+.st-note .flag {
+  display: inline-block; margin-right: var(--space-2); padding: 0 var(--space-2); border-radius: var(--radius-pill);
+  background: var(--pill-bg); font-weight: var(--weight-strong);
+}
 
 .st-body {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
@@ -824,6 +830,9 @@ input[type=text] {
 }
 .lot .progress i { display: block; height: 100%; background: var(--accent); }
 .lot .needs { display: block; color: var(--ink-faint); white-space: nowrap; }
+/* a building going up that gets nothing: its warning mark and why, in the queue's own words */
+.lot .stall { display: block; color: var(--warn); white-space: nowrap; }
+.lot.building-up.stalled .progress i { background: var(--warn); }
 /* what could be built: a faint staked plot with its cost */
 .lot.plot { --w: var(--plot-w); }
 .lot.plot .art { width: calc(var(--lot-art-h) * var(--plot-w)); }
