@@ -65,15 +65,25 @@ Releasing on the unit's own tile, over the card or the top strip, or on a tile t
 reached moves nothing, and a second finger cancels into a pinch. An attack commits on release only
 once its odds have been on screen for half a second. A release never founds: the card offers Found
 here. This is the only way to move any unit, the lander included. No Go control, no tap on a route's
-end, no drag and drop. No confirmation dialogs: undo instead. Below 44 px a tile, tiles are not
+end, no drag and drop. No card moves a unit to a place; a card may give a standing order (wait,
+explore, look for ground). No confirmation dialogs: undo instead. Below 44 px a tile, tiles are not
 tappable; a destination hold still works down to the overview zoom, because it commits nothing until
-the release.
+the release. A settlement sends someone out to found from its card or the equip sheet; while a
+colonist is chosen, the best seen ground within a walk is marked (`DECISIONS.md` 195).
 
 ## Nothing that is not working is silent
 
 Every way the game can stall or waste is one live check in `src/sim/problems.ts`, with its fix as an
 ordinary action, read by both the queue and the settlement screen (`DECISIONS.md` 192). A new system
 that can stall or waste adds its check there, and a test in `tests/problems.test.ts`.
+
+**No card offers a fix that changes nothing** (194): a check works out what its fix would do first,
+and where nothing would help it says why. A check is quiet while the fix that ends it is on its way,
+and a stall nothing can help can be left for now and comes back when something can (198). A group of
+the same condition has one tap that does them all, with one undo (`bulkFix`, `fixAll`, 198). A raider
+is a card only while a ship with cargo is within its reach; otherwise a line in the dispatch (197).
+`tests/follower.test.ts` plays three worlds by the cards alone and must stay green (199): no tap may
+leave its card as it was, and the top card must lead somewhere on nine turns in ten.
 
 ## Turns run on
 

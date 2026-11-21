@@ -78,6 +78,7 @@ export type Action =
   | { t: 'setAudio'; audio: Partial<Settings['audio']> }
   | { t: 'markExplained'; key: string }
   | { t: 'dismiss'; key: string }
+  | { t: 'leaveStall'; settlement: number }
   | { t: 'endTurn' }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -191,6 +192,22 @@ function settlementToTrade(s: GameState, u: Unit) {
   if (at || !isAfloat(u.kind)) return at
   const beside = neighbours8(s.world.width, s.world.height, u.tile)
   return s.settlements.find(x => x.owner === 0 && beside.includes(x.tile))
+}
+
+/** A whole group done in one tap (turn queue brief section 6, DECISIONS.md 198): the first fix of
+ * each card named, each read afresh from the queue after the one before, since a fix can change what
+ * the next card offers or end it. A founding is never taken this way, and a fix that no longer
+ * applies is passed over. Returns the actions taken, each through applyAction. */
+export function fixAll(s: GameState, keys: string[]): Action[] {
+  const done: Action[] = []
+  for (const key of keys) {
+    const q = deriveQueue(s, SYSTEMS)
+    const c = [...q.shown, ...q.folded].flatMap(g => g.items).find(it => it.key === key)?.choices[0]
+    const a = c?.action as Action | undefined
+    if (!a || a.t === 'found') continue
+    try { applyAction(s, a); done.push(a) } catch { /* no longer applies */ }
+  }
+  return done
 }
 
 /** Apply one action. Mutates and returns the same state object. Throws on an invalid action, which
@@ -594,6 +611,13 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
     }
     case 'dismiss': {
       s.opportunitiesShown[a.key] = (s.opportunitiesShown[a.key] ?? 0) + 2
+      return s
+    }
+    case 'leaveStall': {
+      // a stalled build nothing can help now, left: its card is quiet until something can be done,
+      // and the mark goes when the stall is over (src/sim/problems.ts, DECISIONS.md 198)
+      const st = settlementOf(s, a.settlement)
+      st.conditions['stallLeft'] = s.turn
       return s
     }
     case 'endTurn': {

@@ -6,8 +6,8 @@
 // a turn can be undone.
 
 import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings, Settlement, BuildingLine, Unit, DispatchKind } from '../sim/state'
-import { applyAction, createGame, type Action } from '../sim/actions'
-import { deriveQueue, unitLabel } from '../sim/queue'
+import { applyAction, createGame, fixAll, type Action } from '../sim/actions'
+import { deriveQueue, unitLabel, bulkFix } from '../sim/queue'
 import { SYSTEMS } from '../sim/systems'
 import { SEASON_NAMES, season, year } from '../sim/turn'
 import { randomSeed, playRng } from '../sim/rng'
@@ -324,11 +324,7 @@ export class App {
       this.undoStack = []
       this.toast(undoLabel!)
     }
-    if (a.t === 'consign') { if (this.state.telemetry.firstConsignment === this.state.turn) Telemetry.firstConsignment(this.state.turn) }
-    if (a.t === 'found') {
-      if (this.state.telemetry.founded === this.state.turn && this.state.settlements.filter(x => x.owner === 0).length === 1) Telemetry.founded(this.state.turn)
-      if (this.state.telemetry.secondSettlement === this.state.turn) Telemetry.secondSettlement(this.state.turn)
-    }
+    this.noteTelemetry(a)
     this.route = null
     this.scene.rebuild(this.state, 'dynamic')
     this.refresh()
@@ -1559,10 +1555,56 @@ export class App {
         else this.resolved(() => this.dispatch({ t: 'dismiss', key: single.key }))
       }, 'small ghost'))
     } else {
+      // every card in the group fixed with one tap, as one step to undo (decision 198)
+      const all = this.fixAllButton(g)
+      if (all) actions.append(all)
       actions.append(button(`Open ${g.items.length}`, () => this.open({ kind: 'group', group: g.group }), 'small ghost'))
     }
     main.append(actions)
     return card
+  }
+
+  /** The one tap that does a whole group, or null where the group has none (bulkFix in the queue). */
+  fixAllButton(g: QueueGroup): HTMLElement | null {
+    const bulk = bulkFix(g)
+    if (!bulk) return null
+    return button(bulk.label, () => this.resolved(() => this.doGroup(bulk.keys, bulk.same)), 'small')
+  }
+
+  /** Take the first fix of each card, each read afresh after the one before, since a fix can change
+   *  what the next card offers or end it. One Undo puts them all back. */
+  doGroup(keys: string[], same: string | null) {
+    this.scene.endRunningMove()
+    const snapshot = structuredClone(this.state)
+    const known = this.state.world.tiles.reduce((n, t) => n + (t.explored ? 1 : 0), 0)
+    const taken = fixAll(this.state, keys)
+    if (!taken.length) return
+    for (const t of new Set(taken.map(a => a.t))) this.noteTelemetry(taken.find(a => a.t === t)!)
+    const done = taken.length
+    const all = done === keys.length ? `all ${done}` : `${done} of ${keys.length}`
+    const label = same ? `${same}, ${all}` : `Fixed ${all}`
+    // as with one action: ground newly seen cannot be undone (see dispatch)
+    if (this.state.world.tiles.reduce((n, t) => n + (t.explored ? 1 : 0), 0) > known) {
+      this.undoStack = []
+      this.toast(label)
+    } else {
+      this.undoStack.push({ snapshot, label })
+      if (this.undoStack.length > 8) this.undoStack.shift()
+      this.toast(label, () => this.undo())
+    }
+    this.route = null
+    this.scene.rebuild(this.state, 'dynamic')
+    this.refresh()
+    this.turns.acted()
+  }
+
+  /** The first consignment, the first settlement and the second, counted once each. */
+  private noteTelemetry(a: Action) {
+    if (a.t === 'consign') { if (this.state.telemetry.firstConsignment === this.state.turn) Telemetry.firstConsignment(this.state.turn) }
+    if (a.t === 'found') {
+      if (this.state.telemetry.founded === this.state.turn && this.state.settlements.filter(x => x.owner === 0).length === 1) Telemetry.founded(this.state.turn)
+      if (this.state.telemetry.secondSettlement === this.state.turn) Telemetry.secondSettlement(this.state.turn)
+    }
   }
 
   /** Resolving or dismissing collapses the queue back to its bar, so the map comes straight back. */

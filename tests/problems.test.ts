@@ -3,16 +3,17 @@
 // card is gone at once. Then every fix offered on a messy state is checked to be a legal action.
 
 import { describe, it, expect } from 'vitest'
-import { applyAction } from '../src/sim/actions'
-import { deriveQueue } from '../src/sim/queue'
+import { applyAction, fixAll } from '../src/sim/actions'
+import { deriveQueue, bulkFix } from '../src/sim/queue'
 import { SYSTEMS } from '../src/sim/systems'
 import { C } from '../src/sim/constants'
-import { syncWorkedTiles, foundSettlement } from '../src/sim/settlement'
+import { syncWorkedTiles, foundSettlement, foundingProblem, storageCapacity } from '../src/sim/settlement'
 import { workableTiles, tileYield, defaultJob, foodBalance, makeColonist, clerksRequired } from '../src/sim/labour'
 import { recompute } from '../src/sim/market'
 import { allProblems } from '../src/sim/problems'
 import { makeUnit } from '../src/sim/units'
-import type { GameState, Settlement, TileGood, QueueItem, Job } from '../src/sim/state'
+import type { GameState, Settlement, TileGood, QueueItem, QueueGroup, QueueType, Job } from '../src/sim/state'
+import { dist } from '../src/sim/worldgen'
 import { arrived } from './helpers'
 
 function landing(seed: string): { s: GameState; st: Settlement } {
@@ -426,6 +427,88 @@ describe('every fix offered is an action that can be taken', () => {
         const again = allProblems(copy).find(x => x.key === p.key)
         const same = again && again.body === p.body && again.choices[0]?.label === p.choices[0]?.label
         expect(same, `${p.key}: ${ch.label} left its card as it was`).toBeFalsy()
+      }
+    }
+  })
+})
+
+describe('a stall nothing can help', () => {
+  it('can be left for now, and is forgotten once it is over', () => {
+    const { s, st } = landing('leave-stall')
+    applyAction(s, { t: 'leaveStall', settlement: st.id })
+    expect(st.conditions['stallLeft']).toBe(s.turn)
+    // nothing going up, so nothing stalled: the mark goes at the turn's end, and the next stall is asked about
+    st.building = null
+    st.buildQueue = []
+    applyAction(s, { t: 'endTurn' })
+    expect(st.conditions['stallLeft']).toBeUndefined()
+  })
+})
+
+describe('a whole group done in one tap', () => {
+  const item = (key: string, type: QueueType, label?: string, t = 'setUnitOrder'): QueueItem =>
+    ({ key, group: 'g', type, title: key, body: '', magnitude: 1, since: 0, choices: label ? [{ label, action: { t } }] : [] })
+  const group = (type: QueueType, its: QueueItem[]): QueueGroup => ({ group: 'g', type, title: '', body: '', items: its, rank: 0, since: 0 })
+
+  it('says the fix where every card shares it, Fix all where they differ, and only for what is wrong', () => {
+    expect(bulkFix(group(4, [item('a', 4, 'Wait here'), item('b', 4, 'Wait here')]))?.label).toBe('Wait here, all 2')
+    expect(bulkFix(group(3, [item('a', 3, 'Put them in the linen shop'), item('b', 3, 'Ship timber here')]))?.label).toBe('Fix all 2')
+    expect(bulkFix(group(5, [item('a', 5, 'Queue it'), item('b', 5, 'Queue it')]))?.label).toBe('Queue it, all 2')
+    // a chance, or anything the Company asks, is taken in bulk only where every card offers the same
+    expect(bulkFix(group(5, [item('a', 5, 'Send someone out'), item('b', 5, 'Send someone out to look')]))).toBeNull()
+    // a founding is a choice of ground, made card by card, and a card with no fix is left as it is
+    expect(bulkFix(group(4, [item('a', 4, 'Found here', 'found'), item('b', 4, 'Wait here'), item('c', 4)]))).toBeNull()
+    expect(bulkFix(group(4, [item('a', 4, 'Found here', 'found'), item('b', 4, 'Wait here'), item('c', 4, 'Wait here')]))?.keys).toEqual(['b', 'c'])
+  })
+
+  it('units waiting are all told to wait in one tap, and a colonist on open ground is left to choose', () => {
+    const { s, st } = landing('bulk-units')
+    const w = s.world.width
+    for (let i = 0; i < 3; i++) s.units.push(makeUnit(s, 0, 'hauler', st.tile, null))
+    const ground = s.world.tiles.findIndex((t, i) => t.explored && t.terrain !== 'water' && dist(w, i, st.tile) >= C.founding.spacing && foundingProblem(s, i) === null)
+    expect(ground).toBeGreaterThanOrEqual(0)
+    const walker = makeUnit(s, 0, 'colonist', ground, makeColonist(s, 'free'))
+    s.units.push(walker)
+    const waiting = [...deriveQueue(s, SYSTEMS).shown, ...deriveQueue(s, SYSTEMS).folded].find(g => g.group === 'unitIdle')!
+    expect(waiting.body).toMatch(/one tap/)
+    const bulk = bulkFix(waiting)!
+    expect(bulk).not.toBeNull()
+    expect(bulk.keys).not.toContain(`unitIdle:${walker.id}`)
+    const taken = fixAll(s, bulk.keys)
+    expect(taken.length).toBe(bulk.keys.length)
+    expect(taken.every(a => a.t === 'setUnitOrder')).toBe(true)
+    const left = items(s).filter(it => it.group === 'unitIdle')
+    expect(left.map(it => it.key)).toEqual([`unitIdle:${walker.id}`])
+    expect(left[0].choices[0].label).toBe('Found here')
+  })
+
+  it('on a messy turn, every card a group\'s one tap takes is done or changed by it', () => {
+    const { s, st } = landing('problems-mess')
+    const spot = s.world.tiles.findIndex((t, i) => t.terrain !== 'water' && t.terrain !== 'mountain' && Math.abs((i % s.world.width) - (st.tile % s.world.width)) === 4 && Math.floor(i / s.world.width) === Math.floor(st.tile / s.world.width))
+    expect(spot).toBeGreaterThanOrEqual(0)
+    const two = foundSettlement(s, spot, 0, [makeColonist(s, 'debtor'), makeColonist(s, 'debtor')])
+    for (const x of [st, two]) {
+      while (x.colonists.length < 6) x.colonists.push(makeColonist(s, 'debtor'))
+      x.colonists.forEach(c => { c.job = { kind: 'idle' } })
+      x.buildQueue = []
+      x.building = null
+      x.stock.flax = storageCapacity(x) + 40
+    }
+    syncWorkedTiles(s)
+    applyAction(s, { t: 'endTurn' })
+    const q = deriveQueue(s, SYSTEMS)
+    const groups = [...q.shown, ...q.folded].filter(g => bulkFix(g))
+    expect(groups.length).toBeGreaterThan(0)
+    for (const g of groups) {
+      const copy = structuredClone(s)
+      const bulk = bulkFix(g)!
+      const before = new Map(g.items.map(it => [it.key, it]))
+      expect(fixAll(copy, bulk.keys).length, g.group).toBeGreaterThan(0)
+      for (const key of bulk.keys) {
+        const again = items(copy).find(it => it.key === key)
+        const was = before.get(key)!
+        const same = again && again.body === was.body && again.choices[0]?.label === was.choices[0]?.label
+        expect(same, `${g.group}: ${key} left as it was`).toBeFalsy()
       }
     }
   })

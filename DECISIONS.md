@@ -3512,6 +3512,65 @@ of 450 turns, where it had on 7; the queue was empty on 128; the top card was a 
 all a new outpost with no timber to be had and nobody spare, and gone round in circles on 73. Five of
 920 fixes taken left their card as it was.
 
+### 198. A whole group in one tap, and the last dead ends and circles
+
+**What.** The turn queue brief, section 6: a group of the same condition at many places "opens a list
+that can be resolved in bulk or one at a time". Until now it could only be resolved one at a time.
+
+- **One tap for a group** (`bulkFix` in `src/sim/queue.ts`, `fixAll` in `src/sim/actions.ts`). A
+  group card, and the list it opens, has a button that takes the first fix of every card in it, each
+  read afresh after the one before, since one fix can change what the next card offers or end it.
+  Where every card offers the same fix the button says it, "Wait in port, all 4"; where they differ
+  it says "Fix all 4", and only for what is wrong (a loss, something stuck or idle), never for a
+  chance or a Company card with differing fixes. Never a founding, which is a choice of ground made
+  card by card. One Undo puts the whole group back, unless the fixes showed new ground, as with any
+  action. The group's body says it: "Do them all in one tap, or open the list to take them one at a
+  time."
+- **Two cards taking the same timber.** A good's orders ship to one place, so two stalled builds each
+  offered "Ship timber here from Greyling", and taking both sent it to the second and left the first
+  as it was. A settlement already shipping a good elsewhere is no longer offered (`shipFrom`).
+- **Circles within a turn.** The hands in the carpenter's shop while a build waits for frame are not
+  spare for anything but food, even when they make nothing for want of timber: spoilage moved one to
+  the smelter, the build's card moved them back. The least costly move into a workshop never takes
+  the one making what it works, unless enough is held for a few turns: the only timber cutter moved
+  into an empty carpenter's shop left it nothing to work (`spareFor`, `leastBad`).
+- **A loss that comes back every turn.** Where more of a good is made than used, the store gains
+  every turn, so the loss is lasting at once and the fix that ends it comes first (storage, making
+  less, letting the orders sell what would spoil), not after three turns of consigning by hand.
+- **Quiet while the fix is on its way.** A stalled build whose timber is coming (a settlement whose
+  orders ship it here has some to spare, or gains some each turn) and that nothing else would help
+  has no card; it comes back if the timber stops coming. Spoilage of a dribble the orders leave to
+  spoil, under `C.market.fullStoreMinSale`, is quiet while storage is on its way. Selling the dribble
+  by standing order instead was tried and moved the pace table (a rival left peace at 84 per cent of
+  the competent small game, against a ceiling of 75), so the market is as it was.
+- **Left for now.** A stalled build nothing can help now (no forest, nobody spare, no gold, nothing
+  coming) offers **Leave it for now** (`leaveStall`): it waits as it is and rises once frame comes,
+  and its card is quiet until something can be done. The mark is `settlement.conditions.stallLeft`,
+  and it goes when the stall is over, so the next stall is asked about.
+- **Someone at the sender.** Where the settlement whose orders ship timber here has none to spare but
+  forest free and someone to spare, the card offers **Put someone on timber at** it.
+- **An empty build order with nothing worth building** has no card, whatever the settlement's size:
+  frame made with nothing to build is kept. The suggestions gain a stable where horses are held and a
+  press where a meeting house is worked, and nothing is suggested whose frame could not come: timber
+  held alone, short of the cheapest building, ran out at outposts with no forest.
+
+**After.** The card follower (decision 199), on six worlds over 150 turns: 9 to 13 settlements and 30
+to 52 new kinds of building; none of 729 taps left its card as it was; the top card led nowhere or
+round in circles on 35 of 900 turns, 4 per cent, against 38 per cent before. The competent player's
+queue at five or more settlements, on three worlds: 7 per cent of cards offer no fix, against 39; a
+turn with ten or more fixes to make takes 4 to 5 taps with the group tap, against 10 to 12 one card at
+a time. The pace table is unchanged.
+
+### 199. A standing test: a player who only takes what the cards offer
+
+**What.** `tests/follower.test.ts` plays three small worlds on generous terms for 150 turns by the
+cards alone: the first fix of the highest card that offers one, or a group's one tap, up to eight a
+turn, and the one gesture the cards teach, a colonist with no orders held on the best marked ground
+within a walk and let go. It fails if any tap leaves its card as it was, if a world ends without a
+second settlement or six new kinds of building, or if the top card leads nowhere or round in circles
+on one turn in ten or more. It runs in about two seconds. A new check, or a change to one, that makes
+a card lead nowhere shows here.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

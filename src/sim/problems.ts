@@ -190,6 +190,7 @@ function spareFor(s: GameState, lk: Look, job: Job, exclude: number[] = []): Spa
   const clerks = clerksRequired(st.colonists.length)
   const input = job.kind === 'building' ? C.buildings.lines[job.line].input : null
   let best: Spare | null = null, bestScore = -Infinity
+  const frameWaits = frameWanted(st) > 0
   st.colonists.forEach((c, i) => {
     if (exclude.includes(i)) return
     if (c.job.kind === job.kind && (job.kind === 'building' ? c.job.kind === 'building' && c.job.line === job.line : c.job.kind === 'tile' && job.kind === 'tile' && c.job.tile === job.tile)) return
@@ -197,6 +198,10 @@ function spareFor(s: GameState, lk: Look, job: Job, exclude: number[] = []): Spa
     if (there <= 0) return
     const now = makesNow(s, lk, c)
     const forFood = job.kind === 'tile' && job.good === 'food'
+    // the hands in the carpenter's shop while a build waits for frame are not spare, even making
+    // nothing for want of timber, but for food: moved, the build stalls and its card moves someone
+    // back, and the two cards went round in circles within one turn (decision 198)
+    if (frameWaits && !forFood && c.job.kind === 'building' && c.job.line === 'carpenter') return
     let score: number
     if (c.job.kind === 'idle') { if (idle <= clerks) return; score = 3000 }
     else if (now <= 0) score = 2000
@@ -339,6 +344,10 @@ function leastBad(s: GameState, lk: Look, job: Job): { index: number; words: str
     if (c.job.kind === 'building' && (c.job.line === 'school' || c.job.line === 'carpenter')) return
     const there = gives(s, lk, c, job)
     if (there <= 0) return
+    // nor the hands making what the building works, unless enough of it is held for a few turns:
+    // the one cutting timber moved into an empty carpenter's shop left it nothing to work
+    const input = job.kind === 'building' ? C.buildings.lines[job.line].input : null
+    if (input && c.job.kind === 'tile' && c.job.good === input && st.stock[input] < C.problems.inputTurns * there) return
     const now = makesNow(s, lk, c)
     // a workshop hand's work is weighed by what it makes; the meeting house's by a good's middling worth
     const good: GoodId | 'frame' | null = c.job.kind === 'tile' ? c.job.good : C.buildings.lines[c.job.line].output
@@ -383,7 +392,7 @@ function switchTo(s: GameState, lk: Look, good: TileGood): { index: number; tile
  *  switched to timber on forest ground they work for something else, timber shipped from another
  *  settlement, timber bought, or a good consigned to pay for it. The words say what is there to do,
  *  or that nothing is. */
-function timberFixes(s: GameState, lk: Look, need: number): { words: string; choices: QueueChoice[] } {
+function timberFixes(s: GameState, lk: Look, need: number): { words: string; choices: QueueChoice[]; coming: boolean } {
   const st = lk.st
   const choices: QueueChoice[] = []
   let words = ''
@@ -400,14 +409,25 @@ function timberFixes(s: GameState, lk: Look, need: number): { words: string; cho
     const sw = switchTo(s, lk, 'timber')
     if (sw) { words += ` ${cap(sw.words)} could cut ${sw.gives} timber a turn on the same ground; ${sw.cost}.`; choices.push({ label: `Switch one from ${sw.from} to timber`, action: assign(st, sw.index, { kind: 'tile', tile: sw.tile, good: 'timber' }) }) }
   }
-  // timber already ordered here counts only while the settlement sending it has some to spare
-  const sending = s.settlements.filter(x => x.owner === 0 && x.id !== st.id && shipsHere(x, 'timber', st.id))
-  const coming = sending.find(x => x.stock.timber - surplusRuleFor(x, 'timber').threshold >= C.orders.surplusMinimum)
-  const dry = coming ? undefined : sending[0]
-  const from = coming ? null : shipFrom(s, st, 'timber')
-  if (coming) words += ` ${coming.name}'s orders ship its spare timber here.`
+  // timber already ordered here counts only while the settlement sending it has some to spare, or
+  // gains some each turn toward it
+  const sender = timberSender(s, st)
+  const dry = sender ? undefined : s.settlements.find(x => x.owner === 0 && x.id !== st.id && shipsHere(x, 'timber', st.id))
+  const from = sender ? null : shipFrom(s, st, 'timber')
+  if (sender) words += sender.gains > 0 ? ` ${sender.from.name}'s orders ship its spare timber here once it has some, and it gains ${sender.gains} a turn.` : ` ${sender.from.name}'s orders ship its spare timber here.`
   else {
-    if (dry) words += ` ${dry.name}'s orders would ship its spare timber here, but it has none to spare now.`
+    if (dry) {
+      words += ` ${dry.name}'s orders would ship its spare timber here, but it has none to spare now.`
+      // where it has forest free and someone to spare, someone there can cut it (decision 198)
+      const dlk = look(s, dry, new Set())
+      const at = bestTile(s, dlk, 'timber')
+      const theirs = dry.colonists.map((c, i) => c.job.kind === 'building' && c.job.line === 'carpenter' ? i : -1).filter(i => i >= 0)
+      const dsp = at !== null ? spareFor(s, dlk, { kind: 'tile', tile: at, good: 'timber' }, theirs) : null
+      if (dsp && at !== null) {
+        words += ` ${cap(dsp.words)} there could cut ${dsp.gives} timber a turn for it.`
+        choices.push({ label: `Put someone on timber at ${dry.name}`, action: assign(dry, dsp.index, { kind: 'tile', tile: at, good: 'timber' }) })
+      }
+    }
     if (from) { words += ` ${from.name} has timber to spare.`; choices.push({ label: `Ship timber here from ${from.name}`, action: { t: 'setGoodRule', settlement: from.id, good: 'timber', rule: { destination: { kind: 'ship', settlement: st.id } } } }) }
   }
   if (canConsign(s, st).ok && need > 0) {
@@ -419,8 +439,23 @@ function timberFixes(s: GameState, lk: Look, need: number): { words: string; cho
       if (pay) { words += pay.words; choices.push(pay.choice) }
     }
   }
-  if (!choices.length && !coming) words += ' Nothing here can get timber now: it needs a forest, gold, or another settlement with timber to spare.'
-  return { words, choices }
+  if (!choices.length && !sender) words += ' Nothing here can get timber now: it needs a forest, gold, or another settlement with timber to spare.'
+  return { words, choices, coming: !!sender }
+}
+
+/** A settlement of the player's whose orders ship timber here and which has some to spare now, or
+ *  gains some each turn toward it (what it cuts, less what its own shop works): timber on its way.
+ *  Null when none has or does. */
+function timberSender(s: GameState, st: Settlement): { from: Settlement; gains: number } | null {
+  let best: { from: Settlement; gains: number } | null = null
+  for (const x of s.settlements) {
+    if (x.owner !== 0 || x.id === st.id || !shipsHere(x, 'timber', st.id)) continue
+    if (x.stock.timber - surplusRuleFor(x, 'timber').threshold >= C.orders.surplusMinimum) return { from: x, gains: 0 }
+    const f = previewFlows(s, x)
+    const gains = Math.floor((f.made.timber ?? 0) - (f.used.timber ?? 0))
+    if (gains > 0 && (!best || gains > best.gains)) best = { from: x, gains }
+  }
+  return best
 }
 
 /** A good held here to consign, a lot or two of it, to pay for something the treasury cannot buy:
@@ -440,9 +475,12 @@ function shipsHere(from: Settlement, g: GoodId, to: number): boolean {
 }
 
 /** Another settlement of the player's with a good to spare, the nearest, whose orders could ship it
- *  here: a lot or more of it held above what its own orders keep. Null when none has. */
+ *  here: a lot or more of it held above what its own orders keep, and not shipped to another
+ *  settlement already, since a good's orders ship to one place and two cards each taking the same
+ *  timber for their own went round in circles (decision 198). Null when none has. */
 function shipFrom(s: GameState, st: Settlement, g: GoodId): Settlement | null {
-  return s.settlements.filter(x => x.owner === 0 && x.id !== st.id && x.stock[g] - surplusRuleFor(x, g).threshold >= C.orders.surplusMinimum && shipRuleState(s, x, st.id) === 'ok')
+  return s.settlements.filter(x => x.owner === 0 && x.id !== st.id && x.stock[g] - surplusRuleFor(x, g).threshold >= C.orders.surplusMinimum && shipRuleState(s, x, st.id) === 'ok'
+    && surplusRuleFor(x, g).destination.kind !== 'ship')
     .sort((a, b) => dist(s.world.width, a.tile, st.tile) - dist(s.world.width, b.tile, st.tile))[0] ?? null
 }
 
@@ -581,7 +619,11 @@ function spoilage(s: GameState, lk: Look, out: Problem[]) {
   const coming = (st.building && st.building.id.line === 'storage') || st.buildQueue.some(b => b.line === 'storage')
   const storeChoice: QueueChoice | null = store && !coming ? { label: `Build a ${buildingName(store).toLowerCase()} first`, action: { t: 'setBuildOrder', settlement: st.id, queue: [store, ...st.buildQueue] } } : null
   const since = st.conditions['spoilage']
-  const lasting = since !== undefined && s.turn - since >= C.problems.storageFirstAfter
+  // lasting once the goods have spoiled for a few turns, or at once where more of the good is made
+  // here each turn than is used: the store gains every turn, so the loss comes back every turn, and
+  // a consignment by hand only put off the one that ends it (decision 198)
+  const gains = (g: GoodId) => ((lk.flows.made as Record<string, number>)[g] ?? 0) - (lk.flows.used[g] ?? 0) > 0
+  const lasting = (since !== undefined && s.turn - since >= C.problems.storageFirstAfter) || gains(lost[0][0])
   if (storeChoice && lasting) choices.push(storeChoice)
   // spoiling turn after turn with the store as big as it is going to be soon: more is made than is
   // used, kept or sold, so one of those making it goes where they do some good. Consigning the
@@ -618,6 +660,12 @@ function spoilage(s: GameState, lk: Look, out: Problem[]) {
     if (to) choices.push({ label: `Send ${g} to ${to.name}`, action: { t: 'setGoodRule', settlement: st.id, good: g, rule: { destination: { kind: 'ship', settlement: to.id } } } })
   }
   if (storeChoice && !lasting) choices.push(storeChoice)
+  // a dribble the orders leave to spoil, short of a consignment's worth (C.market.fullStoreMinSale),
+  // while storage that ends it is on its way and nothing else would: the fix is under way, and a
+  // card that asked for one timber consigned by hand, turn after turn, went round in circles. It is
+  // said again should storage stop coming (decision 198)
+  const dribble = lost.every(([g, n]) => n < C.market.fullStoreMinSale && ordersSell(s, st, g))
+  if (coming && dribble && !root && !moveWords) return
   out.push({
     key: `spoilage:${st.id}`, group: 'spoilage', type: 1, title: `${st.name} is losing goods`,
     body: `At the end of the turn it loses ${list(lost.map(([g, n]) => `${n} ${g}`))} to spoilage: its store holds ${lk.cap} of each good.${root}${moveWords}${coming ? ` A ${buildingName({ line: 'storage', tier: Math.min(3, st.buildings.storage + 1) as 1 | 2 | 3 }).toLowerCase()} is on its way.` : ''}`,
@@ -625,6 +673,17 @@ function spoilage(s: GameState, lk: Look, out: Problem[]) {
     settlement: st.id, magnitude: 2, opens: 'settlement', short: `Losing ${lost[0][0]}`, good: lost[0][0], line, choices,
   })
 }
+
+/** Whether what is going up here gets no frame, or no tooling, this turn. */
+function stallOf(st: Settlement, flows: Look['flows']): { noFrame: boolean; noTooling: boolean } | null {
+  const b = going(st)
+  if (!b) return null
+  const cost = C.buildings.costs[b.id.tier]!
+  const noFrame = cost.frame - b.frame > st.frame && (flows.made.frame ?? 0) <= 0
+  const noTooling = cost.tooling - b.tooling > st.stock.tooling && (flows.made.tooling ?? 0) <= 0
+  return noFrame || noTooling ? { noFrame, noTooling } : null
+}
+function stalled(s: GameState, st: Settlement): boolean { return stallOf(st, previewFlows(s, st)) !== null }
 
 /** A building getting no frame, or no tooling: the owner's palisade. */
 function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
@@ -634,9 +693,9 @@ function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
   const cost = C.buildings.costs[b.id.tier]!
   const name = buildingName(b.id).toLowerCase()
   const needF = cost.frame - b.frame, needT = cost.tooling - b.tooling
-  const noFrame = needF > st.frame && (lk.flows.made.frame ?? 0) <= 0
-  const noTooling = needT > st.stock.tooling && (lk.flows.made.tooling ?? 0) <= 0
-  if (!noFrame && !noTooling) return false
+  const stall = stallOf(st, lk.flows)
+  if (!stall) return false
+  const { noFrame, noTooling } = stall
   const since = st.conditions['buildStalled']
   const stood = since !== undefined && s.turn > since && st.building ? ` It has stood at ${b.frame} of ${cost.frame} frame for ${plural(s.turn - since, 'turn')}.` : ''
   const choices: QueueChoice[] = []
@@ -688,6 +747,9 @@ function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
     } else {
       why = `The ${nameOf(st, 'carpenter')} has no timber to work.`
       const fix = timberFixes(s, lk, needF - st.frame)
+      // timber on its way and nothing else that would help: the stall is being mended, and a card
+      // that offered nothing would stand at the top turn after turn (decision 198)
+      if (fix.coming && !fix.choices.length) return noFrame
       why += fix.words
       choices.push(...fix.choices)
     }
@@ -706,6 +768,13 @@ function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
       const sp = spareFor(s, lk, { kind: 'building', line: 'toolworks' })
       if (sp) { line = 'toolworks'; choices.push({ label: `Staff the ${nameOf(st, 'toolworks')}`, action: assign(st, sp.index, { kind: 'building', line: 'toolworks' }) }) }
     }
+  }
+  // nothing can be done now: it can be left, and its card is quiet until something can be (decision
+  // 198). Left, it waits as it is, and rises once frame or tooling comes
+  if (!choices.length) {
+    if (st.conditions['stallLeft'] !== undefined) return noFrame
+    why += ' Left for now, it rises when frame comes, and this comes back when something can be done.'
+    choices.push({ label: 'Leave it for now', action: { t: 'leaveStall', settlement: st.id } })
   }
   // where the fix is someone's work and no one-tap move is offered, the card opens the settlement,
   // where people are moved; otherwise the build order
@@ -900,10 +969,12 @@ function buildOrder(s: GameState, lk: Look, out: Problem[]) {
   if (!next && !buildable(s, st).some(b => !b.imported && canStart(st, b).ok)) return
   const cost = next ? C.buildings.costs[next.id.tier]! : null
   const name = next ? buildingName(next.id).toLowerCase() : ''
-  // nothing to suggest because nothing here could be framed: the card says so, and how to get timber
-  const made = lk.flows.made as Record<string, number>
-  const noTimber = !next && st.stock.timber + (made.timber ?? 0) <= 0
+  // nothing to suggest because nothing here could be framed: the card says so, and how to get timber.
+  // Where timber can be had and nothing here has a reason to be built, nothing is lost: frame made
+  // with nothing to build is kept for when something does, and the card would lead nowhere
+  const noTimber = !next && !timberToBeHad(s, lk)
   const fix = noTimber ? timberFixes(s, lk, C.buildings.costs[1]!.frame) : null
+  if (!next && (!fix || !fix.choices.length)) return
   out.push({
     key: `buildEmpty:${st.id}`, group: 'buildEmpty', type: 4, title: `${st.name} has nothing in its build order`,
     body: next ? `Suggested: ${article(name)} ${name}, because ${next.why}.` : fix ? `It has no timber to make frame from, and every building is made of frame.${fix.words}` : 'Choose what it builds next.',
@@ -923,15 +994,21 @@ const REFINES: Partial<Record<GoodId, BuildingLine>> = { ore: 'smelter', flax: '
  *  raw, storage for a store nearly full, a school for a settlement big enough to teach, a wharf on a
  *  coast, the next tier of the carpenter's shop. Only what can be built here now. Null when none of
  *  these applies. */
+/** Whether a building here could be framed: timber cut here, free to cut, on its way or to be had
+ *  from another settlement, or enough held for the cheapest building. Timber held alone, short of
+ *  that, ran out at outposts with no forest and left what was suggested stalled for good. */
+function timberToBeHad(s: GameState, lk: Look): boolean {
+  const st = lk.st
+  return ((lk.flows.made as Record<string, number>).timber ?? 0) > 0 || bestTile(s, lk, 'timber') !== null || timberSender(s, st) !== null
+    || shipFrom(s, st, 'timber') !== null || st.stock.timber + st.frame >= C.buildings.costs[1]!.frame
+}
+
 function suggestBuild(s: GameState, lk: Look): { id: BuildId; why: string } | null {
   const st = lk.st
   const can = buildable(s, st).filter(b => !b.imported && canStart(st, b).ok)
   const want = (line: BuildingLine) => can.find(b => b.line === line) ?? null
   const made = lk.flows.made as Record<string, number>
-  // nothing is suggested that could not be framed: no timber held, cut, free to cut, or to be had
-  // from another settlement, and the building would stand stalled from the first turn
-  const timber = st.stock.timber + (made.timber ?? 0) > 0 || bestTile(s, lk, 'timber') !== null || shipFrom(s, st, 'timber') !== null
-  if (!timber) return null
+  if (!timberToBeHad(s, lk)) return null
   // and frame takes two pairs of hands, one cutting and one in the shop, unless the timber for it is
   // already held: a settlement of one with none held is not asked to build
   if (st.colonists.length < 2 && st.stock.timber < C.buildings.costs[1]!.frame) return null
@@ -958,6 +1035,10 @@ function suggestBuild(s: GameState, lk: Look): { id: BuildId; why: string } | nu
   if (sawmill) return { id: sawmill, why: 'it makes frame faster than the carpenter\'s shop' }
   const works = want('works')
   if (works && works.tier === 1) return { id: works, why: 'works are what hold a settlement when the Company comes for it' }
+  const stable = want('stable')
+  if (stable && st.stock.horses >= 2) return { id: stable, why: `it breeds ${C.buildings.stableHorseBonus} more horses a turn from the ${st.stock.horses} held here` }
+  const press = want('press')
+  if (press && st.buildings.press === 0 && buildingWorkers(st, 'meeting') > 0) return { id: press, why: `the meeting house here gathers ${Math.round((C.grievance.pressMultiplier - 1) * 100)} per cent more grievance with a press beside it` }
   return null
 }
 
@@ -1240,6 +1321,8 @@ export const problemsSystem: System = {
       if (st.owner !== 0) continue
       // the order conditions' old name, from saves made before this
       delete st.conditions['orderUnsatisfiable']
+      // a stall left for now is forgotten once it is over, so the next one is asked about
+      if (st.conditions['stallLeft'] !== undefined && !stalled(s, st)) delete st.conditions['stallLeft']
       for (const g of SETTLEMENT_PROBLEMS) {
         if (live.has(`${g}:${st.id}`)) st.conditions[g] = st.conditions[g] ?? s.turn
         else delete st.conditions[g]

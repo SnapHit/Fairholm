@@ -1422,7 +1422,9 @@ function intentSheet(app: App, s: GameState): HTMLElement {
 function groupSheet(app: App, group: string): HTMLElement {
   const g = [...app.queue.shown, ...app.queue.folded].find(x => x.group === group)
   if (!g) return app.renderQueue()
+  const all = app.fixAllButton(g)
   return h('div', { class: 'panel' }, header(app, g.title),
+    all ? h('div', { class: 'card-actions' }, all) : null,
     ...g.items.map(it => {
       const lead = queueIcon(app.state, it.group, it.key)
       const main = h('div', { class: 'card-main' }, h('div', { class: 'card-title' }, it.title), h('div', { class: 'card-body' }, app.withTerms(it.body)))

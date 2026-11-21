@@ -93,6 +93,21 @@ export function unitLabel(kind: string): string {
   return names[kind] ?? kind
 }
 
+/** What one tap can do across a group, which the brief lets be resolved in bulk or one at a time
+ *  (section 6): the first fix of every card that has one, each read afresh after the one before.
+ *  Never a founding, which is a choice of ground made card by card. Where every card offers the same
+ *  fix the button says it, "Wait in port, all 4"; where they differ it says "Fix all 4", and only for
+ *  what is wrong (a loss, something stuck or idle), never for a chance or a Company card. Null where
+ *  fewer than two cards would be done. DECISIONS.md 198. */
+export function bulkFix(g: QueueGroup): { label: string; keys: string[]; same: string | null } | null {
+  const fixable = g.items.filter(it => it.choices.length > 0 && (it.choices[0].action as { t?: string }).t !== 'found')
+  if (fixable.length < 2) return null
+  const labels = new Set(fixable.map(it => it.choices[0].label))
+  const same = labels.size === 1 ? fixable[0].choices[0].label : null
+  if (!same && g.type !== 1 && g.type !== 3 && g.type !== 4) return null
+  return { label: same ? `${same}, all ${fixable.length}` : `Fix all ${fixable.length}`, keys: fixable.map(it => it.key), same }
+}
+
 export function deriveQueue(s: GameState, systems: System[]): DerivedQueue {
   const items = [...collectQueueItems(s, systems), ...unitItems(s)]
     // opportunities that have appeared twice lapse, section 8
@@ -113,7 +128,7 @@ export function deriveQueue(s: GameState, systems: System[]): DerivedQueue {
     if (g.items.length > 1) {
       const t = GROUP_TITLES[g.group]
       g.title = t ? t(g.items.length) : `${g.items.length} items: ${g.items[0].title}`
-      g.body = 'Opens a list that can be resolved one at a time.'
+      g.body = bulkFix(g) ? 'Do them all in one tap, or open the list to take them one at a time.' : 'Opens a list that can be resolved one at a time.'
     }
     // one sentence, once, onboarding brief section 4.3
     if (g.explain && s.charters[0].explained[g.group]) g.explain = undefined
