@@ -3612,18 +3612,20 @@ lander and the old pieces as references.
   is the carpenter's picture in the town street and the build catalogue, and every settlement, which
   begins with one, now draws it first. It is the trial of the restyle; the other six drawings stay
   until it has been seen in play.
-- **The beached lander** was drawn too, and is held back: it stands on a sand bank cut off square at
-  its left, which reads as a block on the map. `piecesFor` already puts a `lander-beached` piece first
-  at a settlement founded where its charter's lander came down, and draws nothing until the sheet has
-  one.
+- **The beached lander** stands first at a settlement founded where its charter's lander came down,
+  The Landing and each rival's first (`piecesFor`), on a patch of sand with its ramp down and an
+  awning out. The setting brief, section 7: beached, the lander is the settlement, and the first
+  metal in the colony is the thing that brought you. A first drawing stood on a sand bank cut off
+  square and was redrawn on flat sand fading out at its edges, which `key-board.py faded` peels back
+  to where the sand has its own colour.
 - **Keying.** The new drawings came on boards the colour keyer could not take (a black and mid grey
   board under a boat with dark grey trim, and boards not on one grid). `scripts/key-board.py` keys
   them first with GrabCut, seeded by the board reached from the edge and by everything with colour,
   then peels board off the edge and out of the strips between ropes. The extractor then takes the
   result as already keyed, and a building is cut to the settlement sheet's scale (`px`).
 - **Weight.** Both sheets are now stored as indexed pngs of 255 colours (`scripts/index-sheet.py`),
-  as the first settlement sheet shipped: the settlement sheet goes from 137 to 64 kB with the new
-  piece, the units sheet from 243 to 81 kB. Side by side at the sheet's own pixels the two cannot be
+  as the first settlement sheet shipped: the settlement sheet goes from 137 to 81 kB with the two
+  new pieces, the units sheet from 243 to 81 kB. Side by side at the sheet's own pixels the two cannot be
   told apart.
 
 ## Left out of version one

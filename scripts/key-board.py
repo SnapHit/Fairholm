@@ -12,7 +12,8 @@
 # as already keyed.
 #
 # Run with:  python3 scripts/key-board.py SOURCE.jpg OUT.png DARK LIGHT
-#            DARK and LIGHT are the board's two greys, read off its corner squares.
+#            DARK and LIGHT are the board's two greys, read off its corner squares. A sixth argument,
+#            faded, peels back ground drawn fading into the board.
 # Needs numpy, scipy and opencv (cv2).
 
 import sys
@@ -22,7 +23,7 @@ import numpy as np
 from scipy import ndimage
 
 
-def key(path, greys, out):
+def key(path, greys, out, faded=False):
     a = cv2.imread(path).astype(np.float32)
     lum = a.mean(axis=2)
     chroma = a.max(axis=2) - a.min(axis=2)
@@ -74,6 +75,15 @@ def key(path, greys, out):
             touched = ndimage.binary_dilation(~fg, iterations=2)
             keep_ids = set(np.unique(sl[small & touched])) - {0}
             fg &= ~np.isin(sl, list(keep_ids))
+    if faded:
+        # ground drawn fading out into the board leaves a pale, washed ring of board and ground mixed:
+        # peeled back from the edge to where the ground has its own colour. A dark outline stops it,
+        # so a hull or a roof against the board is never touched
+        for _ in range(60):
+            washed = ndimage.binary_dilation(~fg) & fg & (chroma < 75) & (lum > 150)
+            if not washed.any():
+                break
+            fg &= ~washed
     fg = ndimage.binary_opening(fg, np.ones((3, 3)))
     lbl, n = ndimage.label(fg)
     sizes = ndimage.sum(fg, lbl, range(1, n + 1))
@@ -89,5 +99,5 @@ def key(path, greys, out):
 
 if __name__ == '__main__':
     src, out, dark, light = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
-    key(src, [dark, light], out)
+    key(src, [dark, light], out, faded=len(sys.argv) > 5 and sys.argv[5] == 'faded')
     print(f'{out} keyed from {src}')

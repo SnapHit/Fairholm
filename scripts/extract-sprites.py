@@ -371,11 +371,11 @@ UNITS = [
 
 # Buildings drawn one to a picture, cut to the early settlement sheet's scale (the cabin's wall is
 # seventy pixels, src/render/look.ts) and added to art/settlement-early.png by `buildings`. Each is
-# keyed first by scripts/key-board.py: carpenter.jpg 175 227.
+# keyed first by scripts/key-board.py: carpenter.jpg 175 227, landing-lander.jpg 172 253 faded.
 BUILDINGS_OUT = 'art/buildings'
 BUILDINGS = [
-    # the lander beached where it founded the first settlement, the first metal in the colony, is drawn
-    # for as 'lander-beached' (src/render/sprites.ts) and waits for a drawing on flat sand
+    # the lander beached where it founded the first settlement: the first metal in the colony
+    dict(name='lander-beached', source='../buildings/landing-lander.png', px=190, out=BUILDINGS_OUT, keyed=True),
     # the carpenter's shop, square cut timber with a panel of the lander on its roof
     dict(name='carpenter', source='../buildings/carpenter.png', px=185, out=BUILDINGS_OUT, keyed=True),
 ]

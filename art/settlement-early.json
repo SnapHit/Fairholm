@@ -61,8 +61,15 @@
    "anchorX": 110,
    "anchorY": 165
   },
-  "carpenter": {
+  "lander-beached": {
    "x": 2,
+   "y": 406,
+   "w": 292,
+   "h": 190,
+   "keyed": true
+  },
+  "carpenter": {
+   "x": 298,
    "y": 406,
    "w": 248,
    "h": 185,
