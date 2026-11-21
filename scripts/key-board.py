@@ -13,7 +13,8 @@
 #
 # Run with:  python3 scripts/key-board.py SOURCE.jpg OUT.png DARK LIGHT
 #            DARK and LIGHT are the board's two greys, read off its corner squares. A sixth argument,
-#            faded, peels back ground drawn fading into the board.
+#            faded, peels back ground drawn fading into the board; deep, board tinted by sparks or
+#            streaks drawn over it, and pieces under 8000 pixels.
 # Needs numpy, scipy and opencv (cv2).
 
 import sys
@@ -23,7 +24,7 @@ import numpy as np
 from scipy import ndimage
 
 
-def key(path, greys, out, faded=False):
+def key(path, greys, out, faded=False, deep=False):
     a = cv2.imread(path).astype(np.float32)
     lum = a.mean(axis=2)
     chroma = a.max(axis=2) - a.min(axis=2)
@@ -46,9 +47,10 @@ def key(path, greys, out, faded=False):
     fg = (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)
     # board along the edge, peeled off
     boardish = np.zeros(lum.shape, bool)
+    # deep: board tinted by sparks or streaks drawn over it, peeled however far it reaches
     for g in greys:
-        boardish |= (chroma < 16) & (np.abs(lum - g) < 26)
-    for _ in range(16):
+        boardish |= (chroma < (24 if deep else 16)) & (np.abs(lum - g) < 26)
+    for _ in range(90 if deep else 16):
         touching = ndimage.binary_dilation(~fg) & fg & boardish
         if not touching.any():
             break
@@ -87,7 +89,7 @@ def key(path, greys, out, faded=False):
     fg = ndimage.binary_opening(fg, np.ones((3, 3)))
     lbl, n = ndimage.label(fg)
     sizes = ndimage.sum(fg, lbl, range(1, n + 1))
-    fg = np.isin(lbl, [i + 1 for i in range(n) if sizes[i] > 4000])
+    fg = np.isin(lbl, [i + 1 for i in range(n) if sizes[i] > (8000 if deep else 4000)])
     holes = ndimage.binary_fill_holes(fg) & ~fg
     hl, hn = ndimage.label(holes)
     hs = ndimage.sum(holes, hl, range(1, hn + 1))
@@ -99,5 +101,5 @@ def key(path, greys, out, faded=False):
 
 if __name__ == '__main__':
     src, out, dark, light = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
-    key(src, [dark, light], out, faded=len(sys.argv) > 5 and sys.argv[5] == 'faded')
+    key(src, [dark, light], out, faded='faded' in sys.argv[5:], deep='deep' in sys.argv[5:])
     print(f'{out} keyed from {src}')

@@ -356,12 +356,10 @@ UNITS = [
          strip=3, component=1500, resolution=0.6,
          plates=[dict(box=(770, 660, 920, 780), colour=(214, 198, 172), tolerance=38, grain=(1.0, 0.0))],
          waterline=800),
-    dict(name='lander', source='lander.jpg', people=1.8,
-         # a two toned board: the neutral checker above, a blue grey one below row 615
-         boards=[dict(rows=(0, 615)),
-                 dict(rows=(615, 1024), dark=186.0, light=222.0, tint=(0, 5, 7), low=0.92, high=1.06, chroma=12)],
-         smoke=True, resolution=0.6,
-         waterline=640),
+    # the lander, its door shut for the voyage (DECISIONS.md 204). Drawn on white, keyed first by
+    # scripts/key-board.py (lander-closed.jpg 252 252)
+    dict(name='lander', source='lander-closed.png', people=1.8, keyed=True, resolution=0.6,
+         waterline=650),
     # the lighter, the boat the lander carried, built of the lander's own panels (DECISIONS.md 201).
     # Drawn on a black and mid grey board that colour cannot key, so it is keyed first by
     # scripts/key-board.py (lighter.jpg 3 137)

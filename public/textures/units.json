@@ -59,13 +59,13 @@
   "lander": {
    "x": 597,
    "y": 4,
-   "w": 332,
+   "w": 331,
    "h": 156,
-   "anchorX": 149.3,
+   "anchorX": 149.6,
    "anchorY": 156,
    "personPx": 86.4,
    "facing": "front",
-   "waterline": 120.2
+   "waterline": 133
   },
   "lighter": {
    "x": 4,

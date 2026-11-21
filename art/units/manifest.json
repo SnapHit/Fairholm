@@ -40,13 +40,13 @@
   "facing": "front"
  },
  "lander": {
-  "source": "lander.jpg",
-  "w": 332,
+  "source": "lander-closed.png",
+  "w": 331,
   "h": 156,
   "people": 1.8,
   "personPx": 86.4,
   "facing": "front",
-  "waterline": 120.2
+  "waterline": 133.0
  },
  "lighter": {
   "source": "lighter.png",

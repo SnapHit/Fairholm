@@ -126,6 +126,8 @@ export class Scene {
   siteMarks: number[] | null = null
   /** The beaching: the settlement and the boat coming up out of nothing while the lander goes. */
   private fading: { k: number; settlements: Set<number>; units: Set<number> } | null = null
+  /** The opening's descent is in the air: the lander is not on the water yet, nor its steam. */
+  private descending = false
   private ghost: THREE.InstancedMesh | null = null
   beaching = false
   /** A move being drawn, between being prepared before the action and finishing after it. */
@@ -488,8 +490,35 @@ export class Scene {
     this.arrival = ab.group
     this.steamCount = ab.steaming
     if (ab.steaming && this.steamTurn !== s.turn) { this.steamTurn = s.turn; this.steamSince = performance.now() }
-    if (this.arrival) this.scene.add(this.arrival)
+    if (this.arrival) { this.arrival.visible = !this.descending; this.scene.add(this.arrival) }
     if (this.steaming()) this.startLoop()
+  }
+
+  /** The opening's descent (DECISIONS.md 204): the lander is not drawn on the water, nor its steam,
+   *  while the picture of it under its parachute comes down over the lines. */
+  hideForDescent(landerId: number) {
+    this.descending = true
+    this.fading = { k: 0, settlements: new Set(), units: new Set([landerId]) }
+    this.applyFades()
+    if (this.arrival) this.arrival.visible = false
+    this.requestDraw()
+  }
+
+  /** Splashdown: the lander comes up on the water over `ms`, and its steam starts rising now. */
+  revealAfterDescent(ms: number) {
+    if (!this.descending) return
+    this.descending = false
+    if (this.arrival) this.arrival.visible = true
+    this.steamSince = performance.now()
+    const start = performance.now()
+    const step = () => {
+      const k = Math.min(1, (performance.now() - start) / Math.max(1, ms))
+      if (this.fading && !this.beaching) { this.fading.k = k * k * (3 - 2 * k); this.applyFades() }
+      if (!this.loopRunning) this.draw(true)
+      if (k < 1) requestAnimationFrame(step)
+      else { if (!this.beaching) { this.fading = null; this.applyFades() } this.requestDraw(); if (this.steaming()) this.startLoop() }
+    }
+    requestAnimationFrame(step)
   }
 
   /** The beaching, onboarding brief section 2. The state has already changed: the lander is gone,

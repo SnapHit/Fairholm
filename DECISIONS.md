@@ -3669,6 +3669,26 @@ that starts from nothing.
   shop and the rest are drawn as the lander, once, and named "in the lander". The rules are as they
   were. A game saved before this shows the lander alone until its next building is finished.
 
+### 204. The lander comes down under its parachute while the opening is read
+
+From the owner, 22 November 2026, with two new drawings.
+
+- **The lander's door is shut.** Nobody sails with the door open: the lander on the water is redrawn
+  closed. Keyed from a white ground by `scripts/key-board.py`; the steam now rises from where its
+  stacks are in the new drawing (`ARRIVAL.plume.stacks`). The beached lander keeps its ramp down.
+- **The descent.** While the five lines fade in, the lander comes down under its parachute
+  (`public/textures/descent.png`, 57 kB, fetched only by the opening), from high on the right along
+  an arc that bows out to the right, down onto the water where the lander lies. It falls in stages,
+  one as each line begins to fade in (`DESCENT.stages`), swinging a little under the canopy, the
+  swing dying as it comes down, and it shrinks by the same share each stage as it falls away from the
+  eye, to the lander's own size on the map. A beat after the last line is in it fades into the lander
+  on the water, which comes up as it goes, with a ring spreading on the water and the steam starting
+  to rise. Until then the lander and its steam are not drawn (`hideForDescent`, `revealAfterDescent`):
+  a ship falling to a planet with nothing to help it, and then on the water. A tap takes the lines
+  away and brings the lander down at once; with reduced motion asked for, there is no descent.
+- **The opening's view** puts the lander at seven tenths of the way down the screen, below the lines,
+  so it comes down into clear water rather than under the words.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

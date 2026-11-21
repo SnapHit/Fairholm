@@ -518,7 +518,7 @@ export const ARRIVAL = {
   wake: { length: 0.9, width: 0.16, colour: '#d9e6e3', opacity: 0.55 },
   /** The steam: how many puffs, how long one lives in seconds, how far it rises and drifts in tiles
    *  (up the screen and to the right, off the wind), how large it starts and ends, and its colour. */
-  plume: { count: 7, life: 3.2, rise: 0.75, drift: 0.55, sizeFrom: 0.1, sizeTo: 0.36, colour: '#f2ece0', opacity: 0.72, stacks: [0.3, 0.72] as [number, number] },
+  plume: { count: 7, life: 3.2, rise: 0.75, drift: 0.55, sizeFrom: 0.1, sizeTo: 0.36, colour: '#f2ece0', opacity: 0.72, stacks: [0.34, 0.9] as [number, number] },
   /** How long the steam rises on a turn it is shown, in seconds from the turn's first picture of it,
    *  and how long it then takes to thin to nothing. The frame loop runs only while it does: steam
    *  that never stopped would keep the loop going under a unit sitting chosen. */

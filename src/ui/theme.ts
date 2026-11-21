@@ -40,6 +40,34 @@ export const OPENING_LINE_MS = 3500
 export const OPENING_FADE_MS = 900
 /** Each opening line's own fade in, slow enough to arrive rather than appear. */
 export const OPENING_LINE_FADE_MS = 1400
+/** The first line comes this long after the frame, so it arrives over the picture rather than with it. */
+export const OPENING_FIRST_MS = 400
+
+/** The lander coming down under its parachute while the lines fade in (DECISIONS.md 204). It falls in
+ *  stages, one as each line fades in, along an arc from high on the right to where the lander lies,
+ *  shrinking as it falls away from the eye, and splashes down a beat after the last line is in. */
+export const DESCENT = {
+  /** Where it starts, as shares of the screen, and how wide: a share of the screen, at most so many pixels. */
+  startX: 0.78, startY: 0.1, startW: 0.55, maxStartPx: 320,
+  /** How far the arc bows out to the right of a straight fall, as a share of the screen's width. */
+  bulge: 0.14,
+  /** How far along the arc it has come as each line begins to fade in. */
+  stages: [0, 0.16, 0.36, 0.58, 0.8],
+  /** From the last line fully in to splashdown. */
+  settleMs: 1400,
+  /** The fade out into the lander on the water, and the lander's fade in on the water. */
+  outMs: 1100, revealMs: 1400,
+  /** In the picture: the middle of the capsule, which comes down onto the lander, as shares of its
+   *  width and height; the share of its width the capsule takes; and the canopy, which it swings from. */
+  anchorX: 0.33, anchorY: 0.8, capsule: 0.7, swingFrom: '66% 0%',
+  /** The swing under the canopy, in degrees, dying away as it comes down; and how solid it is drawn. */
+  swayDeg: 5, opacity: 0.95,
+  /** The ring on the water at splashdown. */
+  splashMs: 1600,
+  /** Where on the screen the lander lies during the opening, as a share of its height: below the
+   *  lines, so it comes down into clear water. */
+  landerAtY: 0.7,
+}
 
 /** Version 2's ring cell and building slot. The settlement screen no longer uses them (version 3
  *  sizes its ring from the space it has); the founding preview's ring and the full screens still
@@ -218,6 +246,11 @@ export const TOKENS: Record<string, string> = {
   '--coach-small': '0.82',
   '--coach-big': '1.12',
   '--coach-nudge': '1.6',
+  // the ring on the water where the lander comes down (decision 204)
+  '--splash-ink': 'rgba(242,236,224,0.85)',
+  '--splash-flat': '0.45',
+  '--splash-grow': '2.2',
+  '--splash-ms': '1600ms',
   '--hold-ring-hole': '22px',
   '--sheet-max-h': '72vh',
   '--runsum-max-h': '50vh',       // what the turns that ran on brought, at most half the screen

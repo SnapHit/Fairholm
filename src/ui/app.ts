@@ -39,9 +39,10 @@ import { unitCard, passengerCard, tileCard, type Card } from './card'
 import { h, clear, append, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
-import { SHEET_DISMISS_PX, TAP_MIN_PX, RUN_SUMMARY_LINES, BAR_TITLE_CHARS, installTheme } from './theme'
+import { SHEET_DISMISS_PX, TAP_MIN_PX, RUN_SUMMARY_LINES, BAR_TITLE_CHARS, DESCENT, installTheme } from './theme'
 import { installIcons, icon, isGood, SEASON_ICONS, type IconName } from './icons'
-import { goodMark, queueIcon, dispatchIcon } from './pictures'
+import { goodMark, queueIcon, dispatchIcon, UNITS_SHEET, unitPiece } from './pictures'
+import { drawnSize } from '../render/units'
 import { mountOpening, type Opening } from './opening'
 import { TurnRunner, queueKeys } from './turns'
 import * as Save from '../io/save'
@@ -208,14 +209,31 @@ export class App {
    *  player's: it takes the lines away and starts the music, and nothing was ever blocked. */
   beginArrival() {
     this.scene.cam.centreOn(this.homeTile(), C.feel.zoom.working)
+    // the lander below the lines, so it comes down into clear water (decision 204): the view is
+    // centred that many rows of tiles north of it
+    {
+      const home = this.homeTile(), w = this.state.world.width
+      const x = (home % w) + 0.5, z = Math.floor(home / w) + 0.5
+      const [, y0] = this.scene.cam.worldToScreen(x, z)
+      const [, y1] = this.scene.cam.worldToScreen(x, z + 1)
+      const rows = Math.round(((DESCENT.landerAtY - 0.5) * window.innerHeight) / Math.max(1, Math.abs(y1 - y0)))
+      const north = Math.max(0, Math.floor(home / w) - rows) * w + (home % w)
+      if (rows > 0) this.scene.cam.centreOn(north, C.feel.zoom.working)
+    }
     this.scene.requestDraw()
     this.sheet = { kind: 'queue' }
     this.queueExpanded = false
     this.foundTarget = null
     this.scene.foundPreview = null
     this.opening?.dismiss()
-    // the lines gone, the lander is chosen, so its card says what to do: hold where to sail (decision 202)
-    this.opening = mountOpening(this.root, () => window.setTimeout(() => this.chooseLander(), 0))
+    // the lander comes down under its parachute while the lines fade in, and is on the water only
+    // once it has (decision 204); the lines gone, it is chosen, so its card says what to do (202)
+    const lander = this.state.units.find(u => u.owner === 0 && u.kind === 'lander')
+    if (lander) this.scene.hideForDescent(lander.id)
+    this.opening = mountOpening(this.root, () => window.setTimeout(() => this.chooseLander(), 0), lander ? {
+      target: () => this.onScreen(lander.id),
+      landed: () => this.scene.revealAfterDescent(DESCENT.revealMs),
+    } : undefined)
     Telemetry.newGame()
     this.refresh()
   }
@@ -694,6 +712,21 @@ export class App {
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') { try { navigator.vibrate(C.feel.holdVibrateMs) } catch { /* not everywhere */ } }
     this.renderQueueBar()
     this.placeCoach()
+  }
+
+  /** Where a unit stands on the screen and how wide it is drawn there, in CSS pixels: the middle of
+   *  its picture, for something drawn over the map to come down onto it. */
+  onScreen(unitId: number): { x: number; y: number; w: number } | null {
+    const u = this.state.units.find(x => x.id === unitId)
+    const piece = u ? UNITS_SHEET.pieces[unitPiece(u.kind) ?? ''] : undefined
+    if (!u || !piece) return null
+    const w = this.state.world.width
+    const x = (u.tile % w) + 0.5, z = Math.floor(u.tile / w) + 0.5
+    const [sx, sy] = this.scene.cam.worldToScreen(x, z)
+    const [sx2] = this.scene.cam.worldToScreen(x + 1, z)
+    const tile = Math.abs(sx2 - sx)
+    const size = drawnSize(piece)
+    return { x: sx, y: sy - size.height * tile * 0.5, w: size.width * tile }
   }
 
   /** Before the first settlement, the lander chosen whenever nothing else is, so the card under the
