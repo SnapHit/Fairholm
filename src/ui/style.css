@@ -1044,6 +1044,26 @@ input[type=text] {
 .found .about .big { font-size: var(--text-head); font-weight: var(--weight-strong); }
 
 /* ---- the hold ring, the toast and the full screens ---------------------------------------------- */
+/* where to hold, on the water, while the lander has not sailed (decision 203): over the map, under
+   everything else, never in the way of the hold it asks for */
+#coach { position: fixed; z-index: 2; width: 0; height: 0; pointer-events: none; display: none; }
+#coach.show { display: block; }
+#coach .pulse {
+  position: absolute; width: var(--coach-ring); height: var(--coach-ring);
+  left: calc(var(--coach-ring) / -2); top: calc(var(--coach-ring) / -2);
+  border-radius: var(--radius-pill); border: var(--coach-line) solid var(--accent);
+  box-shadow: 0 0 0 var(--coach-line) var(--coach-shade), 0 0 var(--coach-ring) var(--coach-glow);
+  animation: coach-pulse var(--coach-ms) var(--ease) infinite;
+}
+#coach .say {
+  position: absolute; left: 0; top: calc(var(--coach-ring) / 2 + var(--coach-gap)); transform: translateX(-50%);
+  white-space: nowrap; font-size: var(--text-small); font-weight: var(--weight-strong); color: var(--ink);
+  background: var(--surface-bar); padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill);
+}
+#coach.nudge .pulse { animation: coach-nudge calc(var(--coach-ms) / 2) var(--ease) 3, coach-pulse var(--coach-ms) var(--ease) var(--coach-ms) infinite; }
+@keyframes coach-pulse { 0%, 100% { transform: scale(var(--coach-small)); opacity: 0.75; } 50% { transform: scale(var(--coach-big)); opacity: 1; } }
+@keyframes coach-nudge { 0% { transform: scale(1); } 50% { transform: scale(var(--coach-nudge)); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { #coach .pulse, #coach.nudge .pulse { animation: none; } }
 #holdring {
   position: fixed; display: none; z-index: 8;
   width: var(--hold-ring); height: var(--hold-ring);

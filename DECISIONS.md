@@ -3643,6 +3643,32 @@ turns by itself, and nothing said what to do.
 - **No rules between the opening lines.** They shared the list row's class, and with it the hairline
   beneath each row.
 
+### 203. The lander cannot be left at sea, and the first settlement is only the lander
+
+From a second first game, 22 November 2026: a player who keeps pressing the orange button, which
+stands out more than the card, still let turns go by at sea; and the carpenter's shop and a cabin
+standing at The Landing from the first turn said the colony had arrived built, on a one way mission
+that starts from nothing.
+
+- **The orange button cannot end a turn the lander has not sailed.** While there is no settlement and
+  the lander's moves are all unused, with no course and no shore beside it to found on, the button
+  reads **Show me**: the lander is chosen, the map glides to show it and the water to hold, the ring
+  there pulses and the phone buzzes, and the card says "Press and hold the ring on the water, then let
+  go to sail there". End turn comes back the moment the lander has moved, has a course, has used its
+  moves, or can found. No move is ever made for the player, so the one gesture stays the only way to
+  move (feel brief section 4).
+- **A ring on the water says where to hold**, with "Hold here" under it, the whole time that is so: a
+  turn's sailing toward the nearest land (`sailHint` in `src/sim/autopilot.ts`). It gives away only
+  the direction of the nearest land, which the setting brief has near in every sensible direction.
+  It takes no touches, so the hold it asks for lands on the map beneath it. A temporary mode, as art
+  brief section 11 allows.
+- **The first settlement is the lander alone until it builds.** The player's settlement founded by
+  the lander is drawn as the beached lander, with the frame of whatever is going up beside it, until
+  it finishes a building of its own (`settlement.conditions.built`, set by `completeBuilding`); then
+  its buildings stand as before. The tools it began with are aboard: in the street the carpenter's
+  shop and the rest are drawn as the lander, once, and named "in the lander". The rules are as they
+  were. A game saved before this shows the lander alone until its next building is finished.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

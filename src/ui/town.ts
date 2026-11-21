@@ -21,6 +21,7 @@ import { buildingName } from '../sim/settlement'
 import { grievanceGathered } from '../sim/grievance'
 import { unitLabel } from '../sim/queue'
 import { SPRITE } from '../render/look'
+import { stillInLander } from '../render/sprites'
 import { tileLook } from '../render/tiles'
 import { h, button, plural } from './dom'
 import { STREET_SHEET_PX } from './theme'
@@ -86,7 +87,11 @@ function madeHere(s: GameState, st: Settlement, slot: BuildingSlot): HTMLElement
 
 /** One building on the street. */
 function buildingLot(app: App, s: GameState, st: Settlement, slot: BuildingSlot, index: number, lit: boolean, settling: (c: Colonist) => number | null): HTMLElement {
-  const box = art(BUILDING_PICTURE[slot.line], hash01(st.id * 31 + index, 17))
+  // the first settlement's tools are still aboard the lander, and each is drawn as the lander until
+  // the settlement has built something of its own (decision 203)
+  const aboard = stillInLander(st, s.charters[st.owner]?.landing === st.tile)
+  // drawn once, at the first of them; the rest stand beside it with no building of their own
+  const box = art(aboard ? (index === 0 ? 'lander-beached' : '') : BUILDING_PICTURE[slot.line], hash01(st.id * 31 + index, 17))
   if (slot.capacity > 0) {
     const stands: HTMLElement[] = []
     for (let i = 0; i < slot.capacity; i++) {
@@ -104,7 +109,7 @@ function buildingLot(app: App, s: GameState, st: Settlement, slot: BuildingSlot,
     class: 'lot' + (lit ? ' can-take' : ''), type: 'button',
     'aria-label': `${slot.name}, ${slot.conversion}${who}${slot.output > 0 ? `, making ${slot.output}` : ''}${slot.warning ? `. ${slot.warning}` : ''}`,
     onClick: () => app.settlementTapSlot(st, slot),
-  }, sign, box, h('span', { class: 'name' }, slot.name)))
+  }, sign, box, h('span', { class: 'name' }, aboard ? `${slot.name}, in the lander` : slot.name)))
 }
 
 /** The lot takes its drawing's width, so its name can wrap under the drawing rather than past it. */

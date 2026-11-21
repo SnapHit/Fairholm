@@ -237,6 +237,30 @@ export function bestLanding(s: GameState, from: number, reach = C.lander.moves *
 }
 
 /** The player's lander, if it is still at sea. */
+/** Where to show a first time player to hold, while the lander sits at sea with its moves unused
+ *  (DECISIONS.md 203): a turn's sailing toward the nearest land, over water, stopping short of the
+ *  shore. Only the direction of the nearest land is given away, and the brief has land near in
+ *  every sensible direction. Null when no land is in reach. */
+export function sailHint(s: GameState): number | null {
+  const lander = playerLander(s)
+  if (!lander) return null
+  const w = s.world.width, h = s.world.height, tiles = s.world.tiles
+  const d = sailingDistance(w, h, tiles, i => isLand(tiles[i]))
+  if (d[lander.tile] < 0) return null
+  let at = lander.tile
+  for (let step = 0; step < C.lander.moves; step++) {
+    let next = -1
+    for (const n of neighbours8(w, h, at)) {
+      if (tiles[n].terrain !== 'water' || d[n] < 0) continue
+      if (d[n] < d[at] && (next < 0 || d[n] < d[next])) next = n
+    }
+    // the water beside the shore is as far as a hint goes: land is never a step
+    if (next < 0) break
+    at = next
+  }
+  return at === lander.tile ? null : at
+}
+
 export function playerLander(s: GameState): Unit | undefined {
   return s.units.find(u => u.owner === 0 && u.kind === 'lander')
 }

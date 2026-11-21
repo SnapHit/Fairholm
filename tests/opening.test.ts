@@ -8,7 +8,8 @@ import { describe, it, expect } from 'vitest'
 import { createGame, applyAction } from '../src/sim/actions'
 import { C } from '../src/sim/constants'
 import { maxMoves, findPath, makeUnit } from '../src/sim/units'
-import { neighbours8, landHeadings, HEADINGS } from '../src/sim/worldgen'
+import { neighbours8, landHeadings, HEADINGS, sailingDistance, isLand, dist } from '../src/sim/worldgen'
+import { sailHint } from '../src/sim/autopilot'
 import { sightOf } from '../src/sim/fog'
 import { playOpening } from './helpers'
 import type { GameState, Unit } from '../src/sim/state'
@@ -145,6 +146,25 @@ describe('the fast lander', () => {
       // comparably fair: no charter has more than three headings more than another
       const two = counts.map(c => c.two)
       expect(Math.max(...two) - Math.min(...two), `${size} ${shape} ${i}`).toBeLessThanOrEqual(3)
+    }
+  })
+})
+
+describe('the first turn shows where to hold', () => {
+  it('on every seed, a turn of water toward the nearest land, which a hold there sails toward', () => {
+    for (const seed of ['hint-a', 'hint-b', 'hint-c', 'hint-d', 'hint-e', 'hint-f']) {
+      const s = createGame(seed, { size: 'small', difficulty: 'standard' }, 3)
+      const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')!
+      const w = s.world.width, h = s.world.height
+      const to = sailHint(s)
+      expect(to, seed).not.toBeNull()
+      expect(s.world.tiles[to!].terrain, seed).toBe('water')
+      expect(dist(w, lander.tile, to!), seed).toBeLessThanOrEqual(C.lander.moves)
+      const d = sailingDistance(w, h, s.world.tiles, i => isLand(s.world.tiles[i]))
+      expect(d[to!], seed).toBeLessThan(d[lander.tile])
+      const from = d[lander.tile]
+      applyAction(s, { t: 'moveUnit', unit: lander.id, path: findPath(s, lander, lander.tile, to!)! })
+      expect(d[lander.tile], seed).toBeLessThan(from)
     }
   })
 })

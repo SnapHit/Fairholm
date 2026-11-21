@@ -12,10 +12,10 @@ import { SYSTEMS } from '../sim/systems'
 import { SEASON_NAMES, season, year } from '../sim/turn'
 import { randomSeed, playRng } from '../sim/rng'
 import { C } from '../sim/constants'
-import { findPath } from '../sim/units'
+import { findPath, maxMoves } from '../sim/units'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
-import { openingAction, siteScore, bestSites } from '../sim/autopilot'
+import { openingAction, siteScore, bestSites, sailHint } from '../sim/autopilot'
 import { planRoute, type RoutePlan, type Route } from '../sim/route'
 import type { HaulStop, UnitOrder } from '../sim/state'
 import { authoringCard } from './card'
@@ -82,6 +82,8 @@ export class App {
   /** The tile the founding control is looking at: the shore the lander would beach on, or the
    *  ground a colonist stands on. The map paints the ring it would work while this is set. */
   foundTarget: number | null = null
+  /** Where to hold, shown on the water to a player whose lander has not sailed this turn. */
+  coachEl!: HTMLElement
   /** The five lines over the opening shot, while they are up. */
   opening: Opening | null = null
   /** Whether the queue is showing its list rather than just its top item. */
@@ -128,9 +130,10 @@ export class App {
     this.toastEl = h('div', { id: 'toast' })
     this.runEl = h('div', { id: 'runsum' })
     this.ring = h('div', { id: 'holdring' })
+    this.coachEl = h('div', { id: 'coach', 'aria-hidden': 'true' }, h('i', { class: 'pulse' }), h('span', { class: 'say' }, 'Hold here'))
     this.overlayEl = h('div', { id: 'overlay' })
     this.audioStrip = h('div', { id: 'audio' })
-    root.append(this.canvas, this.hud, this.audioStrip, this.scrim, this.sheetEl, this.queuebar, this.runEl, this.ring, this.toastEl, this.overlayEl)
+    root.append(this.canvas, this.hud, this.coachEl, this.audioStrip, this.scrim, this.sheetEl, this.queuebar, this.runEl, this.ring, this.toastEl, this.overlayEl)
     this.attachSheetSwipe()
     // the shell never scrolls: it hides its overflow, but a browser bringing a control into view, or
     // a focused field, can still scroll it, and then every tap lands a little off the map it meant
@@ -138,7 +141,7 @@ export class App {
     this.scene = new Scene(this.canvas)
     this.stacks = mountStackCounts(root, this.scene)
     this.routeLayer = mountRouteLayer(root, this.scene)
-    this.scene.onFrame = () => { this.stacks.place(); this.routeLayer.place() }
+    this.scene.onFrame = () => { this.stacks.place(); this.routeLayer.place(); this.placeCoach() }
     this.music = new MusicPlayer(state.settings.audio)
     this.music.onChange = (a) => { this.state.settings.audio = { ...this.state.settings.audio, ...a }; this.renderAudio() }
     this.input = new Input(this.canvas, this.scene.cam, {
@@ -650,6 +653,49 @@ export class App {
 
   /** Choose a unit of the player's: its card takes the queue bar's place, its ring and outline go
    *  on the map, and the camera moves only if the unit would be covered. Any sheet slides away. */
+  /** The water to hold, while the game cannot go on until the lander sails (DECISIONS.md 203): no
+   *  settlement yet, the lander's moves all unused, no course set and no shore beside it to found on.
+   *  Null otherwise, and then End turn is End turn. */
+  mustSail(): number | null {
+    const s = this.state
+    if (s.settlements.some(x => x.owner === 0) || this.opening?.showing) return null
+    const lander = s.units.find(u => u.owner === 0 && u.kind === 'lander')
+    if (!lander || lander.path.length || lander.moves < maxMoves(lander)) return null
+    const w = s.world.width, hh = s.world.height
+    if (neighbours8(w, hh, lander.tile).some(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored && foundingProblem(s, n) === null)) return null
+    return sailHint(s)
+  }
+
+  /** The ring on the water where a hold would sail the lander, kept over its tile as the map moves. */
+  placeCoach() {
+    const tile = this.heldFor === null ? this.mustSail() : null
+    this.coachEl.classList.toggle('show', tile !== null)
+    if (tile === null) return
+    const w = this.state.world.width
+    const [sx, sy] = this.scene.cam.worldToScreen((tile % w) + 0.5, Math.floor(tile / w) + 0.5)
+    this.coachEl.style.left = `${sx}px`
+    this.coachEl.style.top = `${sy}px`
+  }
+
+  /** The orange button while the lander must sail: the lander chosen, the map brought round to it and
+   *  the ring, the ring pulsing again and the phone buzzing, and the card saying what to do. */
+  showSailing() {
+    const tile = this.mustSail()
+    const lander = this.state.units.find(u => u.owner === 0 && u.kind === 'lander')
+    if (tile === null || !lander) { this.endTurn(); return }
+    this.select(lander.id)
+    const w = this.state.world.width
+    const mid = Math.round((Math.floor(lander.tile / w) + Math.floor(tile / w)) / 2) * w + Math.round(((lander.tile % w) + (tile % w)) / 2)
+    this.scene.glideTo(mid, Math.max(this.scene.cam.view.zoom, C.feel.zoom.working))
+    this.aimNotice = 'Press and hold the ring on the water, then let go to sail there.'
+    this.coachEl.classList.remove('nudge')
+    void this.coachEl.offsetWidth
+    this.coachEl.classList.add('nudge')
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') { try { navigator.vibrate(C.feel.holdVibrateMs) } catch { /* not everywhere */ } }
+    this.renderQueueBar()
+    this.placeCoach()
+  }
+
   /** Before the first settlement, the lander chosen whenever nothing else is, so the card under the
    *  map always says what to do next: hold where to sail, and let go (decision 202). */
   chooseLander() {
@@ -1346,6 +1392,7 @@ export class App {
     this.stacks.rebuild(this.state)
     this.renderHud()
     this.renderQueueBar()
+    this.placeCoach()
     this.renderSheet()
     this.renderAudio()
   }
@@ -1397,6 +1444,11 @@ export class App {
       turn.setAttribute('aria-label', 'Turns are running on by themselves. Stop them.')
       // drawn again part way through, the bar carries on from where it had got to
       if (run.leftMs !== null) { turn.style.setProperty('--run-ms', `${run.waitMs}ms`); turn.style.setProperty('--run-from', `${Math.round(run.leftMs - run.waitMs)}ms`) }
+    } else if (this.mustSail() !== null) {
+      // nothing can happen until the lander sails, so the orange button shows how rather than
+      // letting turns go by at sea (decision 203)
+      turn = button('Show me', () => this.showSailing(), 'primary end')
+      turn.setAttribute('aria-label', 'The lander has not sailed. Show where to hold.')
     } else turn = button(label, () => this.endTurn(), 'primary end')
     const card = this.sheetShowing() ? null : this.currentCard()
     this.queuebar.classList.toggle('carded', card !== null)

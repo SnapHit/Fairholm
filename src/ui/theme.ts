@@ -208,6 +208,16 @@ export const TOKENS: Record<string, string> = {
   '--control-h-tiny': '26px',
   '--speaker': '36px',
   '--hold-ring': '56px',
+  // the ring on the water where a first time player is shown to hold (decision 203)
+  '--coach-ring': '60px',
+  '--coach-line': '3px',
+  '--coach-gap': '8px',
+  '--coach-glow': 'rgba(255,154,60,0.75)',
+  '--coach-shade': 'rgba(0,0,0,0.35)',
+  '--coach-ms': '1600ms',
+  '--coach-small': '0.82',
+  '--coach-big': '1.12',
+  '--coach-nudge': '1.6',
   '--hold-ring-hole': '22px',
   '--sheet-max-h': '72vh',
   '--runsum-max-h': '50vh',       // what the turns that ran on brought, at most half the screen

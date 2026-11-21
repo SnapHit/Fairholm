@@ -413,6 +413,9 @@ function construct(s: GameState, st: Settlement, ctx: TurnContext) {
 export function completeBuilding(s: GameState, st: Settlement, id: BuildId, ctx: TurnContext) {
   st.buildings[id.line] = id.tier
   st.building = null
+  // the first thing the settlement built for itself: until then the first settlement is drawn as the
+  // lander it came down in, and nothing standing (DECISIONS.md 203)
+  st.conditions['built'] = st.conditions['built'] ?? s.turn
   if (id.imported) st.imported[id.line] = { boughtTurn: s.turn, starved: 0 }
   ctx.log({ kind: 'build', text: `${st.name} finished its ${buildingName(id)}.`, settlement: st.id })
 }

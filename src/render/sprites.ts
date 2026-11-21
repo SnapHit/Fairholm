@@ -56,10 +56,19 @@ const INDUSTRY = ['carpenter', 'smelter', 'toolworks', 'armoury', 'linenWorks', 
  *  lander where one founded it, the carpenter's shop, a dwelling always, the hall where there is one, the frame of whatever is being built, and then the barn,
  *  the steading and the yard for what the place is for. A large place lives in a longhouse rather
  *  than a cabin. Only the first few of these are drawn; see pieceCount. */
+/** Whether a settlement is still only the lander that founded it: the player's first, before it has
+ *  built anything of its own. The tools it began with are aboard; nothing is standing yet, so the
+ *  one way mission reads as one (DECISIONS.md 203). */
+export function stillInLander(st: Settlement, landing: boolean): boolean {
+  return landing && st.owner === 0 && st.conditions['built'] === undefined && !!SETTLEMENT_ATLAS.pieces['lander-beached']
+}
+
 export function piecesFor(st: Settlement, pop: number, landing = false): string[] {
   const b = st.buildings
   const out: string[] = []
   const want = (name: string) => { if (!out.includes(name) && SETTLEMENT_ATLAS.pieces[name]) out.push(name) }
+  // the lander alone, and the frame of the first thing going up beside it
+  if (stillInLander(st, landing)) { want('lander-beached'); if (st.building) want('frame'); return out }
   // where a lander beached and founded the place, the lander first: the first metal in the colony
   // is the thing that brought you (setting brief section 7, DECISIONS.md 201)
   if (landing) want('lander-beached')
