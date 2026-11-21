@@ -13,6 +13,7 @@ import { isHostileTo } from './military'
 import { surplusRuleFor } from './settlement'
 import { pick } from './rng'
 import { unitLabel } from './queue'
+import { bestSites } from './autopilot'
 
 /** Goods in transit between settlements under a surplus rule. Abstract, arriving after a few turns. */
 function transits(s: GameState) { if (!s.transits) s.transits = []; return s.transits }
@@ -90,6 +91,14 @@ function runImprover(s: GameState, u: Unit, ctx: TurnContext) {
 
 function runExplore(s: GameState, u: Unit, ctx: TurnContext) {
   const w = s.world.width, h = s.world.height
+  // a colonist looking for ground stops once good ground for a settlement has been seen within a
+  // walk, and waits for the player to choose it there (DECISIONS.md 195)
+  if (u.order?.kind === 'explore' && u.order.until === 'site' && s.settlements.some(x => x.owner === 0) && bestSites(s, { tile: u.tile }, 1, { walk: true, seen: true }).length) {
+    u.order = null
+    u.path = []
+    ctx.log({ kind: 'event', text: 'A colonist out looking has seen ground fit for a settlement within a walk.', tile: u.tile })
+    return
+  }
   // head for the nearest unexplored land tile, else wander
   let best = -1, bd = 1e9
   for (let i = 0; i < s.world.tiles.length; i++) {

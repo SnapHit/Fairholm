@@ -47,7 +47,8 @@ export type Action =
   | { t: 'buyImported'; settlement: number; line: BuildId['line'] }
   | { t: 'buyPassage' }
   | { t: 'educate'; settlement: number; colonist: number }
-  | { t: 'equip'; settlement: number; colonist: number; as: LandKind }
+  /** With `order`, the new unit starts under it: a colonist sent out to look for ground (decision 195). */
+  | { t: 'equip'; settlement: number; colonist: number; as: LandKind; order?: UnitOrder }
   | { t: 'disband'; unit: number }
   | { t: 'moveUnit'; unit: number; path: number[] }
   | { t: 'setUnitOrder'; unit: number; order: UnitOrder | null }
@@ -355,6 +356,7 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
       st.colonists.splice(a.colonist, 1)
       col.job = { kind: 'idle' }
       const u = makeUnit(s, 0, a.as, st.tile, col)
+      if (a.order) u.order = a.order
       s.units.push(u)
       syncWorkedTiles(s)
       s.actionsThisTurn++

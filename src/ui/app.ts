@@ -759,12 +759,14 @@ export class App {
     const v = this.scene.cam.view
     const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit && x.owner === 0) : undefined
     const marks = u && u.kind === 'colonist' && !u.order && u.path.length === 0 && s.settlements.some(x => x.owner === 0)
-      ? bestSites(s, { tile: u.tile }, C.founding.ringed, { spread: C.founding.ringSpread, walk: true }) : []
+      ? bestSites(s, { tile: u.tile }, C.founding.ringed, { spread: C.founding.ringSpread, walk: true, seen: true }) : []
     const key = marks.join(',')
     if (key === this.sitesKey) return
     this.sitesKey = key
     this.scene.siteMarks = marks.length ? marks : null
     this.scene.updateOverlay(s)
+    // the chosen colonist's card says to hold a mark once there are marks to hold
+    this.renderQueueBar()
   }
 
   /** Draw the plotted route, or take it away. */

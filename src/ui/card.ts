@@ -144,7 +144,7 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
   } else {
     if (u.colonist) bits.push(standingWords(u.colonist))
     else if (!isHull(u.kind)) bits.push(u.quality)
-    if (u.order) bits.push(ORDER_WORDS[u.order.kind])
+    if (u.order) bits.push(u.order.kind === 'explore' && u.order.until === 'site' ? 'looking for ground to found on' : ORDER_WORDS[u.order.kind])
     const cargo = cargoWords(u)
     if (cargo) bits.push(cargo)
     // a colonist with the best ground marked for it is told to hold a mark (DECISIONS.md 195)

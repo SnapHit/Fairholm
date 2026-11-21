@@ -203,7 +203,9 @@ export type UnitKind = LandKind | HullKind | CompanyKind | 'lander'
 export type Quality = 'raw' | 'hardened' | 'sworn'
 
 export type UnitOrder =
-  | { kind: 'explore' }
+  /** With `until: 'site'`, a colonist looking for ground: it explores until good ground for a
+   *  settlement is seen within a walk, then stops for the player (DECISIONS.md 195). */
+  | { kind: 'explore'; until?: 'site' }
   | { kind: 'goto'; tile: number }
   | { kind: 'garrison'; settlement: number }
   | { kind: 'patrol'; tiles: number[]; next: number }

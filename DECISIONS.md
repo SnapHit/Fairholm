@@ -3425,14 +3425,20 @@ settlement on any of three worlds, and the aim line asked for one all game.
 - Someone sent out is chosen on the map at once, with the camera between them and the best ground,
   and the best `C.founding.ringed` places within a walk are marked in the interface's accent, the
   best with its ring (`bestSites`, which the machine players' settlers now use too, so the pace table
-  is unchanged). Bone read as fog on unseen ground. The marks are a mode tied to the choice and go
-  when the colonist is let go or sets off, so the map is not decorated with data (art direction brief
+  is unchanged). Bone read as fog on unseen ground. Only ground the player has seen is marked: a mark
+  in the fog would tell them what lies under it. The marks are a mode tied to the choice and go when
+  the colonist is let go or sets off, so the map is not decorated with data (art direction brief
   section 11). Their card says to hold a marked place and let go.
+- Where no good ground has been seen within a walk, the card offers **Send someone out to look**,
+  the idle card **Send them out to look for ground**, and a colonist's own card **Look for ground**:
+  an explore order with `until: 'site'`, which stops by itself, with a line in the dispatch, once good
+  ground is seen within a walk. A standing order moves the colonist, as the unit sheet's Explore by
+  itself always could; no card moves a unit to a place.
 - A colonist standing where it may found has **Found here** on its queue card as well as its own.
-  Movement is still only hold and release: no card moves a unit.
+  Movement to a place is still only hold and release.
 
 **After.** With the one gesture the card teaches added to the card follower (hold the brightest mark
-and let go), it founds 8 to 12 settlements and has 24 to 34 buildings standing after 150 turns on six
+and let go), it founds 9 to 13 settlements and has 28 to 38 buildings standing after 150 turns on six
 worlds, where it had founded none. Learning a crop from the peoples who were here first, which needs a
 colonist beside them, can now happen.
 

@@ -42,9 +42,10 @@ export function siteScore(s: GameState, tile: number): number {
 /** The best ground for new settlements within reach of a settlement, best first: legal to found, not
  *  on a people's land or crowding a rival's settlement, scored by the ring, with a bonus for a coast,
  *  less for every tile of walking and for ground nobody has seen. The settlers of the machine players
- *  take the first; the interface rings the best three for the player's own (DECISIONS.md 195). With
- *  `spread`, no two closer than that; with `walk`, only ground a colonist could walk to from here. */
-export function bestSites(s: GameState, from: Pick<Settlement, 'tile'>, n = 3, opts: { spread?: number; walk?: boolean } = {}): number[] {
+ *  take the first; the interface marks the best three for the player's own (DECISIONS.md 195). With
+ *  `spread`, no two closer than that; with `walk`, only ground a colonist could walk to from here;
+ *  with `seen`, only ground the player has seen. */
+export function bestSites(s: GameState, from: Pick<Settlement, 'tile'>, n = 3, opts: { spread?: number; walk?: boolean; seen?: boolean } = {}): number[] {
   const w = s.world.width, h = s.world.height
   const tiles = s.world.tiles
   const r = C.autopilot.settleRange
@@ -57,6 +58,9 @@ export function bestSites(s: GameState, from: Pick<Settlement, 'tile'>, n = 3, o
     if (d < r.min || d > r.max) continue
     const t = tiles[i]
     if (!isLand(t) || t.terrain === 'mountain') continue
+    // the player is shown only ground they have seen: marking a place in the fog would tell them
+    // what lies under it
+    if (opts.seen && !t.explored) continue
     if (foundingProblem(s, i) !== null) continue
     if (s.settlements.some(st => st.owner > 0 && dist(w, st.tile, i) < C.autopilot.rivalClearance)) continue
     if (s.predecessors.some(p => p.territory.includes(i))) continue
@@ -113,18 +117,40 @@ export function foundingChances(s: GameState): QueueItem[] {
   for (const st of own.slice().sort((a, b) => b.colonists.length - a.colonists.length)) {
     const who = settlerFrom(s, st)
     if (who < 0) continue
-    const site = bestSites(s, st, 1, { walk: true })[0]
-    if (site === undefined) continue
-    const d = dist(w, st.tile, site)
+    const site = bestSites(s, st, 1, { walk: true, seen: true })[0]
+    const explain = 'A colonist sent out walks to new ground and founds a settlement there. Ground of another kind grows what this one cannot.'
+    if (site !== undefined) {
+      const d = dist(w, st.tile, site)
+      return [{
+        key: `canFound:${st.id}`, group: 'canFound', type: 5, title: `${st.name} can found a new settlement`,
+        body: `Someone can be spared, and good ground lies ${d} tiles ${compass(w, st.tile, site)}. Send them out, then hold one of the marked places and let go.`,
+        explain, settlement: st.id, magnitude: 1, since: s.turn, opens: 'settlement',
+        choices: [{ label: 'Send someone out', action: { t: 'equip', settlement: st.id, colonist: who, as: 'colonist' } }],
+      }]
+    }
+    // nothing fit seen yet: one goes out to look, and stops when they see some
+    if (!unseenLandNear(s, st.tile, C.autopilot.settleRange.max)) continue
     return [{
-      key: `canFound:${st.id}`, group: 'canFound', type: 5, title: `${st.name} can found a new settlement`,
-      body: `Someone can be spared, and good ground lies ${d} tiles ${compass(w, st.tile, site)}. Send them out, then hold one of the ringed places and let go.`,
-      explain: 'A colonist sent out walks to new ground and founds a settlement there. Ground of another kind grows what this one cannot.',
-      settlement: st.id, magnitude: 1, since: s.turn, opens: 'settlement',
-      choices: [{ label: 'Send someone out', action: { t: 'equip', settlement: st.id, colonist: who, as: 'colonist' } }],
+      key: `canFound:${st.id}`, group: 'canFound', type: 5, title: `${st.name} could found a new settlement`,
+      body: 'Someone can be spared, but no ground fit for a settlement has been seen within a walk. Send them out to look: they stop when they see some.',
+      explain, settlement: st.id, magnitude: 1, since: s.turn, opens: 'settlement',
+      choices: [{ label: 'Send someone out to look', action: { t: 'equip', settlement: st.id, colonist: who, as: 'colonist', order: { kind: 'explore', until: 'site' } } }],
     }]
   }
   return []
+}
+
+/** Whether there is land nobody has seen within `r` tiles: somewhere a colonist could go and look. */
+export function unseenLandNear(s: GameState, tile: number, r: number): boolean {
+  const w = s.world.width, h = s.world.height
+  const x0 = tile % w, z0 = Math.floor(tile / w)
+  for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    const x = x0 + dx, z = z0 + dz
+    if (x < 0 || z < 0 || x >= w || z >= h) continue
+    const t = s.world.tiles[z * w + x]
+    if (!t.explored && isLand(t) && t.terrain !== 'mountain') return true
+  }
+  return false
 }
 
 /** The founding opportunity as a system: nothing to resolve, one card at most (DECISIONS.md 195). */

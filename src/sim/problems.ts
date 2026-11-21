@@ -37,7 +37,7 @@ import { canConsign, isEmbargoed, dumpedGoods, buyPrice, standingSale, isInputHe
 import { shipRuleState, shipsUnder } from './orders'
 import { offerRuleState, MANUFACTURED } from './predecessors'
 import { isLand, dist } from './worldgen'
-import { bestSites, compass } from './autopilot'
+import { bestSites, compass, unseenLandNear } from './autopilot'
 
 /** A problem: a queue item before the queue's `since`, and where on the settlement screen it shows. */
 export interface Problem extends Omit<QueueItem, 'since'> {
@@ -677,15 +677,18 @@ function idle(s: GameState, lk: Look, out: Problem[]) {
   // work the player chooses to start, so it is offered and never given by default
   const civic = !first ? meetingRoom(st) : 0
   // and new ground: one of them could go out on foot and found a settlement (DECISIONS.md 195)
-  const site = !first && st.colonists.length >= C.founding.fromPeople ? bestSites(s, st, 1, { walk: true })[0] : undefined
+  const site = !first && st.colonists.length >= C.founding.fromPeople ? bestSites(s, st, 1, { walk: true, seen: true })[0] : undefined
   const choices: QueueChoice[] = []
   if (first) choices.push({ label: placed.length === 1 ? `Put them ${jobPlace(st, first)}` : 'Put them to work', action: { t: 'autoAssign', settlement: st.id, only: placed } })
+  // with no good ground seen within a walk, one goes out to look, and stops when they see some
+  const look = !first && site === undefined && st.colonists.length >= C.founding.fromPeople && unseenLandNear(s, st.tile, C.autopilot.settleRange.max)
   if (site !== undefined) choices.push({ label: over.length === 1 ? 'Send them out to found' : 'Send one out to found', action: { t: 'equip', settlement: st.id, colonist: over[0], as: 'colonist' } })
+  else if (look) choices.push({ label: over.length === 1 ? 'Send them out to look for ground' : 'Send one out to look for ground', action: { t: 'equip', settlement: st.id, colonist: over[0], as: 'colonist', order: { kind: 'explore', until: 'site' } } })
   if (civic) choices.push({ label: over.length === 1 ? 'Put them in the meeting house' : 'Put one in the meeting house', action: assign(st, over[0], { kind: 'building', line: 'meeting' }) })
   out.push({
     key: `idle:${st.id}`, group: 'idle', type: 4,
     title: over.length === 1 ? `Someone at ${st.name} has nothing to do` : `${over.length} people at ${st.name} have nothing to do`,
-    body: `${lead}${where}${site !== undefined ? ` Good ground lies ${dist(s.world.width, st.tile, site)} tiles ${compass(s.world.width, st.tile, site)}, where one could found a settlement.` : ''}${civic ? ' The meeting house has room, where they would gather grievance against the Company.' : ''}`,
+    body: `${lead}${where}${site !== undefined ? ` Good ground lies ${dist(s.world.width, st.tile, site)} tiles ${compass(s.world.width, st.tile, site)}, where one could found a settlement.` : look ? ' One could go out and look for ground to found a settlement on.' : ''}${civic ? ' The meeting house has room, where they would gather grievance against the Company.' : ''}`,
     explain: 'Tap a person, then pick a tile or a building. One body, one job.',
     settlement: st.id, magnitude: over.length, opens: 'settlement', short: 'Someone idle', choices,
   })
