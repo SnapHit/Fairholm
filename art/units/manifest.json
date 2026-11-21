@@ -48,6 +48,15 @@
   "facing": "front",
   "waterline": 120.2
  },
+ "lighter": {
+  "source": "lighter.png",
+  "w": 263,
+  "h": 156,
+  "people": 1.8,
+  "personPx": 86.4,
+  "facing": "left",
+  "waterline": 148.2
+ },
  "militia": {
   "source": "militia.jpg",
   "w": 56,

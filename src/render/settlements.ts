@@ -130,7 +130,7 @@ export function buildSettlements(s: GameState, heightAt: (x: number, z: number) 
     // the banner below is the whole settlement, per art brief section 10
     const drawn = era === 0
     if (drawn) {
-      for (const place of layOut(st, pop, cx, cz, heightAt, onLand, sheet)) {
+      for (const place of layOut(st, pop, cx, cz, heightAt, onLand, sheet, s.charters[st.owner]?.landing === st.tile)) {
         place.tag = { kind: 'settlement', id: st.id }
         billboards.push(place)
         // one group per settlement: the buildings shade together, not one on top of another

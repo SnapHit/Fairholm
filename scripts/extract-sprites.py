@@ -285,7 +285,8 @@ def cut(job):
     # does for a figure with a tool held over its head
     ref_top, ref_bottom = job.get('reference', (y0, y1))
     ref_px = max(1, ref_bottom - ref_top)
-    scale = job['people'] * PERSON_PX * job.get('resolution', 1.0) / ref_px
+    # a building is cut to a height in the settlement sheet's pixels rather than in people
+    scale = job['px'] / ref_px if 'px' in job else job['people'] * PERSON_PX * job.get('resolution', 1.0) / ref_px
     out_w, out_h = max(1, int(round((x1 - x0) * scale))), max(1, int(round((y1 - y0) * scale)))
 
     # the alpha, soft by under a pixel at the source, then both down together
@@ -310,12 +311,13 @@ def cut(job):
     final[..., :3] = (np.clip(rgb, 0, 255) // step * step + step // 2).astype(np.uint8)
     final[..., 3] = np.clip(small[..., 3], 0, 255).astype(np.uint8)
 
-    os.makedirs(OUT, exist_ok=True)
-    Image.fromarray(final).save(os.path.join(OUT, f'{name}.png'))
+    out_dir = job.get('out', OUT)
+    os.makedirs(out_dir, exist_ok=True)
+    Image.fromarray(final).save(os.path.join(out_dir, f'{name}.png'))
     entry = {
         'source': job['source'],
         'w': out_w, 'h': out_h,
-        'people': job['people'],
+        'people': job.get('people'),
         # how many pixels a standing person is in this piece: the sheet's person, less for a piece
         # stored at a lower resolution. The renderer sizes the piece from this, so a drawing that
         # stands taller than its subject, a figure with a pick over its head, stands taller on the map
@@ -360,7 +362,50 @@ UNITS = [
                  dict(rows=(615, 1024), dark=186.0, light=222.0, tint=(0, 5, 7), low=0.92, high=1.06, chroma=12)],
          smoke=True, resolution=0.6,
          waterline=640),
+    # the lighter, the boat the lander carried, built of the lander's own panels (DECISIONS.md 201).
+    # Drawn on a black and mid grey board that colour cannot key, so it is keyed first by
+    # scripts/key-board.py (lighter.jpg 3 137)
+    dict(name='lighter', source='lighter.png', people=1.8, facing='left', keyed=True,
+         resolution=0.6, waterline=712),
 ]
+
+# Buildings drawn one to a picture, cut to the early settlement sheet's scale (the cabin's wall is
+# seventy pixels, src/render/look.ts) and added to art/settlement-early.png by `buildings`. Each is
+# keyed first by scripts/key-board.py: carpenter.jpg 175 227.
+BUILDINGS_OUT = 'art/buildings'
+BUILDINGS = [
+    # the lander beached where it founded the first settlement, the first metal in the colony, is drawn
+    # for as 'lander-beached' (src/render/sprites.ts) and waits for a drawing on flat sand
+    # the carpenter's shop, square cut timber with a panel of the lander on its roof
+    dict(name='carpenter', source='../buildings/carpenter.png', px=185, out=BUILDINGS_OUT, keyed=True),
+]
+
+
+def add_buildings():
+    """Cut each building and lay it into art/settlement-early.png beside the seven drawn there, with
+    an entry in its manifest marked keyed, so scripts/clean-sprites.mjs leaves its pale panels alone."""
+    sheet = Image.open('art/settlement-early.png').convert('RGBA')
+    man = json.load(open('art/settlement-early.json'))
+    pieces = {k: v for k, v in man['pieces'].items() if not v.get('keyed')}
+    cut_pieces = []
+    for job in BUILDINGS:
+        cut(job)
+        cut_pieces.append((job['name'], Image.open(os.path.join(BUILDINGS_OUT, f"{job['name']}.png")).convert('RGBA')))
+    # the drawn sheet is kept as it was; the new pieces go in a row beneath it
+    base_h = max(v['y'] + v['h'] for v in pieces.values()) + 4
+    W = max(sheet.width, sum(im.width + 4 for _, im in cut_pieces) + 4)
+    H = base_h + max(im.height for _, im in cut_pieces) + 4
+    out = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    out.paste(sheet.crop((0, 0, sheet.width, base_h)), (0, 0))
+    x = 2
+    for name, im in cut_pieces:
+        out.paste(im, (x, base_h))
+        pieces[name] = {'x': x, 'y': base_h, 'w': im.width, 'h': im.height, 'keyed': True}
+        x += im.width + 4
+    out.save('art/settlement-early.png')
+    man['pieces'] = pieces
+    json.dump(man, open('art/settlement-early.json', 'w'), indent=1)
+    print(f'art/settlement-early.png: {W}x{H}, {len(pieces)} pieces')
 
 # The first era buildings came off their own board with an earlier form of this script, and the
 # committed art/settlement-early.png and .json are what the sheet was cut to by hand after it. This
@@ -419,6 +464,9 @@ if __name__ == '__main__':
     wanted = sys.argv[1:]
     if wanted == ['settlement']:
         cut_settlement(SETTLEMENT)
+        sys.exit(0)
+    if wanted == ['buildings']:
+        add_buildings()
         sys.exit(0)
     path = os.path.join(OUT, 'manifest.json')
     manifest = json.load(open(path)) if os.path.exists(path) else {}

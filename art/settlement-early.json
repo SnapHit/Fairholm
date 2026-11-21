@@ -60,6 +60,13 @@
    "h": 169,
    "anchorX": 110,
    "anchorY": 165
+  },
+  "carpenter": {
+   "x": 2,
+   "y": 406,
+   "w": 248,
+   "h": 185,
+   "keyed": true
   }
  }
 }

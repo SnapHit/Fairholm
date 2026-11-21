@@ -8,14 +8,15 @@ import type { AtlasManifest } from './billboards'
 
 export const SETTLEMENT_ATLAS: AtlasManifest = {
   texture: 'settlement-early.png',
-  size: [1024, 398],
+  size: [1024, 401],
   pieces: {
-    barn: { x: 4, y: 228, w: 219, h: 166, anchorX: 85.1, anchorY: 156.3 },
-    frame: { x: 227, y: 228, w: 220, h: 155, anchorX: 122.3, anchorY: 152.4 },
+    barn: { x: 227, y: 228, w: 219, h: 166, anchorX: 85.1, anchorY: 156.3 },
+    carpenter: { x: 402, y: 4, w: 248, h: 185, anchorX: 147.8, anchorY: 175.2 },
+    frame: { x: 450, y: 228, w: 220, h: 155, anchorX: 122.3, anchorY: 152.4 },
     hall: { x: 4, y: 4, w: 170, h: 220, anchorX: 63.3, anchorY: 213.8 },
     lodge: { x: 178, y: 4, w: 220, h: 195, anchorX: 134.4, anchorY: 175.1 },
-    longhouse: { x: 402, y: 4, w: 219, h: 175, anchorX: 109.3, anchorY: 172.3 },
-    steading: { x: 451, y: 228, w: 220, h: 155, anchorX: 83.0, anchorY: 139.4 },
-    yard: { x: 625, y: 4, w: 219, h: 169, anchorX: 83.0, anchorY: 159.3 },
+    longhouse: { x: 654, y: 4, w: 219, h: 175, anchorX: 109.3, anchorY: 172.3 },
+    steading: { x: 674, y: 228, w: 220, h: 155, anchorX: 83.0, anchorY: 139.4 },
+    yard: { x: 4, y: 228, w: 219, h: 169, anchorX: 83.0, anchorY: 159.3 },
   },
 }

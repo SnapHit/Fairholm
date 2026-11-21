@@ -7,7 +7,7 @@
  "note": "personPx is how tall a standing person is in that piece; ground anchor at the feet, wheels or keel; waterline where a hull sits in the water; profiles face left as drawn",
  "pieces": {
   "battery": {
-   "x": 483,
+   "x": 750,
    "y": 267,
    "w": 168,
    "h": 86,
@@ -17,7 +17,7 @@
    "facing": "left"
   },
   "colonist": {
-   "x": 298,
+   "x": 565,
    "y": 267,
    "w": 60,
    "h": 144,
@@ -27,7 +27,7 @@
    "facing": "front"
   },
   "company-regular": {
-   "x": 362,
+   "x": 629,
    "y": 267,
    "w": 57,
    "h": 144,
@@ -37,7 +37,7 @@
    "facing": "front"
   },
   "hauler": {
-   "x": 4,
+   "x": 271,
    "y": 267,
    "w": 290,
    "h": 144,
@@ -67,8 +67,19 @@
    "facing": "front",
    "waterline": 120.2
   },
+  "lighter": {
+   "x": 4,
+   "y": 267,
+   "w": 263,
+   "h": 156,
+   "anchorX": 146,
+   "anchorY": 156,
+   "personPx": 86.4,
+   "facing": "left",
+   "waterline": 148.2
+  },
   "militia": {
-   "x": 423,
+   "x": 690,
    "y": 267,
    "w": 56,
    "h": 144,

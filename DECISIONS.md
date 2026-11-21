@@ -3597,6 +3597,35 @@ From playing the first turns on a phone, 22 November 2026.
   anything near home is unseen, and the unit's sheet has it. The lighter's card says it is the boat
   the lander carried. The explorer-done card is for those on foot.
 
+### 201. The lighter is the lander's boat, and the carpenter's shop is modern timber
+
+**What.** Two new drawings, generated with Gemini on 22 November 2026 from prompts that attached the
+lander and the old pieces as references.
+
+- **The lighter** has its own piece: a small workboat built of the lander's cream panels, with a
+  cabin and a short folding mast, 1.8 people to the masthead, where it borrowed the wooden trader
+  at six tenths. The setting brief, section 7, says the lighter is the boat the lander carried; a
+  wooden ship appearing from nowhere said otherwise.
+- **The carpenter's shop** is square cut sawn timber, a shallow single pitch roof, large regular
+  windows and one of the lander's panels as the roof edge: "modern in design, pre-industrial in
+  material" (setting brief section 6), where the log cabin drawings read as a heritage village. It
+  is the carpenter's picture in the town street and the build catalogue, and every settlement, which
+  begins with one, now draws it first. It is the trial of the restyle; the other six drawings stay
+  until it has been seen in play.
+- **The beached lander** was drawn too, and is held back: it stands on a sand bank cut off square at
+  its left, which reads as a block on the map. `piecesFor` already puts a `lander-beached` piece first
+  at a settlement founded where its charter's lander came down, and draws nothing until the sheet has
+  one.
+- **Keying.** The new drawings came on boards the colour keyer could not take (a black and mid grey
+  board under a boat with dark grey trim, and boards not on one grid). `scripts/key-board.py` keys
+  them first with GrabCut, seeded by the board reached from the edge and by everything with colour,
+  then peels board off the edge and out of the strips between ropes. The extractor then takes the
+  result as already keyed, and a building is cut to the settlement sheet's scale (`px`).
+- **Weight.** Both sheets are now stored as indexed pngs of 255 colours (`scripts/index-sheet.py`),
+  as the first settlement sheet shipped: the settlement sheet goes from 137 to 64 kB with the new
+  piece, the units sheet from 243 to 81 kB. Side by side at the sheet's own pixels the two cannot be
+  told apart.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

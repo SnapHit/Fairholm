@@ -52,14 +52,19 @@ export function pieceCount(pop: number): number {
 
 const INDUSTRY = ['carpenter', 'smelter', 'toolworks', 'armoury', 'linenWorks', 'ropeWorks', 'dyeWorks', 'still', 'finishing'] as const
 
-/** Which buildings a settlement shows, in the order they matter, from what it holds: a dwelling
- *  always, the hall where there is one, the frame of whatever is being built, and then the barn,
+/** Which buildings a settlement shows, in the order they matter, from what it holds: the beached
+ *  lander where one founded it, the carpenter's shop, a dwelling always, the hall where there is one, the frame of whatever is being built, and then the barn,
  *  the steading and the yard for what the place is for. A large place lives in a longhouse rather
  *  than a cabin. Only the first few of these are drawn; see pieceCount. */
-export function piecesFor(st: Settlement, pop: number): string[] {
+export function piecesFor(st: Settlement, pop: number, landing = false): string[] {
   const b = st.buildings
   const out: string[] = []
   const want = (name: string) => { if (!out.includes(name) && SETTLEMENT_ATLAS.pieces[name]) out.push(name) }
+  // where a lander beached and founded the place, the lander first: the first metal in the colony
+  // is the thing that brought you (setting brief section 7, DECISIONS.md 201)
+  if (landing) want('lander-beached')
+  // the carpenter's shop every settlement begins with, then where people live
+  if (b.carpenter > 0) want('carpenter')
   want(pop >= SPRITE.longhouseAt ? 'longhouse' : 'lodge')
   if (b.meeting > 0 || b.press > 0 || b.school > 0) want('hall')
   if (st.building) want('frame')
@@ -67,7 +72,7 @@ export function piecesFor(st: Settlement, pop: number): string[] {
   if (b.stable > 0 || st.orders.purpose === 'horses') want('steading')
   if (INDUSTRY.some(line => b[line] > 0) || b.wharf > 0 || b.works > 0) want('yard')
   // and the rest of the kit, for a place that has outgrown what it holds
-  for (const name of ['barn', 'yard', 'steading', 'lodge', 'hall']) want(name)
+  for (const name of ['barn', 'yard', 'steading', 'lodge', 'hall', 'carpenter']) want(name)
   return out
 }
 
@@ -81,9 +86,10 @@ export function layOut(
   heightAt: (x: number, z: number) => number,
   onLand: (x: number, z: number) => boolean,
   sheet: number,
+  landing = false,
 ): Billboard[] {
   const n = pieceCount(pop)
-  const names = piecesFor(st, pop).slice(0, n)
+  const names = piecesFor(st, pop, landing).slice(0, n)
   const scale = sheetScale()
   const id = st.id
   // the lattice: four places around the middle, the far ones first so the hall stands behind. A

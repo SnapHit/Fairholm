@@ -77,7 +77,7 @@ export function goodMark(g: GoodId | 'frame' | 'grievance', size: IconSize = 'in
  *  carries the difference. The palisade borrows the steading for its fence, and the works borrow the
  *  workshops they would grow from. */
 export const BUILDING_PICTURE: Record<BuildingLine, string> = {
-  carpenter: 'lodge',
+  carpenter: 'carpenter',
   smelter: 'yard', toolworks: 'yard', armoury: 'yard', finishing: 'yard',
   linenWorks: 'longhouse', ropeWorks: 'longhouse', dyeWorks: 'longhouse', still: 'longhouse',
   meeting: 'hall', press: 'hall', school: 'hall', agentOffice: 'hall',

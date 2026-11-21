@@ -433,7 +433,6 @@ export const UNIT_SPRITE = {
     siegeTrain: 'battery',
     damagedSiegeTrain: 'battery',
     damagedBattery: 'battery',
-    lighter: 'trader',
     raider: 'trader',
     cutter: 'trader',
     companyShip: 'trader',
@@ -444,14 +443,14 @@ export const UNIT_SPRITE = {
    *  manifest carries (personPx, how many pixels a person is in that piece), so a piece stored at
    *  a lower resolution still stands at its own size. The table itself, in people, is in
    *  scripts/extract-sprites.py where the pixels are made: person 1, outrider 1.35, hauler 1 and
-   *  about 2.4 long, battery 0.6, trader 3 to the masthead, lander 1.8. */
+   *  about 2.4 long, battery 0.6, trader 3 to the masthead, lander 1.8, lighter 1.8 to the masthead. */
   tileHeight: 0.52,
   /** For a sheet cut before manifests carried a person: how many pixels tall a person was. */
   referenceHeight: 144,
   /** What a kind that borrows another's drawing is drawn at, as a share of the drawing's own size.
    *  The smaller hulls borrow the trader's; the Company's horse borrows the regular's at full size
    *  and is told from it by its ring alone. */
-  scale: { lighter: 0.6, raider: 0.85, cutter: 0.95 } as Partial<Record<UnitKind, number>>,
+  scale: { raider: 0.85, cutter: 0.95 } as Partial<Record<UnitKind, number>>,
   /** What damage does to a drawing: darker, drained toward grey, and knocked a few degrees askew on
    *  the ground. Degrees, turned clockwise seen from above. */
   damaged: { darken: 0.72, desaturate: 0.55, tiltDeg: 7 },

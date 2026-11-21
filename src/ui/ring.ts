@@ -72,7 +72,7 @@ function keep(key: string, canvas: HTMLCanvasElement) {
  *  the props are laid again. */
 function pictureKey(app: App, s: GameState, st: Settlement, px: number): string {
   const pop = st.colonists.length
-  const pieces = piecesFor(st, pop).slice(0, pieceCount(pop)).join('+')
+  const pieces = piecesFor(st, pop, s.charters[st.owner]?.landing === st.tile).slice(0, pieceCount(pop)).join('+')
   const w = s.world.width, hh = s.world.height
   const seen = new Set<number>([st.tile])
   for (const n of neighbours8(w, hh, st.tile)) { seen.add(n); for (const m of neighbours8(w, hh, n)) seen.add(m) }
