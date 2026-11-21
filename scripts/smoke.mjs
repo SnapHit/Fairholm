@@ -244,13 +244,24 @@ const runSetup = await page.evaluate(async () => {
   a.closeSheet()
   const boat = s.units.find(u => u.owner === 0 && u.kind === 'lighter')
   if (!boat) return { ok: false, why: 'no lighter' }
-  // the farthest known water it can reach, short of a long way round
-  let best = null
-  for (let t = 0; t < s.world.tiles.length; t++) {
-    const tile = s.world.tiles[t]
-    if (tile.terrain !== 'water' || !tile.explored) continue
-    const p = findPath(s, boat, boat.tile, t)
-    if (p && p.length <= 30 && (!best || p.length > best.len)) best = { t, len: p.length }
+  // the farthest known water it can reach, short of a long way round. A world whose known sea is
+  // too small for three turns' sailing has the sea about the boat shown first: this checks the
+  // turns, not the fog
+  const farthest = () => {
+    let best = null
+    for (let t = 0; t < s.world.tiles.length; t++) {
+      const tile = s.world.tiles[t]
+      if (tile.terrain !== 'water' || !tile.explored) continue
+      const p = findPath(s, boat, boat.tile, t)
+      if (p && p.length <= 30 && (!best || p.length > best.len)) best = { t, len: p.length }
+    }
+    return best
+  }
+  let best = farthest()
+  if (!best || best.len < 7) {
+    const w = s.world.width
+    for (let t = 0; t < s.world.tiles.length; t++) if (s.world.tiles[t].terrain === 'water' && Math.max(Math.abs(t % w - boat.tile % w), Math.abs(Math.floor(t / w) - Math.floor(boat.tile / w))) <= 15) s.world.tiles[t].explored = true
+    best = farthest()
   }
   if (!best || best.len < 7) return { ok: false, why: 'no water far enough', best }
   a.turns.allowInRigs = true
