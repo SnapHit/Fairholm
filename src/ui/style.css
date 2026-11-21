@@ -117,6 +117,8 @@ body {
 }
 #opening.gone { opacity: 0; }
 #opening .line {
+  /* not the list row of the same class: no rule beneath, no row padding */
+  display: block; border: none; padding: 0; min-height: 0;
   max-width: var(--opening-width); margin: 0; text-align: center;
   font-size: var(--text-opening); line-height: var(--leading); font-weight: var(--weight-medium);
   color: var(--ink); text-shadow: var(--shadow-opening);

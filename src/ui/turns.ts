@@ -21,7 +21,9 @@ import type { DerivedQueue, QueueItem } from '../sim/state'
 import { AUTO_TURN_QUIET_MS, AUTO_TURN_PAUSE_MS } from './theme'
 
 /** The groups that stop a run every turn they stand, seen or not. */
-const ALWAYS_STOPS = new Set(['hunger', 'threat', 'wave', 'blockade', 'sail', 'demand'])
+// The lander at sea with no orders is among them: before the first settlement nothing happens by
+// waiting, and three turns went by on a first game with the lander where it came down (decision 202)
+const ALWAYS_STOPS = new Set(['hunger', 'threat', 'wave', 'blockade', 'sail', 'demand', 'lander'])
 
 /** What the runner needs of the app. */
 export interface RunnerHost {

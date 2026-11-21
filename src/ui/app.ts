@@ -175,6 +175,7 @@ export class App {
     else {
       this.scene.cam.centreOn(this.homeTile(), C.feel.zoom.working)
       this.refresh()
+      this.chooseLander()
       if (resumed) this.showReturnScreen()
     }
     if (notice) this.toast(notice)
@@ -210,7 +211,8 @@ export class App {
     this.foundTarget = null
     this.scene.foundPreview = null
     this.opening?.dismiss()
-    this.opening = mountOpening(this.root)
+    // the lines gone, the lander is chosen, so its card says what to do: hold where to sail (decision 202)
+    this.opening = mountOpening(this.root, () => window.setTimeout(() => this.chooseLander(), 0))
     Telemetry.newGame()
     this.refresh()
   }
@@ -409,6 +411,7 @@ export class App {
     if (this.sheet.kind === 'unit' && !this.state.units.some(u => u.id === (this.sheet as { id: number }).id)) this.sheet = { kind: 'queue' }
     if (this.foundTarget !== null) { this.scene.foundPreview = { tile: this.foundTarget, legal: foundingProblem(this.state, this.foundTarget) === null }; this.scene.updateOverlay(this.state) }
     this.refresh()
+    this.chooseLander()
     if (this.state.declaration?.won) this.showEnd(true)
     else if (this.state.declaration?.lost) this.showEnd(false)
     else if (this.state.turn >= this.state.settings.turns) this.showEnd(null)
@@ -647,6 +650,15 @@ export class App {
 
   /** Choose a unit of the player's: its card takes the queue bar's place, its ring and outline go
    *  on the map, and the camera moves only if the unit would be covered. Any sheet slides away. */
+  /** Before the first settlement, the lander chosen whenever nothing else is, so the card under the
+   *  map always says what to do next: hold where to sail, and let go (decision 202). */
+  chooseLander() {
+    if (this.state.settlements.some(x => x.owner === 0) || this.opening?.showing) return
+    if (this.scene.cam.view.activeUnit !== null) return
+    const lander = this.state.units.find(u => u.owner === 0 && u.kind === 'lander')
+    if (lander) this.select(lander.id)
+  }
+
   select(id: number) {
     const u = this.state.units.find(x => x.id === id)
     if (!u) return

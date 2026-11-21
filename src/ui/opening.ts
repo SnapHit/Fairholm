@@ -24,7 +24,7 @@ export interface Opening {
   readonly showing: boolean
 }
 
-export function mountOpening(root: HTMLElement): Opening {
+export function mountOpening(root: HTMLElement, onDismiss?: () => void): Opening {
   const lines = OPENING_LINES.map(text => h('p', { class: 'line' }, text))
   const el = h('div', { id: 'opening', 'aria-live': 'polite' }, ...lines)
   root.append(el)
@@ -39,6 +39,7 @@ export function mountOpening(root: HTMLElement): Opening {
     el.classList.add('gone')
     window.setTimeout(() => el.remove(), OPENING_FADE_MS + 50)
     document.removeEventListener('pointerdown', dismiss, true)
+    onDismiss?.()
   }
   // the first tap anywhere: on the map, on the bar, on anything
   document.addEventListener('pointerdown', dismiss, { capture: true })

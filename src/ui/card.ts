@@ -140,7 +140,7 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
       if (canFound) actions.push(found())
     } else if (neighbours8(w, h, u.tile).some(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored)) {
       bits.push('no shore here to found on')
-    } else bits.push('hold where to go, and let go to sail')
+    } else bits.push(u.moves > 0 ? 'press and hold where you want to sail, then let go' : 'no moves left: end the turn to sail on')
   } else {
     if (u.colonist) bits.push(standingWords(u.colonist))
     else if (!isHull(u.kind)) bits.push(u.quality)

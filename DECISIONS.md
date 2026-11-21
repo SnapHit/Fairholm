@@ -3628,6 +3628,21 @@ lander and the old pieces as references.
   new pieces, the units sheet from 243 to 81 kB. Side by side at the sheet's own pixels the two cannot be
   told apart.
 
+### 202. The first turns lead the player by the hand
+
+From a first game on a phone, 22 November 2026: End turn with the lander given no course ran three
+turns by itself, and nothing said what to do.
+
+- **The lander is chosen** once the opening lines are tapped away, after every turn ends, and on a
+  return to a game still at sea, whenever nothing else is chosen (`chooseLander`). Its card under the
+  map says what to do: "press and hold where you want to sail, then let go", or, with no moves left,
+  to end the turn.
+- **Turns never run on while the lander waits.** Its card is its own group, `lander`, while it has no
+  course, and that group stops a run every turn it stands (`src/ui/turns.ts`). With a course longer
+  than a turn it is back among the waiting units, so a long voyage still runs on.
+- **No rules between the opening lines.** They shared the list row's class, and with it the hairline
+  beneath each row.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).
