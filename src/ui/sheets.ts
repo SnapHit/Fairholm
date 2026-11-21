@@ -8,7 +8,7 @@ import { unitLabel } from '../sim/queue'
 import { workableTiles, tileOffers, tileYield, passageCost, goldPassageCost, buildingWorkers, foodBalance, workerOutput, landingSettlement, clerksRequired } from '../sim/labour'
 import { previewProduction, buildable, buildingName, storageCapacity, isCoastalSettlement, canStart, foundingProblem, surplusRuleFor } from '../sim/settlement'
 import { neighbours8, isLand, dist } from '../sim/worldgen'
-import { turnsToCoast } from '../sim/autopilot'
+import { turnsToCoast, settlerFrom } from '../sim/autopilot'
 import { sellPrice, buyPrice, canConsign, isEmbargoed, freightLoss, consignPreview, dumpedGoods } from '../sim/market'
 import { maxMoves, cargoCapacity, equipCost, isHull, isArmed, unitAttack, unitDefence } from '../sim/units'
 import { sightMask } from '../sim/fog'
@@ -703,12 +703,16 @@ function buySheet(app: App, s: GameState, st: Settlement, g: GoodId): HTMLElemen
  *  pictures with what each costs as icons, what it does, and its moves as pips. Equipment makes the
  *  unit, so the choice is a tap on the unit. */
 function equipSheet(app: App, s: GameState, st: Settlement): HTMLElement {
-  const kinds: LandKind[] = ['militia', 'outrider', 'battery', 'improver', 'hauler']
-  const panel = h('div', { class: 'panel' }, heroHeader(app, unitPicture('militia', 'var(--hero-person)'), 'Equip a colonist',
+  // on foot first: a colonist sent out with nothing is how a second settlement is founded, and until
+  // 21 November 2026 nothing in the interface could do it (DECISIONS.md 195)
+  const kinds: LandKind[] = ['colonist', 'militia', 'outrider', 'battery', 'improver', 'hauler']
+  const panel = h('div', { class: 'panel' }, heroHeader(app, unitPicture('colonist', 'var(--hero-person)'), 'Send out or equip',
     h('span', { class: 'figs' }, st.name, fig('arms', fmt(st.stock.arms), 'arms'), fig('horses', fmt(st.stock.horses), 'horses'), fig('tooling', fmt(st.stock.tooling), 'tooling'))),
-    h('p', { class: 'muted' }, 'Equipment makes the unit. Take it off and the colonist is a colonist again.'))
+    h('p', { class: 'muted' }, 'On foot, a colonist can found a settlement or learn from a people. Equipment makes any other unit; take it off and they are a colonist again.'))
   if (!st.colonists.length) { panel.append(muted('No one here to equip.')); return panel }
-  let chosen = 0
+  // chosen first: whoever the settlement can best spare, someone idle before anyone working
+  const spare = settlerFrom(s, st)
+  let chosen = spare >= 0 ? spare : Math.max(0, st.colonists.findIndex(c => c.job.kind === 'idle'))
   const who = h('div', { class: 'people' })
   const renderWho = () => who.replaceChildren(...st.colonists.map((c, i) => h('button', {
     class: 'person-tile' + (i === chosen ? ' on' : ''), type: 'button', 'aria-pressed': i === chosen ? 'true' : 'false',
@@ -721,15 +725,16 @@ function equipSheet(app: App, s: GameState, st: Settlement): HTMLElement {
     const parts = Object.entries(cost) as [GoodId, number][]
     const short = parts.filter(([g, n]) => st.stock[g] < n).map(([g, n]) => `${n - st.stock[g]} ${GOOD_NAMES[g].toLowerCase()}`)
     const u = C.military.units[k as keyof typeof C.military.units] as { attack?: number; defence?: number; moves: number; capacity?: number }
-    const does = k === 'battery' ? 'strong against settlements' : u.attack ? `attack ${u.attack}, defence ${u.defence}` : k === 'hauler' ? `carries ${u.capacity}` : 'roads, clearing, ploughing'
-    const bare = unitLabel(k).replace(/^(A|An) /, '')
+    const does = k === 'colonist' ? 'founds a settlement' : k === 'battery' ? 'strong against settlements' : u.attack ? `attack ${u.attack}, defence ${u.defence}` : k === 'hauler' ? `carries ${u.capacity}` : 'roads, clearing, ploughing'
+    const bare = k === 'colonist' ? 'on foot' : unitLabel(k).replace(/^(A|An) /, '')
     const name = bare[0].toUpperCase() + bare.slice(1)
     return h('button', {
       class: 'bcard unit-card' + (short.length ? ' gated' : ''), type: 'button',
       'aria-label': `${name}: ${parts.map(([g, n]) => `${n} ${GOOD_NAMES[g].toLowerCase()}`).join(' and ') || 'nothing'}; ${does}; ${plural(u.moves, 'move')}.${short.length ? ` Short of ${short.join(' and ')}.` : ''}`,
       onClick: () => {
         if (short.length) { app.toast(`Short of ${short.join(' and ')}.`); return }
-        if (app.dispatch({ t: 'equip', settlement: st.id, colonist: chosen, as: k }, `${k} equipped`)) app.back()
+        // one sent out on foot is chosen on the map at once, with the best ground marked
+        if (app.dispatch({ t: 'equip', settlement: st.id, colonist: chosen, as: k }, k === 'colonist' ? 'Sent out' : `${k} equipped`) && k !== 'colonist') app.back()
       },
     },
       unitPicture(k, 'var(--card-person)'),

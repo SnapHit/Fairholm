@@ -506,6 +506,12 @@ export const C = {
   // -------------------------------------------------------------------------------------------
   founding: {
     spacing: 3,
+    /** A settlement this big can send someone out to found: the competent machine player's
+     *  `settleAtPop`. The card that says so, and Send them out on the idle card (DECISIONS.md 195). */
+    fromPeople: 5,
+    /** The places to found that the map rings while a sent-out colonist is chosen, and how far apart. */
+    ringed: 3,
+    ringSpread: 3,
   },
 
   // -------------------------------------------------------------------------------------------

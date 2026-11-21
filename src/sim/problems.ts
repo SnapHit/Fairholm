@@ -37,6 +37,7 @@ import { canConsign, isEmbargoed, dumpedGoods, buyPrice, standingSale, isInputHe
 import { shipRuleState, shipsUnder } from './orders'
 import { offerRuleState, MANUFACTURED } from './predecessors'
 import { isLand, dist } from './worldgen'
+import { bestSites, compass } from './autopilot'
 
 /** A problem: a queue item before the queue's `since`, and where on the settlement screen it shows. */
 export interface Problem extends Omit<QueueItem, 'since'> {
@@ -133,7 +134,7 @@ function look(s: GameState, st: Settlement, dumping: Set<GoodId>): Look {
     if (out > 0) sale[g] = out
     const left = after[g] - out - capacity
     if (left > 0) spoils[g] = left
-    if (dumping.has(g) && ordersSell(s, st, g)) dumped.add(g)
+    if (dumping.has(g) && sellsMoreThanOverflow(s, st, g, capacity)) dumped.add(g)
   }
   const free = workableTiles(s, st).filter(t => {
     const tile = s.world.tiles[t]
@@ -280,6 +281,26 @@ function madeNothingWhy(lk: Look, line: BuildingLine): string {
   return parts.length ? list(parts) : 'what they make is used up before it is made'
 }
 
+/** What a settlement's orders keep back of a good before they sell, as `standingSale` reckons it:
+ *  the threshold, the office's where it is lower, twice it for horses and a workshop's input. */
+function ordersKeep(st: Settlement, g: GoodId): number {
+  const rule = surplusRuleFor(st, g)
+  const threshold = st.buildings.consignment > 0 ? Math.min(rule.threshold, C.market.consignmentOfficeThreshold) : rule.threshold
+  return isInputHere(st, g) || g === 'horses' ? threshold * 2 : threshold
+}
+
+/** The threshold at which orders sell only what the store cannot keep: a lot under the store,
+ *  halved where they keep twice it. */
+function overflowThreshold(st: Settlement, g: GoodId, capacity: number): number {
+  return Math.max(0, Math.ceil((capacity - C.market.lotSize) / (isInputHere(st, g) || g === 'horses' ? 2 : 1)))
+}
+
+/** Whether orders that sell a good sell more than what would otherwise spoil: selling only the
+ *  overflow is not dumping, because holding it would lose it outright. */
+function sellsMoreThanOverflow(s: GameState, st: Settlement, g: GoodId, capacity: number): boolean {
+  return ordersSell(s, st, g) && ordersKeep(st, g) < capacity - C.market.lotSize
+}
+
 /** Places free in the meeting house, or 0 where there is none. */
 function meetingRoom(st: Settlement): number {
   return st.buildings.meeting > 0 ? Math.max(0, C.labour.workersPerBuilding - buildingWorkers(st, 'meeting')) : 0
@@ -295,7 +316,8 @@ function resolveFix(s: GameState, lk: Look): { label: string; action: unknown; w
     if (buildingWorkers(st, 'meeting') >= C.labour.workersPerBuilding) return null
     const sp = spareFor(s, lk, { kind: 'building', line: 'meeting' })
     if (!sp) return null
-    return { label: 'Put someone in the meeting house', action: assign(st, sp.index, { kind: 'building', line: 'meeting' }), words: ` ${cap(sp.words)} could gather grievance in the meeting house, and resolve rises with it.` }
+    const room = meetingRoom(st)
+    return { label: 'Put someone in the meeting house', action: assign(st, sp.index, { kind: 'building', line: 'meeting' }), words: ` ${cap(sp.words)} could gather grievance in the meeting house, which has ${plural(room, 'place')} free, and resolve rises with it.` }
   }
   const coming = (st.building && st.building.id.line === 'meeting') || st.buildQueue.some(b => b.line === 'meeting')
   if (coming || !buildable(s, st).some(b => b.line === 'meeting')) return null
@@ -447,7 +469,9 @@ function spoilage(s: GameState, lk: Look, out: Problem[]) {
   if (held && lasting && canConsign(s, st).ok) {
     const g = held[0]
     moveWords = moveWords || ` Its orders hold the ${g}, so what the store cannot keep is lost each turn.`
-    choices.push({ label: `Sell the ${g} that would spoil, each turn`, action: { t: 'setGoodRule', settlement: st.id, good: g, rule: { destination: { kind: 'consign' }, threshold: Math.max(0, lk.cap - C.market.lotSize) } } })
+    // the orders keep twice the threshold of horses and of a good a workshop here works, so the
+    // threshold is halved there: what they keep is a lot under the store either way
+    choices.push({ label: `Sell the ${g} that would spoil, each turn`, action: { t: 'setGoodRule', settlement: st.id, good: g, rule: { destination: { kind: 'consign' }, threshold: overflowThreshold(st, g, lk.cap) } } })
   }
   const sellable = lost.find(([g]) => C.market.goods[g].traded && !isEmbargoed(s, g) && st.stock[g] > 0)
   if (sellable && canConsign(s, st).ok) {
@@ -652,14 +676,18 @@ function idle(s: GameState, lk: Look, out: Problem[]) {
   // with no work the chooser would give, the meeting house where it has room: gathering grievance is
   // work the player chooses to start, so it is offered and never given by default
   const civic = !first ? meetingRoom(st) : 0
+  // and new ground: one of them could go out on foot and found a settlement (DECISIONS.md 195)
+  const site = !first && st.colonists.length >= C.founding.fromPeople ? bestSites(s, st, 1, { walk: true })[0] : undefined
+  const choices: QueueChoice[] = []
+  if (first) choices.push({ label: placed.length === 1 ? `Put them ${jobPlace(st, first)}` : 'Put them to work', action: { t: 'autoAssign', settlement: st.id, only: placed } })
+  if (site !== undefined) choices.push({ label: over.length === 1 ? 'Send them out to found' : 'Send one out to found', action: { t: 'equip', settlement: st.id, colonist: over[0], as: 'colonist' } })
+  if (civic) choices.push({ label: over.length === 1 ? 'Put them in the meeting house' : 'Put one in the meeting house', action: assign(st, over[0], { kind: 'building', line: 'meeting' }) })
   out.push({
     key: `idle:${st.id}`, group: 'idle', type: 4,
     title: over.length === 1 ? `Someone at ${st.name} has nothing to do` : `${over.length} people at ${st.name} have nothing to do`,
-    body: `${lead}${where}${civic ? ' The meeting house has room, where they would gather grievance against the Company.' : ''}`,
+    body: `${lead}${where}${site !== undefined ? ` Good ground lies ${dist(s.world.width, st.tile, site)} tiles ${compass(s.world.width, st.tile, site)}, where one could found a settlement.` : ''}${civic ? ' The meeting house has room, where they would gather grievance against the Company.' : ''}`,
     explain: 'Tap a person, then pick a tile or a building. One body, one job.',
-    settlement: st.id, magnitude: over.length, opens: 'settlement', short: 'Someone idle',
-    choices: first ? [{ label: placed.length === 1 ? `Put them ${jobPlace(st, first)}` : 'Put them to work', action: { t: 'autoAssign', settlement: st.id, only: placed } }]
-      : civic ? [{ label: over.length === 1 ? 'Put them in the meeting house' : 'Put one in the meeting house', action: assign(st, over[0], { kind: 'building', line: 'meeting' }) }] : [],
+    settlement: st.id, magnitude: over.length, opens: 'settlement', short: 'Someone idle', choices,
   })
 }
 
@@ -888,9 +916,9 @@ function dumping(s: GameState, looks: Look[], out: Problem[]) {
     const g = d.good
     // the card is about the orders, not the price: once nothing sells the good any more it goes,
     // and the price mends on its own (DECISIONS.md 194)
-    // and a store full of it sells only what it cannot keep: holding that would spoil it, which is
-    // worse than a low price, so a full store is not dumping
-    const sellers = looks.filter(lk => ordersSell(s, lk.st, g) && lk.after[g] < lk.cap)
+    // and orders that sell only what the store cannot keep are not dumping: holding that would spoil
+    // it, which is worse than a low price
+    const sellers = looks.filter(lk => sellsMoreThanOverflow(s, lk.st, g, lk.cap))
     if (!sellers.length) continue
     let fix: QueueChoice | null = null, root = ''
     let at: Settlement | undefined
@@ -906,12 +934,15 @@ function dumping(s: GameState, looks: Look[], out: Problem[]) {
       break
     }
     const worst = at ?? sellers.map(lk => lk.st).sort((a, b) => b.stock[g] - a.stock[g])[0]
+    // where the store is full of it, holding would spoil it: sell only what would spoil there instead
+    const full = sellers.find(lk => lk.after[g] >= lk.cap)
+    const overflow: QueueChoice | null = full ? { label: `Sell only the ${g} that would spoil at ${full.st.name}`, action: { t: 'setGoodRule', settlement: full.st.id, good: g, rule: { destination: { kind: 'consign' }, threshold: overflowThreshold(full.st, g, full.cap) } } } : null
     out.push({
       key: `dumping:${g}`, group: 'dumping', type: 1, title: `Your standing orders are dumping ${g}`,
       body: `${g} stands at ${d.price}, ${d.below} below where it would be with nothing sold, and ${d.autoShare} of that fall is your own automatic selling. Each lot fetches less than the last.${root}`,
       explain: 'A standing order sells everything above its threshold every turn, and the Company pays less the more it is sent. Hold the good until the price mends, raise its threshold, or sell it in smaller lots.',
       settlement: worst?.id, magnitude: d.below, opens: 'orders', short: `Dumping ${g}`, good: g,
-      choices: [...(fix ? [fix] : []), { label: `Hold ${g} everywhere`, action: { t: 'setGoodRule', settlement: -1, good: g, rule: { destination: { kind: 'hold' } } } }],
+      choices: [...(fix ? [fix] : []), ...(overflow ? [overflow] : []), { label: `Hold ${g} everywhere`, action: { t: 'setGoodRule', settlement: -1, good: g, rule: { destination: { kind: 'hold' } } } }],
     })
   }
 }

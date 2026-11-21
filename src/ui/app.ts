@@ -15,7 +15,7 @@ import { C } from '../sim/constants'
 import { findPath } from '../sim/units'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
-import { openingAction, siteScore } from '../sim/autopilot'
+import { openingAction, siteScore, bestSites } from '../sim/autopilot'
 import { planRoute, type RoutePlan, type Route } from '../sim/route'
 import type { HaulStop, UnitOrder } from '../sim/state'
 import { authoringCard } from './card'
@@ -103,6 +103,8 @@ export class App {
   turns: TurnRunner
   private stacks: StackCounts
   private routeLayer: RouteLayer
+  /** The ground marked for the chosen colonist, as a key, so the overlay is painted only when it changes. */
+  private sitesKey = ''
 
   constructor(root: HTMLElement, state: GameState, resumed: boolean, notice: string | null = null) {
     installTheme()
@@ -297,6 +299,7 @@ export class App {
     let snapshot: GameState | null = null
     if (undoable) snapshot = structuredClone(this.state)
     const known = undoable ? this.state.world.tiles.reduce((n, t) => n + (t.explored ? 1 : 0), 0) : 0
+    const unitsBefore = a.t === 'equip' ? new Set(this.state.units.map(u => u.id)) : null
     try {
       applyAction(this.state, a)
     } catch (e) {
@@ -323,6 +326,21 @@ export class App {
     this.route = null
     this.scene.rebuild(this.state, 'dynamic')
     this.refresh()
+    // someone sent out on foot, from a card or the equip sheet: the sheets go, they are chosen on the
+    // map, and the best ground within a walk is marked while they are (DECISIONS.md 195)
+    if (unitsBefore && a.t === 'equip' && a.as === 'colonist') {
+      const u = this.state.units.find(x => !unitsBefore.has(x.id) && x.owner === 0 && x.kind === 'colonist')
+      if (u) {
+        this.closeSheet()
+        this.select(u.id)
+        // the camera goes between them and the best ground, so both are in view; nothing else is chosen
+        const best = this.scene.siteMarks?.[0]
+        const w = this.state.world.width
+        const mid = best === undefined ? u.tile : Math.round((Math.floor(u.tile / w) + Math.floor(best / w)) / 2) * w + Math.round(((u.tile % w) + (best % w)) / 2)
+        this.scene.glideTo(mid, Math.max(this.scene.cam.view.zoom, C.feel.zoom.working))
+        this.afterSelect()
+      }
+    }
     if (a.t !== 'endTurn') this.turns.acted()
     return true
   }
@@ -728,7 +746,25 @@ export class App {
   private afterSelect() {
     this.scene.updateRings(this.state)
     this.paintRoute()
+    this.paintSites()
     this.scene.requestDraw()
+  }
+
+  /** While a colonist of the player's is chosen and standing with nowhere to go, the best ground
+   *  for a settlement within a walk is marked on the map, the best brightest; the marks go when
+   *  they are let go or set off. A mode tied to the choice, not data on the map (art direction
+   *  brief section 11, DECISIONS.md 195). */
+  private paintSites() {
+    const s = this.state
+    const v = this.scene.cam.view
+    const u = v.activeUnit !== null ? s.units.find(x => x.id === v.activeUnit && x.owner === 0) : undefined
+    const marks = u && u.kind === 'colonist' && !u.order && u.path.length === 0 && s.settlements.some(x => x.owner === 0)
+      ? bestSites(s, { tile: u.tile }, C.founding.ringed, { spread: C.founding.ringSpread, walk: true }) : []
+    const key = marks.join(',')
+    if (key === this.sitesKey) return
+    this.sitesKey = key
+    this.scene.siteMarks = marks.length ? marks : null
+    this.scene.updateOverlay(s)
   }
 
   /** Draw the plotted route, or take it away. */

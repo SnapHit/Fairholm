@@ -641,6 +641,17 @@ export const FOUND_PREVIEW = {
   ring: 0.3,
 }
 
+/** The ground marked for a colonist sent out to found, while they are chosen: the best place's nine
+ *  tiles in the interface's accent, which is what it uses for the thing to do next, its centre
+ *  strongest, and the next places' centres a little fainter. Bone read as fog on unseen ground
+ *  (DECISIONS.md 195). */
+export const SITE_MARKS = {
+  colour: '#ff9a3c',
+  best: 0.6,
+  bestRing: 0.26,
+  other: 0.42,
+}
+
 // ---- cloud shadow ------------------------------------------------------------------------------------
 
 export const CLOUD = {

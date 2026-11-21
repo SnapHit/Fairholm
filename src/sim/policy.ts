@@ -13,7 +13,7 @@ import { C, difficultyOf } from './constants'
 import type { GameState, Settlement, Colonist, Job, BuildingLine, TileGood, GoodId, Unit, BuildId, MapSize } from './state'
 import type { Action } from './actions'
 import { applyAction } from './actions'
-import { openingAction, siteScore, playerLander } from './autopilot'
+import { openingAction, playerLander, bestSites } from './autopilot'
 import { tileOffers, tileYield, workableTiles, buildingWorkers, workerOutput, clerksRequired, goldPassageCost } from './labour'
 import { foundingProblem, buildable, storageCapacity, isCoastalSettlement } from './settlement'
 import { sellPrice, buyPrice } from './market'
@@ -335,28 +335,10 @@ function sellLots(s: GameState, st: Settlement, policy: Policy) {
 // Settlers
 // ---------------------------------------------------------------------------------------------
 
-/** The best ground for a new settlement within reach of the one sending the settler. */
+/** The best ground for a new settlement within reach of the one sending the settler: the first of
+ *  `bestSites` (src/sim/autopilot.ts), which the interface rings for the player's own settlers. */
 function bestSite(s: GameState, from: Settlement): number | null {
-  const w = s.world.width, h = s.world.height
-  const tiles = s.world.tiles
-  let best = -1, bs = -Infinity
-  const r = C.autopilot.settleRange
-  for (let dz = -r.max; dz <= r.max; dz++) for (let dx = -r.max; dx <= r.max; dx++) {
-    const x = (from.tile % w) + dx, z = Math.floor(from.tile / w) + dz
-    if (x < 0 || z < 0 || x >= w || z >= h) continue
-    const i = z * w + x
-    const d = Math.max(Math.abs(dx), Math.abs(dz))
-    if (d < r.min || d > r.max) continue
-    const t = tiles[i]
-    if (!isLand(t) || t.terrain === 'mountain') continue
-    if (foundingProblem(s, i) !== null) continue
-    if (s.settlements.some(st => st.owner > 0 && dist(w, st.tile, i) < C.autopilot.rivalClearance)) continue
-    if (s.predecessors.some(p => p.territory.includes(i))) continue
-    // ground nobody has seen is a guess; a settler walking to it sees it on the way
-    const score = siteScore(s, i) + (isCoastal(w, h, tiles, i) ? C.autopilot.coastalSiteBonus : 0) - d - (t.explored ? 0 : C.autopilot.unseenSitePenalty)
-    if (score > bs) { bs = score; best = i }
-  }
-  return best >= 0 ? best : null
+  return bestSites(s, from, 1)[0] ?? null
 }
 
 function settlers(s: GameState): Unit[] { return s.units.filter(u => u.owner === 0 && u.kind === 'colonist') }

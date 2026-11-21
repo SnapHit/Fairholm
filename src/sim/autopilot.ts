@@ -9,10 +9,11 @@
 // returns the choice and lets rivals.ts make it.
 
 import { C } from './constants'
-import type { GameState, Unit, TileGood } from './state'
+import type { GameState, Unit, TileGood, Settlement, QueueItem } from './state'
 import type { Action } from './actions'
+import type { System } from './turn'
 import { foundingProblem } from './settlement'
-import { tileOffers, tileYield } from './labour'
+import { tileOffers, tileYield, foodBalance, clerksRequired } from './labour'
 import { neighbours8, isLand, isCoastal, sailingDistance, landingViable, dist } from './worldgen'
 import { findPath } from './units'
 
@@ -36,6 +37,110 @@ export function siteScore(s: GameState, tile: number): number {
   // a little water is a port and a river is fresh water; a ring that is mostly sea is thin ground
   score += Math.min(water, 3) * 1.5 - Math.max(0, water - 4) * 3 + (river ? 3 : 0)
   return score
+}
+
+/** The best ground for new settlements within reach of a settlement, best first: legal to found, not
+ *  on a people's land or crowding a rival's settlement, scored by the ring, with a bonus for a coast,
+ *  less for every tile of walking and for ground nobody has seen. The settlers of the machine players
+ *  take the first; the interface rings the best three for the player's own (DECISIONS.md 195). With
+ *  `spread`, no two closer than that; with `walk`, only ground a colonist could walk to from here. */
+export function bestSites(s: GameState, from: Pick<Settlement, 'tile'>, n = 3, opts: { spread?: number; walk?: boolean } = {}): number[] {
+  const w = s.world.width, h = s.world.height
+  const tiles = s.world.tiles
+  const r = C.autopilot.settleRange
+  const found: { i: number; score: number }[] = []
+  for (let dz = -r.max; dz <= r.max; dz++) for (let dx = -r.max; dx <= r.max; dx++) {
+    const x = (from.tile % w) + dx, z = Math.floor(from.tile / w) + dz
+    if (x < 0 || z < 0 || x >= w || z >= h) continue
+    const i = z * w + x
+    const d = Math.max(Math.abs(dx), Math.abs(dz))
+    if (d < r.min || d > r.max) continue
+    const t = tiles[i]
+    if (!isLand(t) || t.terrain === 'mountain') continue
+    if (foundingProblem(s, i) !== null) continue
+    if (s.settlements.some(st => st.owner > 0 && dist(w, st.tile, i) < C.autopilot.rivalClearance)) continue
+    if (s.predecessors.some(p => p.territory.includes(i))) continue
+    // ground nobody has seen is a guess; a settler walking to it sees it on the way
+    const score = siteScore(s, i) + (isCoastal(w, h, tiles, i) ? C.autopilot.coastalSiteBonus : 0) - d - (t.explored ? 0 : C.autopilot.unseenSitePenalty)
+    found.push({ i, score })
+  }
+  // best first; equal scores keep the order of the scan, which is the order the settlers always took
+  found.sort((a, b) => b.score - a.score)
+  const walker = opts.walk ? ({ id: -1, owner: 0, kind: 'colonist', tile: from.tile, quality: 'raw', moves: 1, cargo: {}, colonist: null, order: null, path: [], damage: 0, progress: 0, since: {}, flagged: true, aboard: [] } as Unit) : null
+  const out: number[] = []
+  for (const f of found) {
+    if (out.length >= n) break
+    if (opts.spread && out.some(o => dist(w, o, f.i) < opts.spread!)) continue
+    if (walker && !findPath(s, walker, from.tile, f.i)) continue
+    out.push(f.i)
+  }
+  return out
+}
+
+/** Who a settlement could send out to found: someone idle past the clerks the ledger needs, else the
+ *  one whose work is worth least, a body on food only where the settlement stays fed without them,
+ *  and never a master. Only from a settlement of `C.founding.fromPeople` or more. -1 when nobody. */
+export function settlerFrom(s: GameState, st: Settlement): number {
+  if (st.colonists.length < C.founding.fromPeople) return -1
+  const idle = st.colonists.map((c, i) => c.job.kind === 'idle' ? i : -1).filter(i => i >= 0)
+  const clerks = clerksRequired(st.colonists.length)
+  if (idle.length > clerks) return idle[clerks]
+  const fed = foodBalance(s, st)
+  let pick = -1, pv = Infinity
+  st.colonists.forEach((c, i) => {
+    if (c.standing === 'master' || c.job.kind === 'idle') return
+    const makes = c.job.kind === 'tile' ? tileYield(s, c.job.tile, c.job.good, c) : 0
+    if (c.job.kind === 'tile' && c.job.good === 'food' && fed - makes < 0) return
+    const v = c.job.kind === 'tile' ? makes * (c.job.good === 'food' ? 3 : 1) : 6
+    if (v < pv) { pv = v; pick = i }
+  })
+  return pick
+}
+
+/** Where a settlement could found a new one: the opportunity card, on the biggest settlement that can
+ *  spare someone and has good ground within a walk, while none of the player's colonists is out on
+ *  the land already. It offers Send someone out, which equips them as a colonist on foot; the
+ *  interface then chooses them and rings the best ground (DECISIONS.md 195). */
+export function foundingChances(s: GameState): QueueItem[] {
+  const own = s.settlements.filter(x => x.owner === 0)
+  if (!own.length) return []
+  // the first time, not before the aim line asks for it: fed first, then a consignment, then new
+  // ground (onboarding brief section 10). An opportunity lapses once it has been passed over twice,
+  // and one shown in the first busy turns would be gone before it was wanted
+  if (own.length === 1 && !s.intent.startsWith('Found')) return []
+  if (s.units.some(u => u.owner === 0 && u.kind === 'colonist')) return []
+  const w = s.world.width
+  for (const st of own.slice().sort((a, b) => b.colonists.length - a.colonists.length)) {
+    const who = settlerFrom(s, st)
+    if (who < 0) continue
+    const site = bestSites(s, st, 1, { walk: true })[0]
+    if (site === undefined) continue
+    const d = dist(w, st.tile, site)
+    return [{
+      key: `canFound:${st.id}`, group: 'canFound', type: 5, title: `${st.name} can found a new settlement`,
+      body: `Someone can be spared, and good ground lies ${d} tiles ${compass(w, st.tile, site)}. Send them out, then hold one of the ringed places and let go.`,
+      explain: 'A colonist sent out walks to new ground and founds a settlement there. Ground of another kind grows what this one cannot.',
+      settlement: st.id, magnitude: 1, since: s.turn, opens: 'settlement',
+      choices: [{ label: 'Send someone out', action: { t: 'equip', settlement: st.id, colonist: who, as: 'colonist' } }],
+    }]
+  }
+  return []
+}
+
+/** The founding opportunity as a system: nothing to resolve, one card at most (DECISIONS.md 195). */
+export const foundingSystem: System = {
+  id: 'founding',
+  enabled: c => c.flags.settlement,
+  resolve: () => {},
+  queueItems: s => foundingChances(s),
+}
+
+/** Which way one tile lies from another, in a word of the compass. */
+export function compass(w: number, from: number, to: number): string {
+  const dx = (to % w) - (from % w), dz = Math.floor(to / w) - Math.floor(from / w)
+  const ns = dz < -Math.abs(dx) / 2 ? 'north' : dz > Math.abs(dx) / 2 ? 'south' : ''
+  const ew = dx > Math.abs(dz) / 2 ? 'east' : dx < -Math.abs(dz) / 2 ? 'west' : ''
+  return ns && ew ? `${ns}${ew}` : ns || ew || 'here'
 }
 
 /** The best coastal site a lander at `from` could make for: legal to found, land beside water the

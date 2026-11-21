@@ -7,6 +7,7 @@ import { C } from './constants'
 import type { GameState, QueueItem, QueueGroup, DerivedQueue } from './state'
 import type { System } from './turn'
 import { collectQueueItems } from './turn'
+import { foundingProblem } from './settlement'
 
 /** Plural titles for grouped conditions. The group key is the condition, not the settlement. */
 const GROUP_TITLES: Record<string, (n: number) => string> = {
@@ -58,7 +59,12 @@ function unitItems(s: GameState): QueueItem[] {
       if (atSettlement && (u.kind === 'militia' || u.kind === 'battery' || u.kind === 'damagedBattery')) continue
       const since = u.since['idle'] ?? s.turn
       const lander = u.kind === 'lander'
-      out.push({ key: `unitIdle:${u.id}`, group: 'unitIdle', type: lander ? 2 : 4, title: lander ? 'The lander is at sea' : `${unitLabel(u.kind)} is awaiting orders`, body: lander ? `${u.aboard.length} aboard. Hold where you want to go and let go to sail toward land, then beach it on the shore of your choosing to found the first settlement.` : u.kind === 'colonist' ? 'Hold where you want it to go and let go to set off, found a settlement with it, or send it home.' : 'Give it a standing order, or hold where you want it to go and let go to set off.', unit: u.id, tile: u.tile, magnitude: 1, since, choices: [], opens: 'unit',
+      // a colonist standing where it may found is offered Found here; elsewhere the card says where
+      // the marked ground is, which shows on the map while it is chosen (DECISIONS.md 195)
+      const canFound = u.kind === 'colonist' && s.settlements.some(x => x.owner === 0) && !s.settlements.some(x => x.tile === u.tile) && foundingProblem(s, u.tile) === null
+      const colonistBody = canFound ? 'It stands on ground it can found a settlement on. Found here, or hold where you want it to go and let go to set off.'
+        : 'Tap it, and the best ground for a settlement within a walk is marked. Hold a marked place and let go to walk there, then found; or walk it home to rejoin.'
+      out.push({ key: `unitIdle:${u.id}`, group: 'unitIdle', type: lander ? 2 : 4, title: lander ? 'The lander is at sea' : `${unitLabel(u.kind)} is awaiting orders`, body: lander ? `${u.aboard.length} aboard. Hold where you want to go and let go to sail toward land, then beach it on the shore of your choosing to found the first settlement.` : u.kind === 'colonist' ? colonistBody : 'Give it a standing order, or hold where you want it to go and let go to set off.', unit: u.id, tile: u.tile, magnitude: 1, since, choices: canFound ? [{ label: 'Found here', action: { t: 'found', unit: u.id } }] : [], opens: 'unit',
         explain: lander ? `Tap the lander, then press and hold where you want to go. The course shows while you hold, and nothing moves yet; let go to sail. It goes up to ${C.lander.moves} tiles a turn and stops at any coast it meets. When land is beside it, hold the shore and let go: nothing moves, and the card offers Found here.` : u.kind === 'colonist' ? 'Tap the unit, then press and hold where you want it to go. The way shows while you hold; let go to walk. A colonist in open country can found a settlement.' : undefined })
     }
   }

@@ -147,7 +147,9 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
     if (u.order) bits.push(ORDER_WORDS[u.order.kind])
     const cargo = cargoWords(u)
     if (cargo) bits.push(cargo)
-    if (!u.order && !cargo) bits.push(u.moves > 0 ? 'hold where to go, and let go to set off' : 'hold where to go: it sets off next turn')
+    // a colonist with the best ground marked for it is told to hold a mark (DECISIONS.md 195)
+    const marked = u.kind === 'colonist' && !!app.scene.siteMarks?.length && app.scene.cam.view.activeUnit === u.id
+    if (!u.order && !cargo) bits.push(marked ? 'hold a marked place, and let go to walk there' : u.moves > 0 ? 'hold where to go, and let go to set off' : 'hold where to go: it sets off next turn')
     // a colonist founds where it stands, once the lander has founded the first settlement
     if (u.kind === 'colonist' && s.settlements.some(x => x.owner === 0) && !s.settlements.some(x => x.tile === u.tile) && foundingProblem(s, u.tile) === null) {
       actions.push(button('Found here', () => { void app.found(u.id, u.tile) }, 'go'))

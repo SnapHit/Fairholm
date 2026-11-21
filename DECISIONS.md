@@ -3405,6 +3405,37 @@ full settlements now go to workshops rather than standing idle. Its price fall c
 game, it declares at 52% rather than 55%, and two waves come rather than one. Every other row is
 unchanged.
 
+### 195. A settlement can send someone out to found
+
+**What.** Once the lander had founded the first settlement, nothing in the interface put a colonist
+back on the map, and only a colonist can found. The machine players founded through `equip` as a
+colonist, which no sheet offered. A player who did only what the cards said founded no second
+settlement on any of three worlds, and the aim line asked for one all game.
+
+- The equip sheet is now **Send out or equip**, with **On foot** first, and chooses first whoever the
+  settlement can best spare: someone idle past the clerks, else the one whose work is worth least,
+  never a master and never at the cost of food (`settlerFrom` in `src/sim/autopilot.ts`).
+- A card, **"The Landing can found a new settlement"**, a type 5 opportunity from a small system of
+  its own (`foundingSystem`), comes up on the biggest settlement of `C.founding.fromPeople` or more
+  that can spare someone and has good ground within a walk, while none of the player's colonists is
+  out on the land. The first time, only once the aim line asks for a second settlement: an
+  opportunity lapses when it has been passed over twice, and one shown in the first busy turns was
+  spent before it was wanted. Its fix is Send someone out.
+- The idle card, where no work can be had, offers **Send them out to found** (decision 194).
+- Someone sent out is chosen on the map at once, with the camera between them and the best ground,
+  and the best `C.founding.ringed` places within a walk are marked in the interface's accent, the
+  best with its ring (`bestSites`, which the machine players' settlers now use too, so the pace table
+  is unchanged). Bone read as fog on unseen ground. The marks are a mode tied to the choice and go
+  when the colonist is let go or sets off, so the map is not decorated with data (art direction brief
+  section 11). Their card says to hold a marked place and let go.
+- A colonist standing where it may found has **Found here** on its queue card as well as its own.
+  Movement is still only hold and release: no card moves a unit.
+
+**After.** With the one gesture the card teaches added to the card follower (hold the brightest mark
+and let go), it founds 8 to 12 settlements and has 24 to 34 buildings standing after 150 turns on six
+worlds, where it had founded none. Learning a crop from the peoples who were here first, which needs a
+colonist beside them, can now happen.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

@@ -40,7 +40,7 @@ import { spriteSheet, buildBillboards, buildSilhouettes, setBillboardFade, place
 import { SelectionMark } from './selection'
 import { SETTLEMENT_ATLAS } from './settlement-atlas'
 import UNITS_ATLAS_JSON from '../../public/textures/units.json'
-import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, ARRIVAL, WAVE_COAST, MOVE, RING_PICTURE } from './look'
+import { seasonLook, sunVector, hexRgb, PROPS, SHADOW, FOG, FOUND_PREVIEW, SITE_MARKS, ARRIVAL, WAVE_COAST, MOVE, RING_PICTURE } from './look'
 import { sightOf } from '../sim/fog'
 import { waveCandidates } from './selectors'
 
@@ -122,6 +122,8 @@ export class Scene {
   /** The nine tiles a settlement would work if founded here, painted on the map while the founding
    *  control is in focus: in bone where it may be founded, in the loss colour where it may not. */
   foundPreview: { tile: number; legal: boolean } | null = null
+  /** The ground marked for a chosen colonist sent out to found, best first; null when none is. */
+  siteMarks: number[] | null = null
   /** The beaching: the settlement and the boat coming up out of nothing while the lander goes. */
   private fading: { k: number; settlements: Set<number>; units: Set<number> } | null = null
   private ghost: THREE.InstancedMesh | null = null
@@ -846,6 +848,14 @@ export class Scene {
         const a = WAVE_COAST.alphaFrom + (WAVE_COAST.alphaTo - WAVE_COAST.alphaFrom) * Math.max(0, Math.min(1, k))
         for (const t of waveCandidates(s, wave)) setOverlayTile(tex, w, t, wc, a)
       }
+    }
+    // the ground marked for a colonist sent out to found: the best place's ring, then each centre
+    if (this.siteMarks) {
+      const c = hexRgb(SITE_MARKS.colour)
+      const [best, ...rest] = this.siteMarks
+      for (const t of neighbours8(w, s.world.height, best)) setOverlayTile(tex, w, t, c, SITE_MARKS.bestRing)
+      setOverlayTile(tex, w, best, c, SITE_MARKS.best)
+      for (const t of rest) setOverlayTile(tex, w, t, c, SITE_MARKS.other)
     }
     // the founding preview: the nine tiles a settlement here would work
     if (this.foundPreview) {

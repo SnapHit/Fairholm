@@ -122,13 +122,18 @@ describe('a building that gets nothing to rise with is never silent', () => {
     expect(card(s, 'dumping')).toBeUndefined()
   })
 
-  it('a store full of a good sells its overflow, which is not dumping: nothing says hold what would spoil', () => {
+  it('a store full of a good: the dumping card offers selling only what would spoil, which is not dumping', () => {
     const { s, st } = landing('problems-full-store')
     st.stock.timber = C.buildings.storage[st.buildings.storage] + 30
     applyAction(s, { t: 'setStandingOrder', settlement: st.id, rule: 'surplus', value: { threshold: 5, destination: { kind: 'consign' } } })
     const e = s.market.tables[0].timber
     e.baseline = 4; e.pressure = 400; e.autoPressure = 400
     recompute(e, 'timber')
+    const it = card(s, 'dumping')
+    expect(it).toBeDefined()
+    const only = it!.choices.find(c => /Sell only the timber that would spoil/.test(c.label))
+    expect(only).toBeDefined()
+    applyAction(s, only!.action as never)
     expect(card(s, 'dumping')).toBeUndefined()
   })
 
