@@ -322,8 +322,9 @@ function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
         why += ` ${cap(sp.words)} could go there and make ${sp.gives} frame a turn.`
         choices.push({ label: `Staff the ${nameOf(st, 'carpenter')}`, action: assign(st, sp.index, { kind: 'building', line: 'carpenter' }) })
       } else why += ` Everyone here has other work; move someone there.`
-      // with no timber either, the shop needs some too: from the forest, or from the Company
-      if (timber <= 0) {
+      // with no timber either, the shop needs some too: from the forest, or from the Company. Only
+      // alongside someone to work it: timber alone, with nobody in the shop, is half a fix
+      if (timber <= 0 && sp) {
         const tile = bestTile(s, lk, 'timber')
         const cutter = tile !== null ? spareFor(s, lk, { kind: 'tile', tile, good: 'timber' }, sp ? [sp.index] : []) : null
         const price = buyPrice(s, 'timber')
@@ -354,11 +355,14 @@ function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
       if (sp) { line = 'toolworks'; choices.push({ label: `Staff the ${nameOf(st, 'toolworks')}`, action: assign(st, sp.index, { kind: 'building', line: 'toolworks' }) }) }
     }
   }
+  // where the fix is someone's work and no one-tap move is offered, the card opens the settlement,
+  // where people are moved; otherwise the build order
+  const staffing = noFrame && buildingWorkers(st, 'carpenter') === 0
   out.push({
     key: `buildStalled:${st.id}`, group: 'buildStalled', type: 3, title: `The ${name} at ${st.name} is getting no ${noFrame ? 'frame' : 'tooling'}`,
     body: `${why}${stood}`,
     explain: 'Buildings are made of frame, which a carpenter makes from timber; higher tiers need tooling too. A building that gets neither never rises.',
-    settlement: st.id, magnitude: 3, opens: 'build', short: noFrame ? 'No frame' : 'No tooling', frame: true, line, choices,
+    settlement: st.id, magnitude: 3, opens: staffing ? 'settlement' : 'build', short: noFrame ? 'No frame' : 'No tooling', frame: true, line, choices,
   })
   return noFrame
 }
