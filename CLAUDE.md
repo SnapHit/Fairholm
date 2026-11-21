@@ -160,6 +160,9 @@ themselves and stop when something new needs the player. Do it on a real phone a
 
 Commit and push directly to main. Do not create a branch or open a pull request unless I explicitly ask for one.
 
+The live site is https://fairholm.novlrgames.workers.dev/ (auto-deployed from main). Give this test URL in
+every reply, so it can be checked each time.
+
 ## Writing conventions
 
 Australian spelling. Sentence case in titles. No em or en dashes anywhere, in code comments or
