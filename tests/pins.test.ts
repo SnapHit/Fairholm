@@ -64,9 +64,13 @@ describe('market pins', () => {
     // 149): old 0.1621, new 0.7712. The rivals' second settlements now come later, so their people
     // are spread across fewer places inside the window and the footprint of the last coupled sales
     // falls differently. With the rivals switched off the pressure is still exactly 0, checked on
-    // each re-recording, which is what this protects
+    // each re-recording, which is what this protects. Re-recorded on 22 November 2026 for the centre
+    // tile (DECISIONS.md 200): old 0.7712, new 9.5650. Nobody works a settlement's own tile now, which
+    // was worked free and by a colonist besides, so that colonist works elsewhere, and the player's
+    // own linen is sold inside the window: with the rivals switched off it is 8, the player's
+    // sales alone, checked on this re-recording
     for (let i = 0; i < 60; i++) applyAction(s, { t: 'endTurn' })
-    expect(s.market.tables[0].linen.pressure).toBeCloseTo(0.7712, 4)
+    expect(s.market.tables[0].linen.pressure).toBeCloseTo(9.5650, 4)
     expect(sellPrice(s, 'linen')).toBeGreaterThanOrEqual(C.market.goods.linen.open - 1)
   })
 

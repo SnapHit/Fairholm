@@ -37,6 +37,7 @@ import { canConsign, isEmbargoed, dumpedGoods, buyPrice, standingSale, isInputHe
 import { shipRuleState, shipsUnder } from './orders'
 import { offerRuleState, MANUFACTURED } from './predecessors'
 import { isLand, dist } from './worldgen'
+import { isHull } from './units'
 import { bestSites, compass, unseenLandNear } from './autopilot'
 
 /** A problem: a queue item before the queue's `since`, and where on the settlement screen it shows. */
@@ -1238,7 +1239,7 @@ function unitProblems(s: GameState, out: Problem[]) {
   let unexplored: boolean | null = null
   for (const u of s.units) {
     if (u.owner !== 0 || !u.order) continue
-    if (u.order.kind === 'explore') {
+    if (u.order.kind === 'explore' && !isHull(u.kind)) {
       if (unexplored === null) unexplored = s.world.tiles.some(t => !t.explored && isLand(t) && t.terrain !== 'mountain')
       if (unexplored) continue
       out.push({

@@ -36,8 +36,10 @@ export const ROUTE_ODDS_H_PX = 22
 
 /** The opening's five lines, onboarding brief section 2: one fades in every two seconds or so, each
  *  over this long, and the first tap anywhere takes them all away over the same time. */
-export const OPENING_LINE_MS = 2000
+export const OPENING_LINE_MS = 3500
 export const OPENING_FADE_MS = 900
+/** Each opening line's own fade in, slow enough to arrive rather than appear. */
+export const OPENING_LINE_FADE_MS = 1400
 
 /** Version 2's ring cell and building slot. The settlement screen no longer uses them (version 3
  *  sizes its ring from the space it has); the founding preview's ring and the full screens still
@@ -355,6 +357,11 @@ export const TOKENS: Record<string, string> = {
   /** Under a figure's feet, and the chevrons of its standing: bone on a dark halo, in the chevron
    *  drawing's own units. */
   '--foot-shadow': 'rgba(0,0,0,0.42)',
+  // a settler on the settlement screen is lifted off the ground and the buildings with a pale rim
+  // and a pool of light at the feet, so brown clothes never sink into brown timber or soil
+  '--figure-rim': 'rgba(255,244,224,0.95)',
+  '--figure-rim-w': '1.2px',
+  '--figure-pool': 'rgba(255,238,205,0.6)',
   '--chev-halo': 'rgba(23,24,26,0.9)',
   '--chev-halo-w': '3.6',
   '--chev-ink-w': '1.7',
@@ -381,6 +388,7 @@ export const TOKENS: Record<string, string> = {
   '--slide-ms': '180ms',
   '--fade-ms': '200ms',
   '--opening-fade-ms': `${OPENING_FADE_MS}ms`,
+  '--opening-line-fade-ms': `${OPENING_LINE_FADE_MS}ms`,
   /** The lines of the opening sit this far down the screen, as a share of its height, and are
    *  this wide at most. They lie over the haze above the lander, never over a control. */
   '--opening-top': '14%',

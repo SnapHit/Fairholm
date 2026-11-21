@@ -8,7 +8,7 @@ import type { GameState, QueueItem, QueueGroup, DerivedQueue } from './state'
 import type { System } from './turn'
 import { collectQueueItems } from './turn'
 import { foundingProblem } from './settlement'
-import { unseenLandNear, bestSites } from './autopilot'
+import { unseenLandNear, bestSites, nearbyFrontier } from './autopilot'
 import { isHull } from './units'
 import { dist } from './worldgen'
 
@@ -76,7 +76,9 @@ function unitItems(s: GameState): QueueItem[] {
       // where a ship lies beside a settlement of the player's (decision 197)
       const inPort = isHull(u.kind) && s.settlements.some(x => x.owner === 0 && (x.tile === u.tile || dist(s.world.width, x.tile, u.tile) <= 1))
       const waits = lander || u.kind === 'colonist' ? null : inPort ? 'Wait in port' : 'Wait here'
-      out.push({ key: `unitIdle:${u.id}`, group: 'unitIdle', type: lander ? 2 : 4, title: lander ? 'The lander is at sea' : `${unitLabel(u.kind)} is awaiting orders`, body: lander ? `${u.aboard.length} aboard. Hold where you want to go and let go to sail toward land, then beach it on the shore of your choosing to found the first settlement.` : u.kind === 'colonist' ? colonistBody : 'Give it a standing order, or hold where you want it to go and let go to set off.', unit: u.id, tile: u.tile, magnitude: 1, since, choices: canFound ? [{ label: 'Found here', action: { t: 'found', unit: u.id } }] : look ? [{ label: 'Look for ground', action: { t: 'setUnitOrder', unit: u.id, order: { kind: 'explore', until: 'site' } } }] : waits ? [{ label: waits, action: { t: 'setUnitOrder', unit: u.id, order: { kind: 'reserve' } } }] : [], opens: 'unit',
+      // a ship can explore the water near home by itself, while any of it is unseen (decision 200)
+      const sweep = isHull(u.kind) && !lander && nearbyFrontier(s, u).length > 0
+      out.push({ key: `unitIdle:${u.id}`, group: 'unitIdle', type: lander ? 2 : 4, title: lander ? 'The lander is at sea' : `${unitLabel(u.kind)} is awaiting orders`, body: lander ? `${u.aboard.length} aboard. Hold where you want to go and let go to sail toward land, then beach it on the shore of your choosing to found the first settlement.` : u.kind === 'colonist' ? colonistBody : u.kind === 'lighter' ? 'The boat the lander carried, afloat beside your settlement. Let it explore the coast nearby, or hold where you want it to go and let go to sail.' : 'Give it a standing order, or hold where you want it to go and let go to set off.', unit: u.id, tile: u.tile, magnitude: 1, since, choices: canFound ? [{ label: 'Found here', action: { t: 'found', unit: u.id } }] : look ? [{ label: 'Look for ground', action: { t: 'setUnitOrder', unit: u.id, order: { kind: 'explore', until: 'site' } } }] : [...(sweep ? [{ label: 'Explore nearby', action: { t: 'setUnitOrder', unit: u.id, order: { kind: 'explore' } } }] : []), ...(waits ? [{ label: waits, action: { t: 'setUnitOrder', unit: u.id, order: { kind: 'reserve' } } }] : [])], opens: 'unit',
         explain: lander ? `Tap the lander, then press and hold where you want to go. The course shows while you hold, and nothing moves yet; let go to sail. It goes up to ${C.lander.moves} tiles a turn and stops at any coast it meets. When land is beside it, hold the shore and let go: nothing moves, and the card offers Found here.` : u.kind === 'colonist' ? 'Tap the unit, then press and hold where you want it to go. The way shows while you hold; let go to walk. A colonist in open country can found a settlement.' : undefined })
     }
   }

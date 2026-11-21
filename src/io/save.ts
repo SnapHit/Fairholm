@@ -6,6 +6,7 @@ import { SCHEMA_VERSION, WORLDGEN_VERSION } from '../sim/constants'
 import type { GameState, Settings, Tile, TileDelta, RngState } from '../sim/state'
 import { generateWorld, worldToState } from '../sim/worldgen'
 import { playRng } from '../sim/rng'
+import { defaultJob } from '../sim/labour'
 
 export interface SaveState {
   schemaVersion: number
@@ -99,7 +100,7 @@ export function fromSave(save: SaveState, now = Date.now()): GameState {
     const t = w.tiles[Number(k)]
     if (t) Object.assign(t, d)
   }
-  return {
+  const s: GameState = {
     schemaVersion: save.schemaVersion,
     worldgenVersion: save.worldgenVersion,
     seed: save.seed,
@@ -123,6 +124,10 @@ export function fromSave(save: SaveState, now = Date.now()): GameState {
     actionsThisTurn: 0,
     transits: save.transits ?? [],
   }
+  // a colonist saved working a settlement's own tile, which is worked free and was worked twice,
+  // and drawn nowhere, until 22 November 2026: given the job a new arrival would get (DECISIONS.md 200)
+  for (const st of s.settlements) st.colonists.forEach(c => { if (c.job.kind === 'tile' && c.job.tile === st.tile) c.job = defaultJob(s, st) })
+  return s
 }
 
 export const STORAGE_KEY = 'fairholm.save.v' + SCHEMA_VERSION

@@ -13,7 +13,7 @@ import { isHostileTo } from './military'
 import { surplusRuleFor } from './settlement'
 import { pick } from './rng'
 import { unitLabel } from './queue'
-import { bestSites } from './autopilot'
+import { bestSites, nearbyFrontier } from './autopilot'
 
 /** Goods in transit between settlements under a surplus rule. Abstract, arriving after a few turns. */
 function transits(s: GameState) { if (!s.transits) s.transits = []; return s.transits }
@@ -91,6 +91,21 @@ function runImprover(s: GameState, u: Unit, ctx: TurnContext) {
 
 function runExplore(s: GameState, u: Unit, ctx: TurnContext) {
   const w = s.world.width, h = s.world.height
+  // a ship explores the water near home, the nearest unseen first, and stops when it is all seen
+  // rather than sailing off one way (DECISIONS.md 200)
+  if (isHull(u.kind)) {
+    for (const to of nearbyFrontier(s, u).slice(0, C.orders.exploreNearTries)) {
+      const path = to === u.tile ? null : findPath(s, u, u.tile, to, 120)
+      if (!path || !path.length) continue
+      u.path = path
+      advance(s, u)
+      return
+    }
+    u.order = null
+    u.path = []
+    ctx.log({ kind: 'event', text: `${unitLabel(u.kind)} has seen all the water near home and waits for orders.`, tile: u.tile })
+    return
+  }
   // a colonist looking for ground stops once good ground for a settlement has been seen within a
   // walk, and waits for the player to choose it there (DECISIONS.md 195)
   if (u.order?.kind === 'explore' && u.order.until === 'site' && s.settlements.some(x => x.owner === 0) && bestSites(s, { tile: u.tile }, 1, { walk: true, seen: true }).length) {

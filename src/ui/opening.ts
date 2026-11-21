@@ -1,5 +1,5 @@
 // The opening's lines, onboarding brief section 2 and setting brief section 7a. Five sentences fade
-// in over the shot of the lander at splashdown, one at a time, about two seconds apart, in the
+// in over the shot of the lander at splashdown, one at a time, about three and a half seconds apart, in the
 // theme's display type, legible over the haze. They never block input and they are never a screen:
 // the first tap anywhere takes them away and, through the app's own listener, starts the music.
 // Nothing here reads or writes the state.
@@ -13,7 +13,7 @@ export const OPENING_LINES = [
   'Its people found Bloom, a flower that grows nowhere else.',
   'From it they made cores, and cores cut the crossing to eight months.',
   'Then they went silent, and the cores stopped coming.',
-  'The Company has sent you to start again. No one is waiting.',
+  'The Company spent its last cores to send you. You wake from stasis, at sea in your lander.',
 ]
 
 export interface Opening {

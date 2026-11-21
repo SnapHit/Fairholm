@@ -3571,6 +3571,32 @@ second settlement or six new kinds of building, or if the top card leads nowhere
 on one turn in ten or more. It runs in about two seconds. A new check, or a change to one, that makes
 a card lead nowhere shows here.
 
+### 200. The opening read slowly, every settler seen, and a ship that explores near home
+
+From playing the first turns on a phone, 22 November 2026.
+
+- **The opening lines** fade in three and a half seconds apart, each over 1.4 seconds, where they came
+  two seconds apart and were gone before they could be read (`OPENING_LINE_MS`,
+  `OPENING_LINE_FADE_MS`). A tap still takes them away at once. The fifth line is now "The Company
+  spent its last cores to send you. You wake from stasis, at sea in your lander." in place of "No
+  one is waiting", which did not say where you are. The crossing stays eight months: a hundred years
+  was suggested, but the crossing runs on cores (setting brief sections 7a and 8), and later ships
+  and passages would take a hundred years too. The setting and onboarding briefs in `/docs` say so.
+- **Nobody works a settlement's own tile.** It is worked free (decision 9), but `workableTiles`
+  included it, so a colonist could be put there as well: its yield counted twice, and the settlement
+  screen drew nobody there, so three settlers showed as two. A save with someone on its own tile
+  gives them a new arrival's job when it loads. The pace table is unchanged in every era; one market
+  pin was re-recorded, as its comment says.
+- **Settlers stand out on the settlement screen**: a pale rim round each figure and a pool of light
+  at the feet, so brown clothes do not sink into brown timber and soil (`--figure-rim`,
+  `--figure-pool`).
+- **Explore nearby.** A ship told to explore sweeps the water within `C.orders.exploreNearRange` (10)
+  tiles of a settlement of the player's, going each turn to the nearest known water from which it
+  would see something unseen, and stops by itself, with a line in the dispatch, when the water near
+  home is all seen. It no longer heads off one way. A waiting ship's card offers it first while
+  anything near home is unseen, and the unit's sheet has it. The lighter's card says it is the boat
+  the lander carried. The explorer-done card is for those on foot.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

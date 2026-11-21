@@ -121,7 +121,7 @@ body {
   font-size: var(--text-opening); line-height: var(--leading); font-weight: var(--weight-medium);
   color: var(--ink); text-shadow: var(--shadow-opening);
   opacity: 0; transform: translateY(var(--space-3));
-  transition: opacity var(--opening-fade-ms) var(--ease), transform var(--opening-fade-ms) var(--ease);
+  transition: opacity var(--opening-line-fade-ms) var(--ease), transform var(--opening-line-fade-ms) var(--ease);
 }
 #opening .line.in { opacity: 1; transform: none; }
 /* on a phone held sideways the lines take less of the little height there is */
@@ -989,6 +989,15 @@ input[type=text] {
 .stand .chev polyline { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .stand .chev .halo { stroke: var(--chev-halo); stroke-width: var(--chev-halo-w); }
 .stand .chev .ink { stroke: var(--ink); stroke-width: var(--chev-ink-w); }
+/* on the settlement screen a settler stands out from ground and timber alike: a pale rim round the
+   figure and a pool of light at the feet */
+.st-ring .stand:not(.empty) .figure, .lot .stand:not(.empty):not(.unit) .figure {
+  filter: drop-shadow(0 0 var(--figure-rim-w) var(--figure-rim)) drop-shadow(0 0 var(--figure-rim-w) var(--figure-rim));
+}
+.st-ring .stand:not(.empty) .foot-shadow, .lot .stand:not(.empty):not(.unit) .foot-shadow {
+  background: radial-gradient(closest-side, var(--foot-shadow), var(--figure-pool) 55%, transparent);
+  transform: scale(1.6);
+}
 /* a place nobody fills: the figure's own outline, faint */
 .stand.empty .figure { filter: brightness(0) invert(1); opacity: 0.2; }
 /* a figure just sent somewhere settles in, once */

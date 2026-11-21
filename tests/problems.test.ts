@@ -513,3 +513,27 @@ describe('a whole group done in one tap', () => {
     }
   })
 })
+
+describe('a ship exploring nearby', () => {
+  it('sweeps the water near home, nearest first, keeps within reach of home, and stops when it is all seen', () => {
+    const { s, st } = landing('explore-near')
+    const w = s.world.width
+    const boat = s.units.find(u => u.owner === 0 && u.kind === 'lighter')!
+    expect(boat).toBeDefined()
+    expect(items(s).find(it => it.key === `unitIdle:${boat.id}`)?.choices[0]?.label).toBe('Explore nearby')
+    const near = () => s.world.tiles.filter((t, i) => t.explored && dist(w, i, st.tile) <= C.orders.exploreNearRange).length
+    const before = near()
+    applyAction(s, { t: 'setUnitOrder', unit: boat.id, order: { kind: 'explore' } })
+    let ended = -1
+    for (let i = 0; i < 80 && ended < 0; i++) {
+      applyAction(s, { t: 'endTurn' })
+      // never further from home than the reach, and the sight beyond it
+      expect(dist(w, boat.tile, st.tile)).toBeLessThanOrEqual(C.orders.exploreNearRange)
+      if (!boat.order) ended = i
+    }
+    expect(near()).toBeGreaterThan(before + 20)
+    // it stopped by itself, with nothing near home it could still see from the water
+    expect(ended).toBeGreaterThanOrEqual(0)
+    expect(items(s).find(it => it.key === `unitIdle:${boat.id}`)?.choices.map(c => c.label)).not.toContain('Explore nearby')
+  })
+})

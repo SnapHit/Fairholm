@@ -260,6 +260,12 @@ export const C = {
     /** The least surplus a ship or an offer rule moves at once. It was the literal 10 in
      *  src/sim/orders.ts and src/sim/predecessors.ts until 21 November 2026; same value. */
     surplusMinimum: 10,
+    /** A ship told to explore nearby keeps to water within this many tiles of a settlement of the
+     *  player's (or of where it was told, before there is one), sweeping the coast round home
+     *  rather than sailing off one way (DECISIONS.md 200). */
+    exploreNearRange: 10,
+    /** How many of the nearest places to look from it tries a way to, each turn. */
+    exploreNearTries: 8,
   },
 
   // -------------------------------------------------------------------------------------------

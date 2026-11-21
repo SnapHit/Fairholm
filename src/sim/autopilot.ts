@@ -16,6 +16,7 @@ import { foundingProblem } from './settlement'
 import { tileOffers, tileYield, foodBalance, clerksRequired } from './labour'
 import { neighbours8, isLand, isCoastal, sailingDistance, landingViable, dist } from './worldgen'
 import { findPath } from './units'
+import { sightOf } from './fog'
 
 /** How good a settlement would be here: the best yield of each ring tile, food counting for more,
  *  plus a little for water beside it and a river through it. The settlement's own tile yields its
@@ -151,6 +152,38 @@ export function unseenLandNear(s: GameState, tile: number, r: number): boolean {
     if (!t.explored && isLand(t) && t.terrain !== 'mountain') return true
   }
   return false
+}
+
+/** Where a ship exploring nearby goes next (DECISIONS.md 200): known water within
+ *  `C.orders.exploreNearRange` of a settlement of the player's (or of the ship, before there is
+ *  one) from which it would see ground or water nobody has seen, the nearest first and, among the
+ *  nearest, the one that would show most. The places to try, best first; empty when the water near
+ *  home is all seen. */
+export function nearbyFrontier(s: GameState, u: Pick<Unit, 'tile' | 'kind'>): number[] {
+  const w = s.world.width, h = s.world.height
+  const homes = s.settlements.filter(x => x.owner === 0).map(x => x.tile)
+  const anchors = homes.length ? homes : [u.tile]
+  const R = C.orders.exploreNearRange, r = sightOf(u.kind)
+  const seen = new Set<number>()
+  const found: { tile: number; score: number }[] = []
+  for (const a of anchors) {
+    const ax = a % w, az = Math.floor(a / w)
+    for (let z = Math.max(0, az - R); z <= Math.min(h - 1, az + R); z++) for (let x = Math.max(0, ax - R); x <= Math.min(w - 1, ax + R); x++) {
+      const i = z * w + x
+      if (seen.has(i)) continue
+      seen.add(i)
+      const t = s.world.tiles[i]
+      if (!t.explored || t.terrain !== 'water') continue
+      let gain = 0
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        const xx = x + dx, zz = z + dz
+        if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue
+        if (!s.world.tiles[zz * w + xx].explored) gain++
+      }
+      if (gain > 0) found.push({ tile: i, score: dist(w, u.tile, i) * 4 - gain })
+    }
+  }
+  return found.sort((a, b) => a.score - b.score || a.tile - b.tile).map(f => f.tile)
 }
 
 /** The founding opportunity as a system: nothing to resolve, one card at most (DECISIONS.md 195). */

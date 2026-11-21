@@ -1,5 +1,8 @@
 # Onboarding and the first session
 
+**Changed 22 November 2026.** The five lines in section 2 fade in about three and a half seconds apart,
+slow enough to read, and the fifth now ends with waking from stasis at sea in the lander.
+
 **Changed 4 October 2026, for movement again.** Hold to plot and then tap to go did not work on a
 phone. Movement is one gesture: hold where you want to go, and let go to set off (feel brief section
 4). The lander's queue item in section 4.6 and the sentences in sections 2 and 6 teach it that way.
@@ -63,7 +66,7 @@ known yet. You are already here, and you do not know where here is.
 
 - **The lander is settling at splashdown.** A mark on the water, a plume rising, a little open sea
   around it and haze beyond. Nothing else is shown because nothing else is known
-- **Five lines fade in over that shot**, one at a time, about two seconds apart, in the theme's display
+- **Five lines fade in over that shot**, one at a time, about three and a half seconds apart, slow enough to read, in the theme's display
   type, legible over the haze. They never block input and they are never a separate screen
 - **The first tap anywhere dismisses them and starts the music**
 - **Then you sail until you sight land, and look for your ground.** The lander moves wherever boats can
@@ -88,7 +91,7 @@ The five lines, exactly:
 >
 > *Then they went silent, and the cores stopped coming.*
 >
-> *The Company has sent you to start again. No one is waiting.*
+> *The Company spent its last cores to send you. You wake from stasis, at sea in your lander.*
 
 That shot and those five sentences are the whole of the exposition: you came from somewhere else, you
 arrived on the water, you know nothing of what is here, and where you go ashore is up to you. It is

@@ -876,6 +876,8 @@ function unitSheet(app: App, s: GameState, u: Unit): HTMLElement {
   if (u.order && u.order.kind === 'haul') actions.push(muted(`On a circuit of ${u.order.stops.length}: ${u.order.stops.map(st => s.settlements[st.settlement]?.name ?? '?').join(', ')}. Posture: ${RISK_WORDS[u.order.risk]}.`))
   if (u.order && u.order.kind !== 'garrison') actions.push(button(STOP_LABELS[u.order.kind] ?? 'Stop', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: null }, 'Order cleared'), 'small ghost'))
   if (u.kind === 'colonist' && !u.order) actions.push(button('Explore by itself', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: { kind: 'explore' } }, 'Exploring'), 'small ghost'))
+  // a ship sweeps the water near home, the nearest unseen first, and stops when it is all seen (DECISIONS.md 200)
+  if (isHull(u.kind) && !lander && !u.order) actions.push(button('Explore nearby', () => app.dispatch({ t: 'setUnitOrder', unit: u.id, order: { kind: 'explore' } }, 'Exploring nearby'), 'small ghost'))
   // what it carries, as icons with amounts, and a bar for how full its hold is; the lander's detail
   // keeps to what sailing and founding need, so its stores are one quiet line
   const cargo = (Object.entries(u.cargo) as [GoodId, number][]).filter(([, n]) => n)

@@ -1,5 +1,8 @@
 # Setting and fiction brief
 
+**Changed 22 November 2026.** The fifth opening line in section 7a now says the Company spent its last
+cores to send you and that you wake from stasis at sea in your lander, replacing "No one is waiting".
+
 **Changed 3 October 2026.** Section 7 says how the lander is moved under the current rule: a hold plots
 a course and the route's end or Go commits it. The vocabulary paragraph in section 12 no longer
 contrasts signatories with a term the legal constraint forbids. Nothing else changed.
@@ -282,8 +285,8 @@ because that carriage becomes dangerous.
 
 The first ship took a hundred years to reach this world. Its people found Bloom, a flower that grows
 nowhere else, and from it they made cores, and cores cut the crossing to eight months. They shipped
-cores home. Then they went silent, and the cores stopped coming. The Company has sent you on what cores
-it had left, to start again.
+cores home. Then they went silent, and the cores stopped coming. The Company has spent its last cores
+to send you, to start again. You cross in stasis, and wake at sea in the lander.
 
 This is the root of three things already in this document: why the crossing is marginal (section 6),
 why cores are what the Company cannot do without (section 8), and why the predecessors know the ground
@@ -300,7 +303,7 @@ over the splashdown until the first tap dismisses them.
 >
 > "Then they went silent, and the cores stopped coming."
 >
-> "The Company has sent you to start again. No one is waiting."
+> "The Company spent its last cores to send you. You wake from stasis, at sea in your lander."
 
 ---
 

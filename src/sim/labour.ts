@@ -8,9 +8,10 @@ import { neighbours8 } from './worldgen'
 import { isBlockaded } from './military'
 import { isCoastalSettlement } from './settlement'
 
-/** The nine tiles a settlement works: its own and the eight around it. Art brief section 3. */
+/** The tiles a settlement's people work: the eight around its own, which is worked free and never by
+ *  a colonist (DECISIONS.md 9 and 200). Art brief section 3. */
 export function workableTiles(s: GameState, st: Settlement): number[] {
-  return [st.tile, ...neighbours8(s.world.width, s.world.height, st.tile)]
+  return neighbours8(s.world.width, s.world.height, st.tile)
 }
 
 /** Does a tile yield this good at all, ignoring who works it? */
