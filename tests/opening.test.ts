@@ -9,7 +9,7 @@ import { createGame, applyAction } from '../src/sim/actions'
 import { C } from '../src/sim/constants'
 import { maxMoves, findPath, makeUnit } from '../src/sim/units'
 import { neighbours8, landHeadings, HEADINGS, sailingDistance, isLand, dist } from '../src/sim/worldgen'
-import { sailHint } from '../src/sim/autopilot'
+import { sailHint, siteReport } from '../src/sim/autopilot'
 import { sightOf } from '../src/sim/fog'
 import { playOpening } from './helpers'
 import type { GameState, Unit } from '../src/sim/state'
@@ -166,5 +166,29 @@ describe('the first turn shows where to hold', () => {
       applyAction(s, { t: 'moveUnit', unit: lander.id, path: findPath(s, lander, lander.tile, to!)! })
       expect(d[lander.tile], seed).toBeLessThan(from)
     }
+  })
+})
+
+describe('ground is told before it is founded on', () => {
+  it('a site with no forest seen round it is poor, and one with forest is not', () => {
+    const s = createGame('site-report', { size: 'small', difficulty: 'standard' }, 3)
+    const w = s.world.width, h = s.world.height
+    const tile = s.world.tiles.findIndex((t, i) => isLand(t) && t.terrain !== 'mountain' && neighbours8(w, h, i).length === 8)
+    for (const n of neighbours8(w, h, tile)) { s.world.tiles[n].explored = true; s.world.tiles[n].forest = null }
+    const bare = siteReport(s, tile)
+    expect(bare.forest).toBe(0)
+    expect(bare.poor).toBe(true)
+    expect(bare.words).toMatch(/no forest/)
+    const land = neighbours8(w, h, tile).find(n => isLand(s.world.tiles[n]))!
+    const wood = s.world.tiles.find(t => t.forest && isLand(t))!
+    s.world.tiles[land].forest = wood.forest
+    s.world.tiles[land].terrain = wood.terrain
+    const wooded = siteReport(s, tile)
+    expect(wooded.forest).toBeGreaterThan(0)
+    expect(wooded.poor).toBe(false)
+    // what is unseen is not told
+    for (const n of neighbours8(w, h, tile)) s.world.tiles[n].explored = false
+    expect(siteReport(s, tile).unseen).toBe(8)
+    expect(siteReport(s, tile).poor).toBe(false)
   })
 })

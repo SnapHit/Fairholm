@@ -40,6 +40,29 @@ export function siteScore(s: GameState, tile: number): number {
   return score
 }
 
+/** What ground would give a settlement founded on it, from what the player has seen of the eight
+ *  tiles round it (DECISIONS.md 205): the food three people on its best plots would grow, with the
+ *  centre's own; how many tiles carry forest to cut timber from, without which nothing can be built
+ *  but with bought timber; fresh water; and how many of the eight are unseen. The words are for the
+ *  card under the map, short enough for a phone. */
+export function siteReport(s: GameState, tile: number): { food: number; forest: number; river: boolean; unseen: number; words: string; poor: boolean } {
+  const w = s.world.width, h = s.world.height
+  const foods: number[] = []
+  let forest = 0, unseen = 0, river = !!s.world.tiles[tile].river
+  for (const i of neighbours8(w, h, tile)) {
+    const t = s.world.tiles[i]
+    if (!t.explored) { unseen++; continue }
+    if (t.river) river = true
+    if (t.terrain === 'water') { foods.push(tileYield(s, i, 'food', null)); continue }
+    if (tileOffers(t).includes('timber') && tileYield(s, i, 'timber', null) > 0) forest++
+    foods.push(tileYield(s, i, 'food', null))
+  }
+  const food = tileYield(s, tile, 'food', null) + foods.sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0)
+  const poor = forest === 0 && unseen < 4
+  const words = `food ${food}, ${forest ? `forest on ${forest} tile${forest === 1 ? '' : 's'}` : 'no forest'}${river ? ', fresh water' : ''}${unseen ? `, ${unseen} tiles unseen` : ''}${poor ? ': nothing could be built without bought timber' : ''}`
+  return { food, forest, river, unseen, words, poor }
+}
+
 /** The best ground for new settlements within reach of a settlement, best first: legal to found, not
  *  on a people's land or crowding a rival's settlement, scored by the ring, with a bonus for a coast,
  *  less for every tile of walking and for ground nobody has seen. The settlers of the machine players

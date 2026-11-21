@@ -305,16 +305,25 @@ function assignTileSheet(app: App, s: GameState, st: Settlement, tile: number, g
   const cell = ringCells(s, st).find(x => x.tile === tile)
   if (!cell) return h('div', { class: 'panel' }, header(app, 'Out of reach'))
   const offers = tileGoodOrder(s, tile, cell.offers).filter(g => tileYield(s, tile, g, null) > 0)
-  const chosen: TileGood | undefined = good ?? cell.worker?.good ?? offers[0]
   const holderIdx = st.colonists.findIndex(c => c.job.kind === 'tile' && c.job.tile === tile)
+  // with someone on it, what they make is what is chosen: the chips change it (decision 205)
+  const chosen: TileGood | undefined = holderIdx >= 0 ? cell.worker?.good ?? good ?? offers[0] : good ?? cell.worker?.good ?? offers[0]
   const panel = h('div', { class: 'panel' }, heroHeader(app, chosen ? goodMark(chosen, 'hero') : h('span', {}), 'Who works this ground', cell.words))
   if (!chosen) { panel.append(h('p', { class: 'muted' }, 'Nothing grows or is dug here.')); return panel }
   if (cell.reason && !cell.available) panel.append(h('p', { class: 'warn' }, cell.reason))
   if (offers.length > 1) {
-    panel.append(section('For what', h('div', { class: 'chips' }, offers.map(g => h('button', {
-      class: 'chip' + (g === chosen ? ' on' : ''), type: 'button', 'aria-label': `${GOOD_NAMES[g]}, ${tileYield(s, tile, g, null)} a turn`,
-      onClick: () => app.open({ kind: 'assignTile', settlement: st.id, tile, good: g }),
-    }, goodMark(g, 'pill'), `${GOOD_NAMES[g]} ${tileYield(s, tile, g, null)}`)))))
+    // one tap changes what is made here: the one working it switches at once, with Undo; with
+    // nobody on it, the tap chooses what the people below would make (DECISIONS.md 205)
+    const holder = holderIdx >= 0 ? st.colonists[holderIdx] : null
+    const pickGood = (g: TileGood) => {
+      if (holder && g !== chosen) app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: holderIdx, job: { kind: 'tile', tile, good: g } }, `Now making ${GOOD_NAMES[g].toLowerCase()}`)
+      app.sheet = { kind: 'assignTile', settlement: st.id, tile, good: g }
+      app.renderSheet()
+    }
+    panel.append(section(holder ? 'Make here' : 'What to make', h('div', { class: 'chips' }, offers.map(g => h('button', {
+      class: 'chip' + (g === chosen ? ' on' : ''), type: 'button', 'aria-label': `${GOOD_NAMES[g]}, ${tileYield(s, tile, g, holder)} a turn`,
+      onClick: () => pickGood(g),
+    }, goodMark(g, 'pill'), `${GOOD_NAMES[g]} ${tileYield(s, tile, g, holder)}`)))))
   }
   const holders: { index: number; label: string }[] = holderIdx >= 0 ? [{ index: holderIdx, label: standingWords(st.colonists[holderIdx]) }] : []
   if (holderIdx >= 0) {
@@ -322,7 +331,7 @@ function assignTileSheet(app: App, s: GameState, st: Settlement, tile: number, g
       [button('Leave it empty', () => { if (app.dispatch({ t: 'assignWorker', settlement: st.id, colonist: holderIdx, job: { kind: 'idle' } }, 'Set idle')) app.back() }, 'tiny ghost')], 'holder')))
   }
   const rows = tileCandidates(s, st, tile, chosen)
-  panel.append(section('Best here first', ...(rows.length ? rows.map(c => candidateRow(app, s, st, c, chosen, (swapWith) => {
+  panel.append(section(holderIdx >= 0 ? 'Or put someone else here' : 'Best here first', ...(rows.length ? rows.map(c => candidateRow(app, s, st, c, chosen, (swapWith) => {
     app.assign(st.id, c.index, { kind: 'tile', tile, good: chosen }, `Set to ${chosen}`, swapWith)
   }, holders)) : [muted('Nobody else is here.')])))
   return panel

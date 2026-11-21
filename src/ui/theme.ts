@@ -100,6 +100,8 @@ export const AUTO_TURN_QUIET_MS = 2500
 export const AUTO_TURN_PAUSE_MS = 800
 /** The lines of the dispatch a run's summary shows before "and N more" (decision 196). */
 export const RUN_SUMMARY_LINES = 4
+/** How long it stays before it goes by itself (decision 205). */
+export const RUN_SUMMARY_MS = 7000
 /** The longest title the queue bar shows whole on a phone; a problem past it shows its short form
  *  and its settlement, or the short form alone (decision 196). */
 export const BAR_TITLE_CHARS = 30
@@ -189,21 +191,26 @@ export const TOKENS: Record<string, string> = {
 
   // Type. In rem, so the whole interface follows the reader's own font size rather than ignoring
   // it. The numbers in brackets are what each comes to at the usual 16px root.
-  '--font': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-  '--text-micro': '0.6875rem',   // 11
-  '--text-tiny': '0.75rem',      // 12
-  '--text-small': '0.8125rem',   // 13
-  '--text-body': '0.9375rem',    // 15
-  '--text-lead': '1rem',         // 16
-  '--text-title': '1.0625rem',   // 17
-  '--text-head': '1.125rem',     // 18
+  // Alegreya Sans for the interface and Alegreya for titles and the opening, a humanist sans and the
+  // serif it was drawn beside (Juan Pablo del Peral, Huerta Tipográfica): warm, literary and legible
+  // small, where the phone's own face read as anyone's app. Self hosted, OFL (DECISIONS.md 205)
+  '--font': '"Alegreya Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  '--font-display': '"Alegreya", Georgia, "Times New Roman", serif',
+  // a pixel up on each from the system face's sizes: Alegreya Sans sits a little smaller on its body
+  '--text-micro': '0.75rem',     // 12
+  '--text-tiny': '0.8125rem',    // 13
+  '--text-small': '0.875rem',    // 14
+  '--text-body': '1rem',         // 16
+  '--text-lead': '1.0625rem',    // 17
+  '--text-title': '1.125rem',    // 18
+  '--text-head': '1.1875rem',    // 19
   '--text-display': '1.625rem',  // 26
   /** The opening's lines: the display face a size down, because at twenty-six a sentence wraps to
    *  three rows on a phone and five of them covered the picture they are meant to sit over. */
   '--text-opening': '1.375rem',  // 22
   '--weight-normal': '400',
-  '--weight-medium': '600',
-  '--weight-strong': '650',
+  '--weight-medium': '500',
+  '--weight-strong': '700',
   '--leading': '1.35',
   '--leading-tight': '1.1',
   '--tracking-caps': '0.06em',

@@ -13,6 +13,7 @@ import { unitLabel } from '../sim/queue'
 import { maxMoves, unitAttack, unitDefence, isHull } from '../sim/units'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
+import { siteReport } from '../sim/autopilot'
 import { tileOffers, tileYield } from '../sim/labour'
 import { sightMask, unitVisible, settlementKnown } from '../sim/fog'
 import { C } from '../sim/constants'
@@ -87,7 +88,8 @@ function noRouteWords(s: GameState, u: Unit, r: NoRoute): string {
     if (r.shore === null) return 'The lander goes ashore by founding. Sail in beside that shore first.'
     const problem = foundingProblem(s, r.shore)
     const who = u.aboard.length > 0 ? ` Tap the aboard count to send one of them to look about.` : ''
-    return problem ? `Not here: ${problem}.${who}` : `${cap(tileWords(tileLook(s, r.shore)).toLowerCase())}. Found here beaches the lander.${who}`
+    // what a settlement here would have, before it is founded: food, forest for timber, water (decision 205)
+    return problem ? `Not here: ${problem}.${who}` : `${cap(tileWords(tileLook(s, r.shore)).toLowerCase())}: ${siteReport(s, r.shore).words}. Found here beaches the lander.${who}`
   }
   return r.words
 }
@@ -136,7 +138,9 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
     bits.push(`${u.moves}/${maxMoves(u)} moves`)
     if (target !== null) {
       const problem = foundingProblem(s, target)
-      bits.push(problem ? `the shore ${bearing(w, u.tile, target)} is ${problem}` : `shore ${bearing(w, u.tile, target)}: ${tileWords(tileLook(s, target)).toLowerCase()}`)
+      const site = problem ? null : siteReport(s, target)
+      bits.push(problem ? `the shore ${bearing(w, u.tile, target)} is ${problem}` : `shore ${bearing(w, u.tile, target)}: ${site!.words}`)
+      if (site?.poor) card.warn = true
       if (canFound) actions.push(found())
     } else if (neighbours8(w, h, u.tile).some(n => isLand(s.world.tiles[n]) && s.world.tiles[n].explored)) {
       bits.push('no shore here to found on')
@@ -152,6 +156,9 @@ export function unitCard(app: App, s: GameState, u: Unit): Card {
     if (!u.order && !cargo) bits.push(marked ? 'hold a marked place, and let go to walk there' : u.moves > 0 ? 'hold where to go, and let go to set off' : 'hold where to go: it sets off next turn')
     // a colonist founds where it stands, once the lander has founded the first settlement
     if (u.kind === 'colonist' && s.settlements.some(x => x.owner === 0) && !s.settlements.some(x => x.tile === u.tile) && foundingProblem(s, u.tile) === null) {
+      const site = siteReport(s, u.tile)
+      bits.push(`here: ${site.words}`)
+      if (site.poor) card.warn = true
       actions.push(button('Found here', () => { void app.found(u.id, u.tile) }, 'go'))
     }
   }

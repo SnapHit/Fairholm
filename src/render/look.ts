@@ -636,6 +636,8 @@ export const GRID = {
 export const FOUND_PREVIEW = {
   legal: '#f5eed1',
   illegal: '#d8553e',
+  /** Legal, but with no forest seen round it: a settlement there could build nothing (decision 205). */
+  poor: '#f0a531',
   centre: 0.62,
   ring: 0.3,
 }

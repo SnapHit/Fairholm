@@ -31,6 +31,7 @@ import { season } from '../sim/turn'
 import { hex, tileColour, clearColour, type RGB } from './palette'
 import { workableTiles, tileYield, tileOffers } from '../sim/labour'
 import { neighbours8 } from '../sim/worldgen'
+import { siteReport } from '../sim/autopilot'
 import { sightMask, unitVisible, settlementKnown } from '../sim/fog'
 import { seedNumber } from './seed'
 import { makeLightUniforms, applyLook, surfaceMaterial, displayColour, type LightUniforms } from './shading'
@@ -889,7 +890,8 @@ export class Scene {
     // the founding preview: the nine tiles a settlement here would work
     if (this.foundPreview) {
       const fp = this.foundPreview
-      const c = hexRgb(fp.legal ? FOUND_PREVIEW.legal : FOUND_PREVIEW.illegal)
+      // ground with no forest seen round it shows amber: nothing could be built there (decision 205)
+      const c = hexRgb(!fp.legal ? FOUND_PREVIEW.illegal : siteReport(s, fp.tile).poor ? FOUND_PREVIEW.poor : FOUND_PREVIEW.legal)
       for (const t of neighbours8(w, s.world.height, fp.tile)) setOverlayTile(tex, w, t, c, FOUND_PREVIEW.ring)
       setOverlayTile(tex, w, fp.tile, c, FOUND_PREVIEW.centre)
     }

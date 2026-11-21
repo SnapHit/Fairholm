@@ -3689,6 +3689,34 @@ From the owner, 22 November 2026, with two new drawings.
 - **The opening's view** puts the lander at seven tenths of the way down the screen, below the lines,
   so it comes down into clear water rather than under the words.
 
+### 205. What a turn brought goes by itself, ground is told before founding, a worker's good is one tap, and a designed typeface
+
+From the owner's first games on a phone, 22 November 2026.
+
+- **What the turns brought** no longer asks anything. One turn that brought nothing worth a line
+  shows nothing: the player has just ended it. Otherwise the card says what it is ("4 turns ran on by
+  themselves", or "What the turn brought"), a tap on it opens the dispatch, and any other touch, or
+  `RUN_SUMMARY_MS` (seven seconds), puts it away. The Put away and Dispatch buttons are gone.
+- **Ground is told before it is founded on** (`siteReport` in `src/sim/autopilot.ts`): the food three
+  people and the centre would grow, how many of the eight tiles round it carry forest to cut timber
+  from, fresh water, and how many are unseen, from what the player has seen only. The lander's card
+  says it of the shore it would beach on, and a colonist's of where it stands. With no forest seen,
+  and most of the ground seen, the card warns that nothing could be built without bought timber, and
+  the nine tiles the preview marks on the map turn amber (`FOUND_PREVIEW.poor`). Founding stays one
+  tap and undoable: the warning comes before, not as a dialog.
+- **A worker's good is one tap.** On the ground's sheet the chips change what the one working it
+  makes, at once, with Undo ("Now making flax"); before, they only chose what the people listed below
+  it would make, so the way to change a good was to swap another settler in. With nobody on the
+  ground the chips still choose for those below. The sections read Make here, Working it now, and Or
+  put someone else here.
+- **The typeface** is Alegreya Sans for the interface and Alegreya for titles, names and the opening
+  lines: a humanist sans and the serif drawn beside it (Juan Pablo del Peral, Huerta Tipográfica,
+  SIL Open Font License), where the phone's own face read as any app's. Five weights of the latin
+  subset are self hosted in `public/fonts` with their licences, 120 kB, the interface's regular
+  preloaded; figures stand level (`lining-nums`); every text size is a pixel up, since the face sits
+  a little smaller on its body.
+- **As the opening goes** the view takes in the lander and the ring on the water it is to hold.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

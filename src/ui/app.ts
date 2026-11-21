@@ -39,7 +39,7 @@ import { unitCard, passengerCard, tileCard, type Card } from './card'
 import { h, clear, append, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
-import { SHEET_DISMISS_PX, TAP_MIN_PX, RUN_SUMMARY_LINES, BAR_TITLE_CHARS, DESCENT, installTheme } from './theme'
+import { SHEET_DISMISS_PX, TAP_MIN_PX, RUN_SUMMARY_LINES, RUN_SUMMARY_MS, BAR_TITLE_CHARS, DESCENT, installTheme } from './theme'
 import { installIcons, icon, isGood, SEASON_ICONS, type IconName } from './icons'
 import { goodMark, queueIcon, dispatchIcon, UNITS_SHEET, unitPiece } from './pictures'
 import { drawnSize } from '../render/units'
@@ -169,6 +169,9 @@ export class App {
       runStopped: (turns, why) => this.showRunSummary(turns, why),
     })
     for (const ev of ['pointerdown', 'keydown', 'wheel'] as const) document.addEventListener(ev, () => this.turns.interrupt(), { capture: true, passive: true })
+    // a touch anywhere but on it puts what the turns brought away (decision 205)
+    // (not the touch that stopped the run and brought it up)
+    document.addEventListener('pointerdown', (e) => { if (!this.runEl.contains(e.target as Node) && performance.now() - this.runShownAt > 400) this.hideRunSummary() }, { capture: true, passive: true })
     new ResizeObserver(() => this.layout()).observe(root)
     this.layout()
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.save() })
@@ -230,7 +233,7 @@ export class App {
     // once it has (decision 204); the lines gone, it is chosen, so its card says what to do (202)
     const lander = this.state.units.find(u => u.owner === 0 && u.kind === 'lander')
     if (lander) this.scene.hideForDescent(lander.id)
-    this.opening = mountOpening(this.root, () => window.setTimeout(() => this.chooseLander(), 0), lander ? {
+    this.opening = mountOpening(this.root, () => window.setTimeout(() => this.chooseLander(true), 0), lander ? {
       target: () => this.onScreen(lander.id),
       landed: () => this.scene.revealAfterDescent(DESCENT.revealMs),
     } : undefined)
@@ -731,11 +734,19 @@ export class App {
 
   /** Before the first settlement, the lander chosen whenever nothing else is, so the card under the
    *  map always says what to do next: hold where to sail, and let go (decision 202). */
-  chooseLander() {
+  chooseLander(showWay = false) {
     if (this.state.settlements.some(x => x.owner === 0) || this.opening?.showing) return
     if (this.scene.cam.view.activeUnit !== null) return
     const lander = this.state.units.find(u => u.owner === 0 && u.kind === 'lander')
-    if (lander) this.select(lander.id)
+    if (!lander) return
+    this.select(lander.id)
+    // as the opening goes, the view takes in the lander and the ring on the water it is to hold
+    const to = showWay ? this.mustSail() : null
+    if (to !== null) {
+      const w = this.state.world.width
+      const mid = Math.round((Math.floor(lander.tile / w) + Math.floor(to / w)) / 2) * w + Math.round(((lander.tile % w) + (to % w)) / 2)
+      this.scene.glideTo(mid, Math.max(this.scene.cam.view.zoom, C.feel.zoom.working))
+    }
   }
 
   select(id: number) {
@@ -1776,23 +1787,30 @@ export class App {
       else seen.set(d.text, { d, n: 1 })
     }
     const told = [...seen.values()].sort((a, b) => order.indexOf(a.d.kind) - order.indexOf(b.d.kind))
+    // one turn that brought nothing worth a line is not worth a card: the player has just ended it
+    // and is looking at what stopped it (DECISIONS.md 205)
+    if (passed < 2 && !told.length) return
     const shown = told.slice(0, RUN_SUMMARY_LINES)
     const more = told.length - shown.length
     const line = (lead: SVGSVGElement | null, text: string, cls = '') => h('div', { class: 'line led ' + cls }, lead, h('span', {}, text))
     clear(this.runEl)
     const main = h('div', { class: 'card-main' },
-      h('div', { class: 'card-title' }, passed === 1 ? 'A turn passed' : `${passed} turns passed`),
+      h('div', { class: 'card-title' }, passed === 1 ? 'What the turn brought' : `${passed} turns ran on by themselves`),
       ...(shown.length ? shown.map(({ d, n }) => line(dispatchIcon(s, d.kind, d.text, 'pill'), n > 1 ? `${d.text.replace(/\.$/, '')}, on ${n} turns.` : d.text)) : [h('div', { class: 'line quiet' }, 'Nothing came of note.')]),
       more > 0 ? h('div', { class: 'line more' }, `And ${plural(more, 'more thing')} in the dispatch.`) : null,
       why === 'touch' ? line(null, 'Stopped at your touch.', 'stop')
         : why ? line(queueIcon(s, why.group, why.key, 'pill'), `Stopped: ${why.title}`, 'stop') : null,
-      h('div', { class: 'card-actions' },
-        button('Dispatch', () => { this.hideRunSummary(); this.open({ kind: 'dispatch' }) }, 'small ghost'),
-        button('Put away', () => this.hideRunSummary(), 'small ghost')),
+      h('div', { class: 'line hint' }, 'Tap for the dispatch, the record of every turn. This goes by itself.'),
     )
-    this.runEl.append(h('div', { class: 'card chance led' }, h('span', { class: 'card-lead' }, icon('sun', 'tile')), main))
+    // nothing to decide: a tap opens the dispatch, any other touch or a few seconds put it away
+    this.runEl.append(h('button', { class: 'card chance led', type: 'button', onClick: () => { this.hideRunSummary(); this.open({ kind: 'dispatch' }) } }, h('span', { class: 'card-lead' }, icon('sun', 'tile')), main))
     this.runEl.classList.add('show')
+    this.runShownAt = performance.now()
+    if (this.runTimer !== null) clearTimeout(this.runTimer)
+    this.runTimer = window.setTimeout(() => this.hideRunSummary(), RUN_SUMMARY_MS)
   }
+  private runTimer: number | null = null
+  private runShownAt = 0
 
   hideRunSummary() {
     if (!this.runEl.classList.contains('show')) return
