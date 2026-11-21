@@ -127,6 +127,13 @@ every check reads the state as it stands. They use the types above:
 Where a good is being let go and a building here could work it, the card about the good offers that
 building first: the cause before the symptom.
 
+*Added the same day, after a player who only takes the cards' fixes was run on three worlds
+(`DECISIONS.md` 194).* **No card offers a fix that changes nothing.** A check works out what its fix
+would do before offering it, and offers it only where it changes something; where nothing would, the
+card says why and offers what can be done instead. A fix that would have to be made by hand every
+turn gives way, once the loss has gone on for a few turns, to the one that ends it: storage, making
+less, or letting the orders sell what would spoil.
+
 ---
 
 ## 6. Grouping, which is what actually makes the ceiling hold

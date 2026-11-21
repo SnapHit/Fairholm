@@ -28,12 +28,12 @@ import type { GameState, Settlement, Colonist, Job, GoodId, TileGood, BuildingLi
 import { GOODS, BUILDING_LINES } from './state'
 import type { System } from './turn'
 import { C } from './constants'
-import { tileYield, workableTiles, workerOutput, buildingWorkers, foodBalance, clerksRequired } from './labour'
+import { tileYield, workableTiles, workerOutput, buildingWorkers, foodBalance, clerksRequired, defaultJob } from './labour'
 import {
   previewFlows, storageCapacity, surplusRuleFor, canStart, buildingName, effectiveTier, outputModifier,
   isCoastalSettlement, buildable, type Flows,
 } from './settlement'
-import { canConsign, isEmbargoed, dumpedGoods, buyPrice, standingSale, isInputHere } from './market'
+import { canConsign, isEmbargoed, dumpedGoods, buyPrice, standingSale, isInputHere, ordersSell } from './market'
 import { shipRuleState, shipsUnder } from './orders'
 import { offerRuleState, MANUFACTURED } from './predecessors'
 import { isLand, dist } from './worldgen'
@@ -133,7 +133,7 @@ function look(s: GameState, st: Settlement, dumping: Set<GoodId>): Look {
     if (out > 0) sale[g] = out
     const left = after[g] - out - capacity
     if (left > 0) spoils[g] = left
-    if (dumping.has(g) && sellsHere(st, g)) dumped.add(g)
+    if (dumping.has(g) && ordersSell(s, st, g)) dumped.add(g)
   }
   const free = workableTiles(s, st).filter(t => {
     const tile = s.world.tiles[t]
@@ -141,11 +141,6 @@ function look(s: GameState, st: Settlement, dumping: Set<GoodId>): Look {
     return !st.colonists.some(c => c.job.kind === 'tile' && c.job.tile === t)
   })
   return { st, flows, cap: capacity, fb: foodBalance(s, st), mod: outputModifier(s, st), after, sale, spoils, dumped, free }
-}
-
-/** Whether this settlement's orders sell a good to the Company. */
-function sellsHere(st: Settlement, g: GoodId): boolean {
-  return st.buildings.consignment > 0 || surplusRuleFor(st, g).destination.kind === 'consign'
 }
 
 /** The best free tile for a good, for a worker or for anyone. */
@@ -232,6 +227,147 @@ function spareFor(s: GameState, lk: Look, job: Job, exclude: number[] = []): Spa
 
 const assign = (st: Settlement, index: number, job: Job) => ({ t: 'assignWorker', settlement: st.id, colonist: index, job })
 
+/** A workshop here that works a good the settlement is letting go, with a place free and something
+ *  to work it with, and who would go there: the cause before the symptom (turn queue brief section
+ *  5). The carpenter's shop only while something wants frame. Null when there is none, or nobody
+ *  is spare to send. */
+function usesHere(s: GameState, lk: Look, g: GoodId): { line: BuildingLine; sp: Spare } | null {
+  const st = lk.st
+  for (const line of BUILDING_LINES) {
+    const def = C.buildings.lines[line]
+    if (def.input !== g || !def.output || st.buildings[line] === 0 || buildingWorkers(st, line) >= C.labour.workersPerBuilding) continue
+    if (line === 'carpenter' && frameWanted(st) <= 0) continue
+    if (def.secondInput && st.stock[def.secondInput] <= 0) continue
+    const sp = spareFor(s, lk, { kind: 'building', line })
+    if (sp) return { line, sp }
+  }
+  return null
+}
+
+/** What `autoAssign` would give these colonists, in the order it gives it, worked on a copy so the
+ *  state is not touched. A card offers that fix only where it would change something: a fix that
+ *  puts nobody to work is never offered (DECISIONS.md 194). */
+function wouldAssign(s: GameState, st: Settlement, who: number[]): Job[] {
+  const colonists = st.colonists.map((c, i) => who.includes(i) ? { ...c, job: { kind: 'idle' } as Job } : c)
+  const copy: Settlement = { ...st, colonists }
+  return who.map(i => {
+    const job = defaultJob(s, copy)
+    colonists[i] = { ...colonists[i], job }
+    return job
+  })
+}
+
+function sameJob(a: Job, b: Job): boolean {
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'tile' && b.kind === 'tile') return a.tile === b.tile && a.good === b.good
+  if (a.kind === 'building' && b.kind === 'building') return a.line === b.line
+  return true
+}
+
+/** Where a job puts someone, for the end of a sentence or a button: "on timber", "in the linen shop". */
+function jobPlace(st: Settlement, job: Job): string {
+  return job.kind === 'tile' ? `on ${job.good}` : job.kind === 'building' ? `in the ${nameOf(st, job.line)}` : 'nowhere'
+}
+
+/** Why the hands in a workshop with something to work make nothing of it: their standing, and the
+ *  settlement's resolve, in the glossary's words. */
+function madeNothingWhy(lk: Look, line: BuildingLine): string {
+  const hands = lk.st.colonists.filter(c => c.job.kind === 'building' && c.job.line === line)
+  const parts: string[] = []
+  const low = hands.slice().sort((a, b) => workerOutput(a, line) - workerOutput(b, line))[0]
+  if (low && workerOutput(low, line) < C.labour.baseBuildingOutput) parts.push(`${person(low)} makes ${workerOutput(low, line)} a turn in a workshop`)
+  if (lk.mod < 0) parts.push(`with resolve this low everyone here makes ${-lk.mod} less`)
+  return parts.length ? list(parts) : 'what they make is used up before it is made'
+}
+
+/** Places free in the meeting house, or 0 where there is none. */
+function meetingRoom(st: Settlement): number {
+  return st.buildings.meeting > 0 ? Math.max(0, C.labour.workersPerBuilding - buildingWorkers(st, 'meeting')) : 0
+}
+
+/** Where low resolve is part of why hands make nothing: someone in the meeting house, which gathers
+ *  the grievance resolve is made of, or the meeting house itself. Null where resolve is not low or
+ *  neither can be had. */
+function resolveFix(s: GameState, lk: Look): { label: string; action: unknown; words: string } | null {
+  const st = lk.st
+  if (lk.mod >= 0) return null
+  if (st.buildings.meeting > 0) {
+    if (buildingWorkers(st, 'meeting') >= C.labour.workersPerBuilding) return null
+    const sp = spareFor(s, lk, { kind: 'building', line: 'meeting' })
+    if (!sp) return null
+    return { label: 'Put someone in the meeting house', action: assign(st, sp.index, { kind: 'building', line: 'meeting' }), words: ` ${cap(sp.words)} could gather grievance in the meeting house, and resolve rises with it.` }
+  }
+  const coming = (st.building && st.building.id.line === 'meeting') || st.buildQueue.some(b => b.line === 'meeting')
+  if (coming || !buildable(s, st).some(b => b.line === 'meeting')) return null
+  return { label: 'Build a meeting house first', action: { t: 'setBuildOrder', settlement: st.id, queue: [{ line: 'meeting', tier: 1 }, ...st.buildQueue] }, words: ' A meeting house would gather the grievance resolve is made of.' }
+}
+
+/** Someone on the land or idle who would make something in a failing workshop, and the hand in it
+ *  who makes least, to trade places: the one who would make most there, then the one whose own
+ *  work is worth least. Never a master from their trade, and never someone from another workshop.
+ *  Null when nobody would make anything. */
+function betterHand(s: GameState, lk: Look, line: BuildingLine): { into: number; from: number; words: string; who: string; gives: number; out: string; place: string } | null {
+  const st = lk.st
+  const job: Job = { kind: 'building', line }
+  const hands = st.colonists.map((c, i) => ({ c, i })).filter(x => x.c.job.kind === 'building' && x.c.job.line === line)
+  if (!hands.length) return null
+  const worst = hands.slice().sort((a, b) => gives(s, lk, a.c, job) - gives(s, lk, b.c, job))[0]
+  const floor = gives(s, lk, worst.c, job)
+  let best: { i: number; there: number; now: number } | null = null
+  st.colonists.forEach((c, i) => {
+    if (c.job.kind === 'building' && c.job.line === line) return
+    if (c.standing === 'master' && c.speciality && ((c.job.kind === 'tile' && c.job.good === c.speciality) || (c.job.kind === 'building' && c.job.line === c.speciality))) return
+    // never someone already making something in a workshop: two failing shops would trade the one
+    // good hand back and forth, a fix undoing a fix (DECISIONS.md 194)
+    if (c.job.kind === 'building') return
+    const there = gives(s, lk, c, job)
+    if (there <= floor) return
+    const now = makesNow(s, lk, c)
+    if (!best || there > best.there || (there === best.there && now < best.now)) best = { i, there, now }
+  })
+  if (!best) return null
+  const b = best as { i: number; there: number; now: number }
+  const c = st.colonists[b.i]
+  return { into: b.i, from: worst.i, words: `${person(c)} ${doing(st, c)}`, who: person(c), gives: b.there, out: person(worst.c), place: jobPlace(st, c.job) }
+}
+
+/** One of those on the land making a good the settlement keeps losing, and where they would do some
+ *  good instead: a workshop with a place and something to work, or the best free ground for a good
+ *  that is not being let go. The one making least of it goes; never a master of it. Null when
+ *  nobody makes it on the land or there is nowhere better. */
+function lessOf(s: GameState, lk: Look, g: TileGood): { index: number; job: Job; words: string; to: string; short: string; gives: number } | null {
+  const st = lk.st
+  // horses breed from the herd: fewer on the pasture does not end their spoiling
+  if (g === 'horses') return null
+  const makers = st.colonists.map((c, i) => ({ c, i })).filter(x => x.c.job.kind === 'tile' && x.c.job.good === g && !(x.c.standing === 'master' && x.c.speciality === g))
+  if (!makers.length) return null
+  const one = makers.sort((a, b) => makesNow(s, lk, a.c) - makesNow(s, lk, b.c))[0]
+  const letGo = (h: GoodId) => (lk.sale[h] ?? 0) > 0 || (lk.spoils[h] ?? 0) > 0 || lk.dumped.has(h)
+  let best: { job: Job; gives: number; value: number } | null = null
+  for (const line of BUILDING_LINES) {
+    const def = C.buildings.lines[line]
+    if (!def.input || !def.output || st.buildings[line] === 0 || buildingWorkers(st, line) >= C.labour.workersPerBuilding) continue
+    if (line === 'carpenter' && frameWanted(st) <= 0) continue
+    if (st.stock[def.input] < C.labour.baseBuildingOutput || (def.secondInput && st.stock[def.secondInput] <= 0)) continue
+    const job: Job = { kind: 'building', line }
+    const v = gives(s, lk, one.c, job)
+    // a refined good is worth more than a raw one
+    if (v > 0 && (!best || v * 2 > best.value)) best = { job, gives: v, value: v * 2 }
+  }
+  for (const h of ['food', 'timber', 'ore', 'flax', 'hemp', 'madder', 'bloom', 'horses'] as TileGood[]) {
+    if (h === g || (h !== 'food' && letGo(h))) continue
+    const tile = bestTile(s, lk, h, one.c)
+    if (tile === null) continue
+    const job: Job = { kind: 'tile', tile, good: h }
+    const v = gives(s, lk, one.c, job)
+    if (v > 0 && (!best || v > best.value)) best = { job, gives: v, value: v }
+  }
+  if (!best) return null
+  const b = best as { job: Job; gives: number; value: number }
+  const short = b.job.kind === 'tile' ? b.job.good : `the ${nameOf(st, (b.job as { line: BuildingLine }).line)}`
+  return { index: one.i, job: b.job, words: `${person(one.c)} ${doing(st, one.c)}`, to: b.job.kind === 'tile' ? `to the best free ground for ${b.job.good}` : `to ${short}`, short, gives: b.gives }
+}
+
 // ---- the checks ---------------------------------------------------------------------------------
 
 /** The building the settlement is putting up, or about to: the one under way, or the head of the
@@ -271,6 +407,48 @@ function spoilage(s: GameState, lk: Look, out: Problem[]) {
   const lost = (Object.entries(lk.spoils) as [GoodId, number][]).sort((a, b) => b[1] - a[1])
   if (!lost.length) return
   const choices: QueueChoice[] = []
+  let root = ''
+  let line: BuildingLine | undefined
+  // the cause before the symptom: a workshop here that would work the good, with someone to put in it
+  for (const [g] of lost) {
+    const use = usesHere(s, lk, g)
+    if (!use) continue
+    const bname = nameOf(st, use.line)
+    const def = C.buildings.lines[use.line]
+    root = ` ${buildingWorkers(st, use.line) === 0 ? `Nobody works the ${bname}` : `The ${bname} has room for one more`}, which turns ${g} into ${def.output === 'frame' ? 'frame' : def.output}: ${use.sp.words} could go there and make ${use.sp.gives} a turn.`
+    choices.push({ label: `Staff the ${bname}`, action: assign(st, use.sp.index, { kind: 'building', line: use.line }) })
+    line = use.line
+    break
+  }
+  // storage, unless it is already coming; first, once the goods have spoiled turn after turn, so a
+  // fix made by hand every turn gives way to the one that ends it
+  const store = buildable(s, st).find(b => b.line === 'storage')
+  const coming = (st.building && st.building.id.line === 'storage') || st.buildQueue.some(b => b.line === 'storage')
+  const storeChoice: QueueChoice | null = store && !coming ? { label: `Build a ${buildingName(store).toLowerCase()} first`, action: { t: 'setBuildOrder', settlement: st.id, queue: [store, ...st.buildQueue] } } : null
+  const since = st.conditions['spoilage']
+  const lasting = since !== undefined && s.turn - since >= C.problems.storageFirstAfter
+  if (storeChoice && lasting) choices.push(storeChoice)
+  // spoiling turn after turn with the store as big as it is going to be soon: more is made than is
+  // used, kept or sold, so one of those making it goes where they do some good. Consigning the
+  // overflow by hand every turn was the fix the card offered before (DECISIONS.md 194)
+  let moveWords = ''
+  if (lasting && !storeChoice) {
+    for (const [g] of lost) {
+      const move = lessOf(s, lk, g as TileGood)
+      if (!move) continue
+      moveWords = ` ${cap(g)} has spoiled for ${plural(s.turn - since!, 'turn')}: more is made than is used or kept. ${cap(move.words)} could go ${move.to} and make ${move.gives} a turn.`
+      choices.push({ label: `Move one from ${g} to ${move.short}`, action: assign(st, move.index, move.job) })
+      break
+    }
+  }
+  // goods the orders hold, losing what the store cannot keep: let the orders sell just that, every
+  // turn, rather than consign it by hand every turn
+  const held = lost.find(([g]) => C.market.goods[g].traded && !isEmbargoed(s, g) && g !== 'tooling' && g !== 'arms' && g !== 'instruments' && surplusRuleFor(st, g).destination.kind === 'hold')
+  if (held && lasting && canConsign(s, st).ok) {
+    const g = held[0]
+    moveWords = moveWords || ` Its orders hold the ${g}, so what the store cannot keep is lost each turn.`
+    choices.push({ label: `Sell the ${g} that would spoil, each turn`, action: { t: 'setGoodRule', settlement: st.id, good: g, rule: { destination: { kind: 'consign' }, threshold: Math.max(0, lk.cap - C.market.lotSize) } } })
+  }
   const sellable = lost.find(([g]) => C.market.goods[g].traded && !isEmbargoed(s, g) && st.stock[g] > 0)
   if (sellable && canConsign(s, st).ok) {
     const n = Math.min(sellable[1], st.stock[sellable[0]])
@@ -282,13 +460,12 @@ function spoilage(s: GameState, lk: Look, out: Problem[]) {
     const to = s.settlements.filter(x => x.owner === 0 && x.id !== st.id).sort((a, b) => dist(s.world.width, a.tile, st.tile) - dist(s.world.width, b.tile, st.tile))[0]
     if (to) choices.push({ label: `Send ${g} to ${to.name}`, action: { t: 'setGoodRule', settlement: st.id, good: g, rule: { destination: { kind: 'ship', settlement: to.id } } } })
   }
-  const store = buildable(s, st).find(b => b.line === 'storage')
-  if (store) choices.push({ label: `Build a ${buildingName(store).toLowerCase()} first`, action: { t: 'setBuildOrder', settlement: st.id, queue: [store, ...st.buildQueue] } })
+  if (storeChoice && !lasting) choices.push(storeChoice)
   out.push({
     key: `spoilage:${st.id}`, group: 'spoilage', type: 1, title: `${st.name} is losing goods`,
-    body: `At the end of the turn it loses ${list(lost.map(([g, n]) => `${n} ${g}`))} to spoilage: its store holds ${lk.cap} of each good.`,
-    explain: 'Goods above storage capacity are lost. Consign them, ship them, or build storage.',
-    settlement: st.id, magnitude: 2, opens: 'settlement', short: `Losing ${lost[0][0]}`, good: lost[0][0], choices,
+    body: `At the end of the turn it loses ${list(lost.map(([g, n]) => `${n} ${g}`))} to spoilage: its store holds ${lk.cap} of each good.${root}${moveWords}${coming ? ` A ${buildingName({ line: 'storage', tier: Math.min(3, st.buildings.storage + 1) as 1 | 2 | 3 }).toLowerCase()} is on its way.` : ''}`,
+    explain: 'Goods above storage capacity are lost. Put them to work, consign them, ship them, or build storage.',
+    settlement: st.id, magnitude: 2, opens: 'settlement', short: `Losing ${lost[0][0]}`, good: lost[0][0], line, choices,
   })
 }
 
@@ -332,6 +509,18 @@ function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
         if (cutter && tile !== null) choices.push({ label: 'Put someone on timber', action: assign(st, cutter.index, { kind: 'tile', tile, good: 'timber' }) })
         else if (trade && n > 0) choices.push({ label: `Buy ${n} timber`, action: { t: 'buy', settlement: st.id, good: 'timber', amount: n } })
       }
+    } else if (st.stock.timber + (lk.flows.made.timber ?? 0) > 0) {
+      // timber to work, and no frame made of it: the hands in the shop make nothing, by their
+      // standing or the settlement's resolve. Until 21 November 2026 this said there was no timber
+      // while seventy lay in the store (DECISIONS.md 194)
+      why = `The ${nameOf(st, 'carpenter')} has timber, but ${carpenters === 1 ? 'the one who works it makes' : `the ${carpenters} who work it make`} nothing: ${madeNothingWhy(lk, 'carpenter')}.`
+      const swap = betterHand(s, lk, 'carpenter')
+      if (swap) {
+        why += ` ${cap(swap.words)} would make ${swap.gives} frame a turn there, and ${swap.out} could take their place ${swap.place}.`
+        choices.push({ label: `Swap in ${swap.who}`, action: { t: 'swapWorkers', settlement: st.id, a: swap.into, b: swap.from } })
+      }
+      const civic = resolveFix(s, lk)
+      if (civic) { why += civic.words; choices.push({ label: civic.label, action: civic.action }) }
     } else {
       const tile = bestTile(s, lk, 'timber')
       const sp = tile !== null ? spareFor(s, lk, { kind: 'tile', tile, good: 'timber' }) : null
@@ -367,43 +556,28 @@ function buildStalled(s: GameState, lk: Look, out: Problem[]): boolean {
   return noFrame
 }
 
-/** A building standing empty, or with room, while the good it works is let go: spoiling, or timber
- *  sold while a build waits for frame. Dumping is the dumping card's, which offers the same fix.
- *  Only where someone is spare to put there. */
+/** The carpenter's shop standing empty, or with room, while the settlement's orders sell the timber
+ *  a build waiting for frame needs. A good that spoils is the spoilage card's, and a good dumped is
+ *  the dumping card's, and each offers the workshop first. Only where someone is spare to put there. */
 function inputWasted(s: GameState, lk: Look, out: Problem[], frameStalled: boolean) {
   const st = lk.st
-  const wanted = frameWanted(st)
   const b = going(st)
-  let best: Problem | null = null, bestN = 0
-  for (const line of BUILDING_LINES) {
-    const def = C.buildings.lines[line]
-    if (!def.output || !def.input || st.buildings[line] === 0) continue
-    if (line === 'carpenter' && (wanted <= 0 || frameStalled)) continue
-    const workers = buildingWorkers(st, line)
-    if (workers >= C.labour.workersPerBuilding) continue
-    const g = def.input
-    const spoils = lk.spoils[g] ?? 0, sold = lk.sale[g] ?? 0
-    // dumping is the dumping card's to say, with this same fix first (below)
-    const how = spoils > 0 ? 'spoils' : line === 'carpenter' && sold > 0 && !lk.dumped.has(g) ? 'sold' : null
-    if (!how) continue
-    const n = how === 'spoils' ? spoils : sold
-    const sp = spareFor(s, lk, { kind: 'building', line })
-    if (!sp || (best && n <= bestN)) continue
-    const bname = nameOf(st, line)
-    const made = def.output === 'frame' ? 'frame' : def.output
-    const title = how === 'spoils' ? `${st.name} loses ${g} its ${bname} could use`
-      : `${st.name} sells timber while its ${buildingName(b!.id).toLowerCase()} waits for frame`
-    const lead = how === 'spoils' ? `${n} ${g} will spoil this turn.` : `Its orders send ${n} timber away this turn.`
-    best = {
-      key: `inputWasted:${st.id}`, group: 'inputWasted', type: 4, title,
-      body: `${lead} ${workers === 0 ? `Nobody works the ${bname}.` : `The ${bname} has room for one more.`} ${cap(sp.words)} could go there and make ${sp.gives} ${made} a turn from ${g}.`,
-      explain: 'A good a building here works is worth more worked than sold raw, and nothing at all spoiled.',
-      settlement: st.id, magnitude: 2, opens: 'settlement', short: workers === 0 ? 'Standing empty' : 'Room for one more', line, good: g,
-      choices: [{ label: `Staff the ${bname}`, action: assign(st, sp.index, { kind: 'building', line }) }],
-    }
-    bestN = n
-  }
-  if (best) out.push(best)
+  if (!b || frameWanted(st) <= 0 || frameStalled || st.buildings.carpenter === 0) return
+  const workers = buildingWorkers(st, 'carpenter')
+  if (workers >= C.labour.workersPerBuilding) return
+  const sold = lk.sale.timber ?? 0
+  if (sold <= 0 || lk.dumped.has('timber') || (lk.spoils.timber ?? 0) > 0) return
+  const sp = spareFor(s, lk, { kind: 'building', line: 'carpenter' })
+  if (!sp) return
+  const bname = nameOf(st, 'carpenter')
+  out.push({
+    key: `inputWasted:${st.id}`, group: 'inputWasted', type: 4,
+    title: `${st.name} sells timber while its ${buildingName(b.id).toLowerCase()} waits for frame`,
+    body: `Its orders send ${sold} timber away this turn. ${workers === 0 ? `Nobody works the ${bname}.` : `The ${bname} has room for one more.`} ${cap(sp.words)} could go there and make ${sp.gives} frame a turn from timber.`,
+    explain: 'A good a building here works is worth more worked than sold raw, and nothing at all spoiled.',
+    settlement: st.id, magnitude: 2, opens: 'settlement', short: workers === 0 ? 'Standing empty' : 'Room for one more', line: 'carpenter', good: 'timber',
+    choices: [{ label: `Staff the ${bname}`, action: assign(st, sp.index, { kind: 'building', line: 'carpenter' }) }],
+  })
 }
 
 /** People in a building with nothing to work, or on ground that gives them nothing. */
@@ -412,14 +586,23 @@ function workerWasted(s: GameState, lk: Look, out: Problem[], frameStalled: bool
   const who: number[] = []
   const why: string[] = []
   let line: BuildingLine | undefined
+  let swap: (ReturnType<typeof betterHand> & { line: BuildingLine }) | null = null
   for (const l of BUILDING_LINES) {
     const def = C.buildings.lines[l]
     if (!def.output || st.buildings[l] === 0 || buildingWorkers(st, l) === 0) continue
     if ((lk.flows.byLine[l] ?? 0) > 0) continue
     if (l === 'carpenter' && frameStalled) continue
     st.colonists.forEach((c, i) => { if (c.job.kind === 'building' && c.job.line === l) who.push(i) })
-    const short = def.secondInput && st.stock[def.input!] > 0 ? def.secondInput : def.input!
-    why.push(`the ${nameOf(st, l)} has no ${short} to work`)
+    const made = lk.flows.made as Record<string, number>
+    const held = st.stock[def.input!] + (made[def.input!] ?? 0) > 0 && (!def.secondInput || st.stock[def.secondInput] + (made[def.secondInput] ?? 0) > 0)
+    if (held) {
+      // something to work, and nothing made of it: the hands make nothing, and a better hand is the fix
+      why.push(`those in the ${nameOf(st, l)} make nothing: ${madeNothingWhy(lk, l)}`)
+      swap = swap ?? (() => { const b = betterHand(s, lk, l); return b ? { ...b, line: l } : null })()
+    } else {
+      const short = def.secondInput && st.stock[def.input!] > 0 ? def.secondInput : def.input!
+      why.push(`the ${nameOf(st, l)} has no ${short} to work`)
+    }
     line = line ?? l
   }
   st.colonists.forEach((c, i) => {
@@ -429,13 +612,25 @@ function workerWasted(s: GameState, lk: Look, out: Problem[], frameStalled: bool
     why.push(`the ground one works gives no ${c.job.good}`)
   })
   if (!who.length) return
+  // other work only where there is some: the chooser gives back the job they have, or none, and a
+  // button that changes nothing is not offered
+  const jobs = wouldAssign(s, st, who)
+  const moved = who.filter((i, k) => jobs[k].kind !== 'idle' && !sameJob(jobs[k], st.colonists[i].job))
+  const first = moved.length ? jobs[who.indexOf(moved[0])] : null
+  const civic = why.some(w => w.includes('resolve this low')) ? resolveFix(s, lk)
+    : !swap && !first && meetingRoom(st) ? { label: who.length === 1 ? 'Put them in the meeting house' : 'Put one in the meeting house', action: assign(st, who[0], { kind: 'building', line: 'meeting' }), words: ' The meeting house has room, where they would gather grievance against the Company.' }
+    : null
   out.push({
     key: `workerWasted:${st.id}`, group: 'workerWasted', type: 4,
     title: who.length === 1 ? `Someone at ${st.name} is working for nothing` : `${who.length} people at ${st.name} are working for nothing`,
-    body: `${cap(list(why))}, so ${who.length === 1 ? 'they make' : 'they make'} nothing this turn.`,
+    body: `${cap(list(why))}, so ${who.length === 1 ? 'they make' : 'they make'} nothing this turn.${swap ? ` ${cap(swap.words)} would make ${swap.gives} a turn in the ${nameOf(st, swap.line)}, and ${swap.out} could take their place ${swap.place}.` : first ? ` There is work ${jobPlace(st, first)}.` : civic ? '' : ' There is no other work here for them.'}${civic ? civic.words : ''}`,
     explain: 'One body, one job. A job that makes nothing is a body lost.',
-    settlement: st.id, magnitude: who.length, opens: 'settlement', short: 'Working for nothing', line,
-    choices: [{ label: who.length === 1 ? 'Find them other work' : 'Find them all other work', action: { t: 'autoAssign', settlement: st.id, only: who } }],
+    settlement: st.id, magnitude: who.length, opens: 'settlement', short: 'Working for nothing', line: swap?.line ?? line,
+    choices: [
+      ...(swap ? [{ label: `Swap in ${swap.who}`, action: { t: 'swapWorkers', settlement: st.id, a: swap.into, b: swap.from } }] : []),
+      ...(civic ? [{ label: civic.label, action: civic.action }] : []),
+      ...(first ? [{ label: who.length === 1 ? `Put them ${jobPlace(st, first)}` : 'Find them all other work', action: { t: 'autoAssign', settlement: st.id, only: who } }] : []),
+    ],
   })
 }
 
@@ -445,13 +640,26 @@ function idle(s: GameState, lk: Look, out: Problem[]) {
   const clerks = clerksRequired(st.colonists.length)
   const over = idleAt.slice(clerks)
   if (!over.length) return
+  // where the chooser behind Put them to work would put them, worked out first: with no free ground
+  // and no workshop with work held, it puts nobody to work, and that button is not offered
+  const jobs = wouldAssign(s, st, over)
+  const placed = over.filter((_, k) => jobs[k].kind !== 'idle')
+  const first = placed.length ? jobs[over.indexOf(placed[0])] : null
+  const lead = `${clerks ? `Past the ${plural(clerks, 'clerk')} the ledger needs, ` : ''}${over.length === 1 ? 'one stands idle' : `${over.length} stand idle`}.`
+  const where = !first ? ' No ground is free and no workshop here has work held for them.'
+    : over.length === 1 ? ` There is work ${jobPlace(st, first)}.`
+    : placed.length < over.length ? ` There is work for ${placed.length}, ${jobPlace(st, first)} first.` : ` There is work for them all, ${jobPlace(st, first)} first.`
+  // with no work the chooser would give, the meeting house where it has room: gathering grievance is
+  // work the player chooses to start, so it is offered and never given by default
+  const civic = !first ? meetingRoom(st) : 0
   out.push({
     key: `idle:${st.id}`, group: 'idle', type: 4,
     title: over.length === 1 ? `Someone at ${st.name} has nothing to do` : `${over.length} people at ${st.name} have nothing to do`,
-    body: `${clerks ? `Past the ${plural(clerks, 'clerk')} the ledger needs, ` : ''}${over.length === 1 ? 'one stands idle' : `${over.length} stand idle`}. Put them to work on a tile or in a building.`,
+    body: `${lead}${where}${civic ? ' The meeting house has room, where they would gather grievance against the Company.' : ''}`,
     explain: 'Tap a person, then pick a tile or a building. One body, one job.',
     settlement: st.id, magnitude: over.length, opens: 'settlement', short: 'Someone idle',
-    choices: [{ label: 'Put them to work', action: { t: 'autoAssign', settlement: st.id, only: over } }],
+    choices: first ? [{ label: placed.length === 1 ? `Put them ${jobPlace(st, first)}` : 'Put them to work', action: { t: 'autoAssign', settlement: st.id, only: placed } }]
+      : civic ? [{ label: over.length === 1 ? 'Put them in the meeting house' : 'Put one in the meeting house', action: assign(st, over[0], { kind: 'building', line: 'meeting' }) }] : [],
   })
 }
 
@@ -577,11 +785,13 @@ function school(s: GameState, lk: Look, out: Problem[]) {
   if (!teachers.length) return
   const next = nextStudent(st, teachers, null)
   const at = teachers.map(t => st.colonists.indexOf(t))
+  // other work for the teachers only where the chooser has some to give
+  const elsewhere = next < 0 && wouldAssign(s, st, at).some((j, k) => !sameJob(j, st.colonists[at[k]].job))
   out.push({
     key: `schoolIdle:${st.id}`, group: 'schoolIdle', type: 4, title: `The ${bname} at ${st.name} has nobody to teach`,
     body: next >= 0 ? `${cap(plural(teachers.length, 'teacher'))} and no one being taught. ${cap(person(st.colonists[next]))} ${doing(st, st.colonists[next])} could be.` : `Nobody here can be taught by ${teachers.length === 1 ? 'its teacher' : 'its teachers'}.`,
     settlement: st.id, magnitude: 1, opens: 'school', short: 'Nobody to teach', line: 'school',
-    choices: next >= 0 ? [{ label: 'Teach someone', action: { t: 'educate', settlement: st.id, colonist: next } }] : [{ label: 'Find the teacher other work', action: { t: 'autoAssign', settlement: st.id, only: at } }],
+    choices: next >= 0 ? [{ label: 'Teach someone', action: { t: 'educate', settlement: st.id, colonist: next } }] : elsewhere ? [{ label: at.length === 1 ? 'Find the teacher other work' : 'Find the teachers other work', action: { t: 'autoAssign', settlement: st.id, only: at } }] : [],
   })
 }
 
@@ -676,24 +886,24 @@ function orders(s: GameState, lk: Look, out: Problem[]) {
 function dumping(s: GameState, looks: Look[], out: Problem[]) {
   for (const d of dumpedGoods(s)) {
     const g = d.good
-    const sellers = looks.filter(lk => sellsHere(lk.st, g))
+    // the card is about the orders, not the price: once nothing sells the good any more it goes,
+    // and the price mends on its own (DECISIONS.md 194)
+    // and a store full of it sells only what it cannot keep: holding that would spoil it, which is
+    // worse than a low price, so a full store is not dumping
+    const sellers = looks.filter(lk => ordersSell(s, lk.st, g) && lk.after[g] < lk.cap)
+    if (!sellers.length) continue
     let fix: QueueChoice | null = null, root = ''
     let at: Settlement | undefined
     for (const lk of sellers) {
+      const use = usesHere(s, lk, g)
+      if (!use) continue
       const st = lk.st
-      for (const line of BUILDING_LINES) {
-        const def = C.buildings.lines[line]
-        if (def.input !== g || st.buildings[line] === 0 || buildingWorkers(st, line) >= C.labour.workersPerBuilding) continue
-        if (line === 'carpenter' && frameWanted(st) <= 0) continue
-        const sp = spareFor(s, lk, { kind: 'building', line })
-        if (!sp) continue
-        const bname = nameOf(st, line)
-        root = ` ${buildingWorkers(st, line) === 0 ? `Nobody at ${st.name} works the ${bname}` : `The ${bname} at ${st.name} has room for one more`}, which would turn it into ${def.output === 'frame' ? 'frame' : def.output}.`
-        fix = { label: `Staff the ${bname}`, action: assign(st, sp.index, { kind: 'building', line }) }
-        at = st
-        break
-      }
-      if (fix) break
+      const def = C.buildings.lines[use.line]
+      const bname = nameOf(st, use.line)
+      root = ` ${buildingWorkers(st, use.line) === 0 ? `Nobody at ${st.name} works the ${bname}` : `The ${bname} at ${st.name} has room for one more`}, which would turn it into ${def.output === 'frame' ? 'frame' : def.output}.`
+      fix = { label: `Staff the ${bname}`, action: assign(st, use.sp.index, { kind: 'building', line: use.line }) }
+      at = st
+      break
     }
     const worst = at ?? sellers.map(lk => lk.st).sort((a, b) => b.stock[g] - a.stock[g])[0]
     out.push({

@@ -162,7 +162,29 @@ export function defaultJob(s: GameState, st: Settlement): Colonist['job'] {
   }
   if (purpose === 'civic' && st.buildings.meeting > 0 && buildingWorkers(st, 'meeting') < C.labour.workersPerBuilding) return { kind: 'building', line: 'meeting' }
   for (const g of ['food', 'timber', 'ore', 'flax', 'hemp', 'madder', 'bloom', 'horses'] as TileGood[]) { const j = want(g); if (j) return j }
-  return { kind: 'idle' }
+  // with no ground left to work, a building with room and something held to work in it, the one
+  // with the most held first. Until 21 November 2026 a settlement whose tiles were all worked left
+  // its newcomers idle beside an empty linen shop while its flax spoiled, and the idle card's Put
+  // them to work put nobody to work (DECISIONS.md 194)
+  return roomInAWorkshop(st, need) ?? { kind: 'idle' }
+}
+
+/** The workshops a newcomer can be put in, in the order the industry purpose fills them. */
+const WORKSHOPS: BuildingLine[] = ['carpenter', 'smelter', 'toolworks', 'armoury', 'linenWorks', 'ropeWorks', 'dyeWorks', 'still', 'finishing']
+
+/** A workshop with a place free and at least a turn's work held for it, the most held first. The
+ *  carpenter's shop only while something wants frame. Null when there is none. */
+function roomInAWorkshop(st: Settlement, frameNeed: number): Colonist['job'] | null {
+  let best: BuildingLine | null = null, most = 0
+  for (const line of WORKSHOPS) {
+    const def = C.buildings.lines[line]
+    if (!def.input || st.buildings[line] === 0 || buildingWorkers(st, line) >= C.labour.workersPerBuilding) continue
+    if (line === 'carpenter' && frameNeed <= 0) continue
+    if (def.secondInput && st.stock[def.secondInput] <= 0) continue
+    const held = st.stock[def.input]
+    if (held >= C.labour.baseBuildingOutput && held > most) { most = held; best = line }
+  }
+  return best ? { kind: 'building', line: best } : null
 }
 
 export function buildingWorkers(st: Settlement, line: BuildingLine): number {

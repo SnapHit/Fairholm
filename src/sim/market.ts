@@ -186,23 +186,34 @@ export function isInputHere(st: Settlement, g: GoodId): boolean {
  *  office or no office. The market step's own rule, so anything that looks ahead to it (the
  *  problems in src/sim/problems.ts) agrees with it. */
 export function standingSale(s: GameState, st: Settlement, g: GoodId, stock: number): number {
+  if (!ordersSell(s, st, g)) return 0
   const office = st.buildings.consignment > 0
-  if (!office && !canConsign(s, st).ok) return 0
-  if (!C.market.goods[g].traded) return 0
   const rule = surplusRuleFor(st, g)
-  if (rule.destination.kind !== 'consign' && !(office && !rule.own && rule.destination.kind !== 'hold')) return 0
-  if (!office && isEmbargoed(s, g)) return 0
   const threshold = office ? Math.min(rule.threshold, C.market.consignmentOfficeThreshold) : rule.threshold
-  // keep inputs a building needs, and keep tooling, arms and instruments, which are capability
-  // not cargo. Horses are both: a stud is kept at twice the threshold and the rest are sold,
-  // or a settlement whose ground is pasture earns nothing (DECISIONS.md 151)
-  if (g === 'tooling' || g === 'arms' || g === 'instruments') return 0
+  // keep twice the threshold of an input a building here needs. Horses are both capability and
+  // cargo: a stud is kept at twice the threshold and the rest are sold, or a settlement whose
+  // ground is pasture earns nothing (DECISIONS.md 151)
   const keep = isInputHere(st, g) || g === 'horses' ? threshold * 2 : threshold
   const surplus = stock - keep
   // a full lot above the threshold, or whatever is above it when the store is full and the
   // rest would spoil
   if (surplus >= C.market.lotSize || (surplus >= C.market.fullStoreMinSale && stock >= storageCapacity(st))) return surplus
   return 0
+}
+
+/** Whether a settlement's standing orders sell a good to the Company at all, however much is held:
+ *  the rule `standingSale` applies before it looks at the stock. The dumping card reads it, so the
+ *  card goes the moment nothing sells the good any more rather than when its price has mended
+ *  (DECISIONS.md 194). Tooling, arms and instruments are capability, not cargo, and are kept. */
+export function ordersSell(s: GameState, st: Settlement, g: GoodId): boolean {
+  const office = st.buildings.consignment > 0
+  if (!office && !canConsign(s, st).ok) return false
+  if (!C.market.goods[g].traded) return false
+  if (g === 'tooling' || g === 'arms' || g === 'instruments') return false
+  const rule = surplusRuleFor(st, g)
+  if (rule.destination.kind !== 'consign' && !(office && !rule.own && rule.destination.kind !== 'hold')) return false
+  if (!office && isEmbargoed(s, g)) return false
+  return true
 }
 
 /** The good most consigned recently, for the Company's next demand. Falls back to the best price. */

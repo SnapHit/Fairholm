@@ -3359,6 +3359,52 @@ toolworks, an armoury and a linen shop; the press raises resolve, the declaratio
 of the game rather than three quarters, and the lazy player, which declares the moment it can,
 declares and loses. Every other row of the table is unchanged.
 
+### 194. Every fix a card offers changes something
+
+**What.** On 21 November 2026 a player who takes only the first fix the top card offers, up to eight
+a turn, was run on three small worlds with generous terms for 150 turns. It took 1,374 fixes, and
+1,203 of them left the same card offering the same fix. The causes, and what changed:
+
+- **The idle card.** "Put them to work" ran `autoAssign`, whose `defaultJob` returns idle when no
+  ground is free and the purpose is not industry, so it put nobody to work, 474 times on one world
+  with an empty linen shop beside spoiling flax. `defaultJob` now falls back to a workshop with a
+  place free and a turn's work held, the most held first (`roomInAWorkshop`), before idle. The card
+  works out on a copy what `autoAssign` would do (`wouldAssign` in `src/sim/problems.ts`) and offers
+  it only where it puts someone to work, naming the place ("Put them in the linen shop"). Where
+  nothing would, it offers the meeting house if it has room: gathering grievance is the player's to
+  start, so it is offered and never given by default. "Find them other work" on the working for
+  nothing card, and "Find the teacher other work", are offered only where they change a job.
+- **The dumping card** read the market's price pressure, which outlasts "Hold X everywhere", so it
+  asked again every turn until the price mended: 583 taps on another world. It now reads what the
+  orders sell (`ordersSell` in `src/sim/market.ts`, which `standingSale` now uses too) and goes the
+  moment nothing sells the good. A store already full of a good sells only what it cannot keep, and
+  holding that would spoil it, so a full store is not dumping.
+- **The spoilage card** offered consigning first and never the workshop that could use the good. The
+  queue brief's cause before the symptom now holds there too (`usesHere`), and the input wasted card
+  keeps only timber sold while a build waits. Once goods have spoiled `C.problems.storageFirstAfter`
+  turns running, storage comes first unless it is coming; then making less of the good (`lessOf`, never
+  horses, which breed from the herd); then, where the orders hold the good, letting them sell just
+  what would spoil, at a threshold one lot under the store; then consigning by hand. Consigning the
+  overflow by hand every turn had been the follower's fix on 135 turns of 150.
+- **The stalled build** said the carpenter's shop had no timber while seventy lay in the store: two
+  debtors make one frame each in a workshop, and low resolve took that one away. It now says so, and
+  offers to swap in someone who would make frame there (`swapWorkers`, a new action that trades two
+  colonists' jobs in one step) or the meeting house that raises resolve. The working for nothing
+  card does the same for any workshop. A swap never takes a hand from another workshop: two failing
+  shops traded one good hand back and forth 408 times before that rule.
+- `tests/problems.test.ts` now checks that every fix on its messy state changes its card: gone, or
+  saying something else, or offering something else.
+
+**After.** On six worlds and two terms the follower takes no fix that leaves its card as it was, and
+the treadmill of consigning by hand fell from 135 turns to 23 on the first world. The dead ends left
+are an empty build order with no suggestion, waiting units and a raider with no answer, which are
+decision 197.
+
+**What it did to the pace table.** One row moved: the lazy player on a large map, whose arrivals in
+full settlements now go to workshops rather than standing idle. Its price fall comes later than the
+game, it declares at 52% rather than 55%, and two waves come rather than one. Every other row is
+unchanged.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

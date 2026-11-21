@@ -264,6 +264,9 @@ export const C = {
     emptyHaulLaps: 2,
     /** The instruments a starved imported machine's card offers to buy, in turns of its running. */
     instrumentsTurns: 10,
+    /** Goods spoiling this many turns running: the card offers storage before consigning by hand
+     *  again, so a fix made every turn gives way to the one that ends it (DECISIONS.md 194). */
+    storageFirstAfter: 3,
   },
 
   // -------------------------------------------------------------------------------------------

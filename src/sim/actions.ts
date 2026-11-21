@@ -29,6 +29,9 @@ import { signatoryList } from './grievance'
 
 export type Action =
   | { t: 'assignWorker'; settlement: number; colonist: number; job: Job }
+  /** Two colonists of one settlement trade jobs, as one action: how a full workshop gets a better
+   *  hand without a third place (a problem's fix, src/sim/problems.ts, DECISIONS.md 194). */
+  | { t: 'swapWorkers'; settlement: number; a: number; b: number }
   /** Everyone idle put to the work a new arrival would be given; with `only`, just those people,
    *  by their place in the settlement's list, whatever they do now (a problem's fix, src/sim/problems.ts). */
   | { t: 'autoAssign'; settlement: number; only?: number[] }
@@ -218,6 +221,17 @@ function applyOne(s: GameState, a: Action, ctx: TurnContext): GameState {
         if (buildingWorkers(st, a.job.line) >= C.labour.workersPerBuilding && !(col.job.kind === 'building' && col.job.line === a.job.line)) throw new Error('building full')
       }
       col.job = a.job
+      syncWorkedTiles(s)
+      s.actionsThisTurn++
+      return s
+    }
+    case 'swapWorkers': {
+      const st = settlementOf(s, a.settlement)
+      const x = st.colonists[a.a], y = st.colonists[a.b]
+      if (!x || !y || a.a === a.b) throw new Error('no such colonists')
+      const jx = x.job, jy = y.job
+      x.job = jy
+      y.job = jx
       syncWorkedTiles(s)
       s.actionsThisTurn++
       return s
