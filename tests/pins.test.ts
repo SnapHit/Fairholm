@@ -484,6 +484,13 @@ describe('queue ceiling, adversarial', () => {
     for (const c of s.charters.slice(1)) { c.relation = 'tense'; c.suspicion = 0.8 }
     // let two turns settle the conditions (hunger, spoilage, blocked builds) and leave the mess in place
     for (let i = 0; i < 2; i++) applyAction(s, { t: 'endTurn' })
+    // a laden lighter where a raider lies: a raider is a card only while a ship with cargo is in its
+    // reach (DECISIONS.md 197)
+    const raider = s.units.find(u => u.kind === 'raider' && u.owner > 0)
+    expect(raider).toBeDefined()
+    const laden = makeUnit(s, 0, 'lighter', raider!.tile, null)
+    laden.cargo = { timber: 40 }
+    s.units.push(laden)
     const t0 = performance.now()
     const q = deriveQueue(s, SYSTEMS)
     const ms = performance.now() - t0

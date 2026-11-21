@@ -3462,6 +3462,56 @@ colonist beside them, can now happen.
   that stopped it (`stopper`).
 - A raider far off no longer stops a run: decision 197.
 
+### 197. Every card leads somewhere
+
+**What.** On the card follower's three worlds the top card offered no fix on 233 of 450 turns: an
+empty build order with only Open, a raider off the coast, a unit waiting. Now:
+
+- **An empty build order suggests what to build, and why** (`suggestBuild` in `src/sim/problems.ts`):
+  a carpenter's shop where nothing makes frame; storage where goods spoil, saying how much more it
+  holds; the workshop for a good made or held raw ("it turns the flax made here into linen, worth
+  more than the flax"); storage for a store nearly full; a school where there are debtors or those
+  under contract to teach; a wharf on a coast; a sawmill; works for the Company's coming. One tap
+  queues it, labelled with its cost: "Build a granary · 30 frame". Nothing is suggested that could
+  not be framed, or by a settlement of one with no timber held, since frame takes one pair of hands
+  cutting and one in the shop. Where there is no timber to be had the card says so and how to get
+  some; a small outpost (under `C.problems.buildEmptyFrom`) with nothing it could usefully build, or
+  any settlement with nothing it could build at all, is not asked.
+- **Units can be told to wait.** A ship, militia or hauler awaiting orders has **Wait in port** beside
+  a settlement of the player's, **Wait here** elsewhere (the `reserve` order, which ends the card
+  until the unit is moved or given another order). A unit that made contact has **Wait where it is**.
+- **The raider.** It hunted every hull, cargo or none, and engaged only a hull beside it, so on one
+  world it sat on an empty lighter's own tile for eighty turns: too close to engage, too set on it to
+  leave, and a card that stopped turns running on all the while. A raider now hunts only a ship with
+  cargo, which is what a raid takes (rival charters brief section 8), engages one beside it or on its
+  tile, and goes home after `C.naval.raiderLoiterTurns` turns with nothing to hunt. Its sighting near
+  a settlement is a line in the dispatch, once. It is a card, and stops a run, only while a laden ship
+  of the player's is within `C.naval.raiderReachTurns` turns of its sailing: "An unflagged raider is
+  near your lighter", which chooses the ship when tapped, so a hold can bring it in. No card moves a
+  unit. The Company's own ships keep their card.
+- **Nobody spare** for an empty carpenter's shop: the move that costs least, and its cost in words,
+  "Moving a debtor on food there would make 1 frame a turn; food falls from +3 to +1 a turn", never
+  at the cost of hunger, a master's trade, a teacher or the shop itself (`leastBad`).
+- **No timber to work**, with no free forest: someone switched to timber on forest ground they work
+  for something else, timber shipped from another settlement with some to spare (and, once ordered,
+  whether that settlement has any to send), timber bought, or a good consigned to pay for it
+  (`timberFixes`, `payFor`). Never the hands in the shop itself: taking them to the forest only
+  emptied it, and one person went back and forth between the two. A build short of tooling the
+  treasury cannot buy offers the same consignment. Hunger with no free ground offers to switch
+  someone to food on the ground they already work.
+- **The opportunities have their tap:** the first consignment offers to consign a lot of what is held
+  most; Review orders offers **Keep them as they are**.
+
+**What it did to the pace table.** The raider's change moved most rows a little, each still reaching
+every era: the strong player on a standard map now reaches tier three, and declarations come a few
+points earlier or later. A test that wanted a raider's card in its adversarial queue now gives the
+raider a laden ship to be near.
+
+**After.** On the follower's first three worlds the top card's fix solved something for good on 151
+of 450 turns, where it had on 7; the queue was empty on 128; the top card was a dead end on 98, nearly
+all a new outpost with no timber to be had and nobody spare, and gone round in circles on 73. Five of
+920 fixes taken left their card as it was.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

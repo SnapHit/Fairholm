@@ -233,6 +233,15 @@ export const C = {
     raidCargoFraction: 0.6,    // cargo transferred on a successful raid
     rivalRaidChancePerTurn: 0.03,
     repairPerTurn: 1,
+    /** A raider hunts a ship of the player's with cargo; with none to hunt it lies off a coast this many
+     *  turns and then goes home. Until 21 November 2026 one sat on an empty lighter for eighty turns
+     *  (DECISIONS.md 197). */
+    raiderLoiterTurns: 12,
+    /** A ship with cargo is at risk from a raider this many of the raider's turns of sailing away:
+     *  then, and only then, the raider is a card and stops turns running on. */
+    raiderReachTurns: 2,
+    /** A raider this close to a settlement of the player's, and in sight, is written to the dispatch. */
+    raiderSightedWithin: 5,
     /** Coastal batteries fire on adjacent hostile ships automatically, military brief section 11.
      *  Each battery standing on a settlement's tile fires once a turn at each hostile armed ship on
      *  the water beside it: a hit does one round's damage, as a lost exchange does. A damaged
@@ -267,6 +276,9 @@ export const C = {
     /** Goods spoiling this many turns running: the card offers storage before consigning by hand
      *  again, so a fix made every turn gives way to the one that ends it (DECISIONS.md 194). */
     storageFirstAfter: 3,
+    /** A settlement this small with nothing it could usefully build is not asked to fill its build
+     *  order (decision 197). */
+    buildEmptyFrom: 4,
   },
 
   // -------------------------------------------------------------------------------------------

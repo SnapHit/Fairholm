@@ -110,11 +110,19 @@ function sendRaider(s: GameState, ctx: TurnContext) {
   s.units.push(u)
 }
 
+/** Whether a ship has anything aboard to take. */
+export function laden(u: Unit): boolean {
+  return Object.values(u.cargo).some(n => (n ?? 0) > 0)
+}
+
 export function raidTarget(s: GameState, u: Unit): number | null {
-  // the nearest player hull with cargo, else the nearest coastal settlement of the player's
+  // the nearest player hull with cargo, else the nearest coastal settlement of the player's. Cargo
+  // is what a raid takes (rival charters brief section 8), so an empty hull is not prey: until 21
+  // November 2026 every hull was, and a raider sat on an empty lighter's own tile for eighty turns,
+  // too close to engage and too set on it to leave (DECISIONS.md 197)
   let best: number | null = null, bd = 1e9
   for (const x of s.units) {
-    if (x.owner !== 0 || !isHull(x.kind)) continue
+    if (x.owner !== 0 || !isHull(x.kind) || !laden(x)) continue
     const d = dist(s.world.width, u.tile, x.tile)
     if (d < bd) { bd = d; best = x.tile }
   }
@@ -145,16 +153,40 @@ export const navalSystem: System = {
       u.moves = maxMoves(u)
       const target = raidTarget(s, u)
       if (target === null) continue
-      // engage a player hull beside it
-      const prey = s.units.find(x => x.owner === 0 && isHull(x.kind) && neighbours8(w, h, u.tile).includes(x.tile))
+      // engage a laden player hull beside it, or on its own tile
+      const prey = s.units.find(x => x.owner === 0 && isHull(x.kind) && laden(x) && (x.tile === u.tile || neighbours8(w, h, u.tile).includes(x.tile)))
       if (prey) {
+        delete u.since['loiter']
         if (hullSpeed(u) >= hullSpeed(prey) || chance(ctx.rngPlay, 0.5)) engage(s, u, prey, ctx)
         continue
       }
-      // after a raid or enough damage, go home
+      // after a raid or enough damage, go home; and with nothing to hunt for long enough, go home too
       if (u.damage >= 2 || Object.keys(u.cargo).length) { s.units = s.units.filter(x => x !== u); continue }
+      const hunting = s.units.some(x => x.owner === 0 && isHull(x.kind) && laden(x) && x.tile === target)
+      if (hunting) delete u.since['loiter']
+      else {
+        u.since['loiter'] = u.since['loiter'] ?? s.turn
+        if (s.turn - u.since['loiter'] >= C.naval.raiderLoiterTurns) { s.units = s.units.filter(x => x !== u); continue }
+      }
       const path = findPath(s, u, u.tile, target)
       if (path) { u.path = path.slice(0, 6); advance(s, u) }
+    }
+    // a raider off the coast is a line in the dispatch, once, when it is first seen there; it is a
+    // card only while a laden ship of the player's is within its reach (queueItems, decision 197)
+    const mine = s.settlements.filter(x => x.owner === 0)
+    if (mine.length) {
+      const seen = sightMask(s)
+      for (const u of s.units) {
+        if (u.owner <= 0 || u.kind !== 'raider') continue
+        const near = mine.reduce((a, b) => dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a)
+        const d = dist(w, u.tile, near.tile)
+        if (seen[u.tile] && d <= C.naval.raiderSightedWithin) {
+          if (u.since['sighted'] === undefined) {
+            u.since['sighted'] = s.turn
+            ctx.log({ kind: 'rival', text: `${u.flagged ? `A ${s.charters[u.owner]?.name} raider` : 'An unflagged raider'} was sighted ${d} tiles off ${near.name}. Ships with cargo are its prey.`, tile: u.tile })
+          }
+        } else delete u.since['sighted']
+      }
     }
     // the shore fires first: coastal batteries on hostile ships beside their settlement
     batteryFire(s, ctx)
@@ -177,10 +209,24 @@ export const navalSystem: System = {
       if (!(u.owner === -1 || u.kind === 'raider')) continue
       // a raider out of sight is not off the coast as far as anyone ashore knows
       if (u.owner !== -1 && !seen[u.tile]) continue
+      const name = u.flagged ? (u.owner === -1 ? 'A Company ship' : `A ${s.charters[u.owner]?.name} raider`) : 'An unflagged raider'
+      if (u.kind === 'raider') {
+        // a card, and a stop to turns running on, only while a laden ship of the player's is within
+        // its reach: the one nearest, which tapping the card chooses, so a hold can bring it in.
+        // Otherwise the sighting is a line in the dispatch (decision 197)
+        const reach = hullSpeed(u) * C.naval.raiderReachTurns
+        const prey = s.units.filter(x => x.owner === 0 && isHull(x.kind) && laden(x) && dist(w, u.tile, x.tile) <= reach)
+          .sort((a, b) => dist(w, u.tile, a.tile) - dist(w, u.tile, b.tile))[0]
+        if (!prey) continue
+        const d = dist(w, u.tile, prey.tile)
+        const cargo = (Object.entries(prey.cargo) as [GoodId, number][]).filter(([, n]) => n > 0).map(([g, n]) => `${n} ${g}`).join(' and ')
+        out.push({ key: `sail:${u.id}`, group: 'sail', type: 2, title: `${name} is near your ${unitLabel(prey.kind).replace(/^(A|An) /, '').toLowerCase()}`, body: `It is ${d} tiles from your ${unitLabel(prey.kind).replace(/^(A|An) /, '').toLowerCase()}, which carries ${cargo}${hullSpeed(u) > hullSpeed(prey) ? ', and it is faster' : ''}. Bring it in beside a settlement of yours: tap here, then hold the settlement and let go.`, explain: 'Speed decides who can catch whom. A faster ship chooses whether to fight.', unit: prey.id, tile: prey.tile, magnitude: 2, since: s.turn, choices: [], opens: 'unit' })
+        continue
+      }
       const near = mine.reduce((a, b) => dist(w, u.tile, b.tile) < dist(w, u.tile, a.tile) ? b : a)
       const d = dist(w, u.tile, near.tile)
-      if (d <= 5 && isHostileTo(s, u.owner, 0) || (u.kind === 'raider' && d <= 5)) {
-        out.push({ key: `sail:${u.id}`, group: 'sail', type: 2, title: `${u.flagged ? (u.owner === -1 ? "A Company ship" : `A ${s.charters[u.owner]?.name} raider`) : 'An unflagged raider'} is off the coast`, body: `${d} tiles from ${near.name}. Ships with cargo are its prey; a cutter or an armed trader can bring it to action.`, explain: 'Speed decides who can catch whom. A faster ship chooses whether to fight.', tile: u.tile, magnitude: 2, since: s.turn, choices: [], opens: 'unit' })
+      if (d <= 5 && isHostileTo(s, u.owner, 0)) {
+        out.push({ key: `sail:${u.id}`, group: 'sail', type: 2, title: `${name} is off the coast`, body: `${d} tiles from ${near.name}. Ships with cargo are its prey; a cutter or an armed trader can bring it to action.`, explain: 'Speed decides who can catch whom. A faster ship chooses whether to fight.', tile: u.tile, magnitude: 2, since: s.turn, choices: [], opens: 'unit' })
       }
     }
     return out

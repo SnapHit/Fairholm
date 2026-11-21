@@ -458,7 +458,8 @@ export const settlementSystem: System = {
       const c = st.conditions
       if (c.reviewOrders !== undefined) out.push({
         key: `reviewOrders:${st.id}`, group: 'reviewOrders', type: 5, title: `Review ${st.name}'s standing orders`,
-        body: `Its orders were inferred from the ground. Confirm or change them.`, settlement: st.id, magnitude: 1, since: c.reviewOrders, choices: [], opens: 'orders',
+        body: `Its orders were inferred from the ground. Confirm or change them.`, settlement: st.id, magnitude: 1, since: c.reviewOrders, opens: 'orders',
+        choices: [{ label: 'Keep them as they are', action: { t: 'reviewOrders', settlement: st.id } }],
         explain: 'A settlement inside its standing orders never asks you anything. It surfaces only when an order cannot be met.',
       })
       if (c.growthAsk !== undefined) out.push({

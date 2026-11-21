@@ -347,9 +347,13 @@ export const marketSystem: System = {
     const ch = s.charters[0]
     if (ch.unlocked.market && s.telemetry.firstConsignment === null) {
       const st = s.settlements.find(x => x.owner === 0 && canConsign(s, x).ok && GOODS.some(g => C.market.goods[g].traded && x.stock[g] >= 10))
+      // a lot of the good held most of, as the card's one tap (decision 197)
+      const g = st ? GOODS.filter(x => C.market.goods[x].traded && !isEmbargoed(s, x) && x !== 'tooling' && x !== 'arms' && x !== 'instruments' && st.stock[x] >= 10).sort((a, b) => st.stock[b] - st.stock[a])[0] : undefined
+      const n = st && g ? Math.min(st.stock[g], C.market.lotSize) : 0
       if (st) out.push({
         key: 'firstConsignment', group: 'firstConsignment', type: 5, title: 'Your first consignment',
-        body: `${st.name} holds goods the Company will pay for.`, settlement: st.id, magnitude: 3, since: s.turn, choices: [], opens: 'market',
+        body: `${st.name} holds goods the Company will pay for.`, settlement: st.id, magnitude: 3, since: s.turn, opens: 'market',
+        choices: g && n > 0 ? [{ label: `Consign ${n} ${g}`, action: { t: 'consign', settlement: st.id, good: g, amount: n } }] : [],
         explain: 'The Company pays for what you ship, and pays less the more of it you send.',
       })
     }
