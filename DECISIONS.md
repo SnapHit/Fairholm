@@ -3442,6 +3442,26 @@ and let go), it founds 9 to 13 settlements and has 28 to 38 buildings standing a
 worlds, where it had founded none. Learning a crop from the peoples who were here first, which needs a
 colonist beside them, can now happen.
 
+### 196. The bottom bar says what it means, and a run says what it brought
+
+**What.**
+
+- **End turn.** "End turn, 6 will idle" counted the type 3 and 4 cards that would wait, not people,
+  so it showed while everyone had work, and its length cut the top card's title short on a phone.
+  The button now says End turn. The count beside the title already says how many cards wait.
+- **Titles that fit.** The plural titles in `src/sim/queue.ts` are rewritten to fit the bar beside
+  End turn at phone width, about thirty characters: "Losing goods at 3 places" for "3 settlements
+  are losing goods". A lone problem whose title would not fit shows its few words and its settlement,
+  "No frame at The Landing", or the few words alone (`QueueItem.short`, `BAR_TITLE_CHARS`).
+- **What a run brought.** When turns that ran on by themselves stop (decision 190), a card above the
+  bar says how many turns passed, the most telling lines of the dispatch for them (buildings
+  finished, people come, events, wars, rivals, the peoples, payments, losses, the first four, a line
+  repeated over several turns folded into one that says on how many), and what stopped the run: the
+  card that came up, or the player's touch. Dispatch opens the whole of it; Put away puts it away,
+  and the next turn's end does too. `src/ui/turns.ts` counts the turns a run ends and names the item
+  that stopped it (`stopper`).
+- A raider far off no longer stops a run: decision 197.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).

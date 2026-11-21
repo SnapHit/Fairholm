@@ -68,6 +68,11 @@ export const SETTLE_MS = 160
  *  run, after the last move has been drawn, the map rests this long so each turn can be seen. */
 export const AUTO_TURN_QUIET_MS = 2500
 export const AUTO_TURN_PAUSE_MS = 800
+/** The lines of the dispatch a run's summary shows before "and N more" (decision 196). */
+export const RUN_SUMMARY_LINES = 4
+/** The longest title the queue bar shows whole on a phone; a problem past it shows its short form
+ *  and its settlement, or the short form alone (decision 196). */
+export const BAR_TITLE_CHARS = 30
 
 /** A tile's sheet leads with the place itself, small, drawn by the map's renderer: a box this many
  *  rem square, showing this many tiles across with the tile in the middle (build brief phase 3). */
@@ -203,6 +208,7 @@ export const TOKENS: Record<string, string> = {
   '--hold-ring': '56px',
   '--hold-ring-hole': '22px',
   '--sheet-max-h': '72vh',
+  '--runsum-max-h': '50vh',       // what the turns that ran on brought, at most half the screen
   '--bar-h': '56px',
   '--sheet-handle-h': '22px',
   '--strip-fade': '64px',

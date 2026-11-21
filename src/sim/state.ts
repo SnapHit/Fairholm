@@ -490,6 +490,8 @@ export interface QueueItem {
   since: number                // turn the condition began
   choices: QueueChoice[]
   opens?: 'settlement' | 'unit' | 'market' | 'demand' | 'signatories' | 'predecessor' | 'declaration' | 'orders' | 'build' | 'school'
+  /** A few words for the queue bar where the title would not fit: a problem's short form. */
+  short?: string
 }
 
 export interface QueueGroup {

@@ -5,7 +5,7 @@
 // go away by a tap outside them or a swipe down. There are no confirmation dialogs: anything within
 // a turn can be undone.
 
-import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings, Settlement, BuildingLine, Unit } from '../sim/state'
+import type { GameState, DerivedQueue, QueueGroup, QueueItem, Settings, Settlement, BuildingLine, Unit, DispatchKind } from '../sim/state'
 import { applyAction, createGame, type Action } from '../sim/actions'
 import { deriveQueue, unitLabel } from '../sim/queue'
 import { SYSTEMS } from '../sim/systems'
@@ -39,7 +39,7 @@ import { unitCard, passengerCard, tileCard, type Card } from './card'
 import { h, clear, append, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
 import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
-import { SHEET_DISMISS_PX, TAP_MIN_PX, installTheme } from './theme'
+import { SHEET_DISMISS_PX, TAP_MIN_PX, RUN_SUMMARY_LINES, BAR_TITLE_CHARS, installTheme } from './theme'
 import { installIcons, icon, isGood, SEASON_ICONS, type IconName } from './icons'
 import { goodMark, queueIcon, dispatchIcon } from './pictures'
 import { mountOpening, type Opening } from './opening'
@@ -94,6 +94,10 @@ export class App {
   scrim: HTMLElement
   queuebar: HTMLElement
   toastEl: HTMLElement
+  /** What the turns that ran on by themselves brought, above the bar once a run stops (decision 196). */
+  runEl: HTMLElement
+  /** The turn before the run under way began, so its summary covers what came after. */
+  private runFrom: number | null = null
   ring: HTMLElement
   overlayEl: HTMLElement
   audioStrip: HTMLElement
@@ -122,10 +126,11 @@ export class App {
     this.sheetEl = h('div', { id: 'sheet' }, h('div', { class: 'grip' }), this.sheetBody)
     this.queuebar = h('div', { id: 'queuebar' })
     this.toastEl = h('div', { id: 'toast' })
+    this.runEl = h('div', { id: 'runsum' })
     this.ring = h('div', { id: 'holdring' })
     this.overlayEl = h('div', { id: 'overlay' })
     this.audioStrip = h('div', { id: 'audio' })
-    root.append(this.canvas, this.hud, this.audioStrip, this.scrim, this.sheetEl, this.queuebar, this.ring, this.toastEl, this.overlayEl)
+    root.append(this.canvas, this.hud, this.audioStrip, this.scrim, this.sheetEl, this.queuebar, this.runEl, this.ring, this.toastEl, this.overlayEl)
     this.attachSheetSwipe()
     // the shell never scrolls: it hides its overflow, but a browser bringing a control into view, or
     // a focused field, can still scroll it, and then every tap lands a little off the map it meant
@@ -157,6 +162,7 @@ export class App {
       atRest: () => this.atRest(),
       endTurnForRunner: () => this.endTurn('runner'),
       renderBar: () => this.renderQueueBar(),
+      runStopped: (turns, why) => this.showRunSummary(turns, why),
     })
     for (const ev of ['pointerdown', 'keydown', 'wheel'] as const) document.addEventListener(ev, () => this.turns.interrupt(), { capture: true, passive: true })
     new ResizeObserver(() => this.layout()).observe(root)
@@ -374,6 +380,9 @@ export class App {
     if (by === 'player') this.turns.stop()
     const seconds = (performance.now() - this.turnStartedAt) / 1000
     const before = this.state.turn
+    // a run's summary covers the turns after the one the player let go, or the first the runner ended
+    if (by === 'player' || this.runFrom === null) this.runFrom = before
+    this.hideRunSummary()
     // the player's units with somewhere to go keep going in the turn, and are drawn going: where
     // each stood and the path it meant to take, so the tiles it went through can be drawn after
     this.scene.endRunningMove()
@@ -1367,8 +1376,9 @@ export class App {
     const s = this.state
     clear(this.queuebar)
     const q = this.queue
-    const idle = q.shown.concat(q.folded).filter(g => g.type === 3 || g.type === 4).reduce((a, g) => a + g.items.length, 0)
-    const label = idle > 0 ? `End turn, ${idle} will idle` : 'End turn'
+    // End turn, and nothing more: the count beside the queue's title already says how many cards
+    // wait, and "N will idle" read as idle people and cut the title short on a phone (decision 196)
+    const label = 'End turn'
     const ended = s.declaration?.won || s.declaration?.lost || s.turn >= s.settings.turns
     const run = this.turns.state
     let turn: HTMLElement
@@ -1406,7 +1416,7 @@ export class App {
         h('button', { class: 'top', type: 'button', onClick: () => { if (this.queueExpanded && this.sheet.kind === 'queue') this.closeSheet(); else this.open({ kind: 'queue' }) } },
           h('span', { class: 'mark ' + typeClass }),
           lead,
-          h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? top.title : run.armed ? 'Turns running on' : 'A quiet turn'),
+          h('span', { class: 'what' + (top ? '' : ' quiet') }, top ? barTitle(this, top) : run.armed ? 'Turns running on' : 'A quiet turn'),
           total > 1 ? h('span', { class: 'count' }, String(total)) : null,
         ),
         turn,
@@ -1607,6 +1617,50 @@ export class App {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), undo ? 5000 : 3000)
   }
 
+  /** What the turns that ran on by themselves brought: how many passed, the buildings finished,
+   *  the people come, the payments landed and the rest of what the dispatch said, the most telling
+   *  four, and what stopped the run. Stays until put away, a sheet is opened on it, or the next turn
+   *  ends (decision 196). */
+  showRunSummary(turns: number, why: QueueItem | 'touch' | null) {
+    const s = this.state
+    const from = this.runFrom ?? s.turn - turns
+    this.runFrom = null
+    const passed = s.turn - from
+    if (passed < 1) return
+    const order: DispatchKind[] = ['build', 'growth', 'event', 'war', 'rival', 'predecessor', 'company', 'loss', 'resolved']
+    // the same line on several turns is one line, saying on how many
+    const seen = new Map<string, { d: (typeof s.dispatch)[number]; n: number }>()
+    for (const d of s.dispatch) {
+      if (d.turn <= from || d.turn > s.turn || !order.includes(d.kind)) continue
+      const was = seen.get(d.text)
+      if (was) was.n++
+      else seen.set(d.text, { d, n: 1 })
+    }
+    const told = [...seen.values()].sort((a, b) => order.indexOf(a.d.kind) - order.indexOf(b.d.kind))
+    const shown = told.slice(0, RUN_SUMMARY_LINES)
+    const more = told.length - shown.length
+    const line = (lead: SVGSVGElement | null, text: string, cls = '') => h('div', { class: 'line led ' + cls }, lead, h('span', {}, text))
+    clear(this.runEl)
+    const main = h('div', { class: 'card-main' },
+      h('div', { class: 'card-title' }, passed === 1 ? 'A turn passed' : `${passed} turns passed`),
+      ...(shown.length ? shown.map(({ d, n }) => line(dispatchIcon(s, d.kind, d.text, 'pill'), n > 1 ? `${d.text.replace(/\.$/, '')}, on ${n} turns.` : d.text)) : [h('div', { class: 'line quiet' }, 'Nothing came of note.')]),
+      more > 0 ? h('div', { class: 'line more' }, `And ${plural(more, 'more thing')} in the dispatch.`) : null,
+      why === 'touch' ? line(null, 'Stopped at your touch.', 'stop')
+        : why ? line(queueIcon(s, why.group, why.key, 'pill'), `Stopped: ${why.title}`, 'stop') : null,
+      h('div', { class: 'card-actions' },
+        button('Dispatch', () => { this.hideRunSummary(); this.open({ kind: 'dispatch' }) }, 'small ghost'),
+        button('Put away', () => this.hideRunSummary(), 'small ghost')),
+    )
+    this.runEl.append(h('div', { class: 'card chance led' }, h('span', { class: 'card-lead' }, icon('sun', 'tile')), main))
+    this.runEl.classList.add('show')
+  }
+
+  hideRunSummary() {
+    if (!this.runEl.classList.contains('show')) return
+    this.runEl.classList.remove('show')
+    clear(this.runEl)
+  }
+
   // ---- screens --------------------------------------------------------------------------------
   showReturnScreen() {
     const s = this.state
@@ -1652,6 +1706,16 @@ export class App {
     this.input.enabled = true
     this.refresh()
   }
+}
+
+/** The queue bar's title for its top group: the group's, unless a lone problem's would not fit on a
+ *  phone, when it is the problem's few words and its settlement, or the few words alone. */
+function barTitle(app: App, g: QueueGroup): string {
+  const one = g.items.length === 1 ? g.items[0] : null
+  if (!one?.short || g.title.length <= BAR_TITLE_CHARS) return g.title
+  const st = one.settlement !== undefined ? app.state.settlements[one.settlement] : undefined
+  const at = st ? `${one.short} at ${st.name}` : one.short
+  return at.length <= BAR_TITLE_CHARS ? at : one.short
 }
 
 /** The tiles a unit went through in a move, from where it stood: the planned path up to where it

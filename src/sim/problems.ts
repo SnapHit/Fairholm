@@ -1065,6 +1065,6 @@ export const problemsSystem: System = {
 function toItem(p: Problem, since: number): QueueItem {
   return {
     key: p.key, group: p.group, type: p.type, title: p.title, body: p.body, explain: p.explain, settlement: p.settlement,
-    unit: p.unit, tile: p.tile, magnitude: p.magnitude, since, choices: p.choices, opens: p.opens,
+    unit: p.unit, tile: p.tile, magnitude: p.magnitude, since, choices: p.choices, opens: p.opens, short: p.short,
   }
 }

@@ -17,7 +17,7 @@
 //
 // The runner only ever presses End turn for the player, through the same path the button takes.
 
-import type { DerivedQueue } from '../sim/state'
+import type { DerivedQueue, QueueItem } from '../sim/state'
 import { AUTO_TURN_QUIET_MS, AUTO_TURN_PAUSE_MS } from './theme'
 
 /** The groups that stop a run every turn they stand, seen or not. */
@@ -34,6 +34,9 @@ export interface RunnerHost {
   endTurnForRunner(): void
   /** Draw the bar again, so the button shows the run. */
   renderBar(): void
+  /** A run that ended at least one turn has stopped: by what the queue now holds (the item that
+   *  stopped it, where one did), or by a touch. The app says what the turns brought (decision 196). */
+  runStopped(turns: number, why: QueueItem | 'touch' | null): void
 }
 
 /** Every key the queue holds now. */
@@ -46,11 +49,17 @@ export function queueKeys(q: DerivedQueue): Set<string> {
 /** Whether the queue holds something that stops a run: anything not in `seen`, or anything that
  *  grows worse each turn left alone. */
 export function stopsRun(q: DerivedQueue, seen: Set<string>): boolean {
+  return stopper(q, seen) !== null
+}
+
+/** The item that stops a run, the first in the queue's order: something that grows worse each turn,
+ *  or something not in `seen`. Null when nothing does. */
+export function stopper(q: DerivedQueue, seen: Set<string>): QueueItem | null {
   for (const g of [...q.shown, ...q.folded]) {
-    if (ALWAYS_STOPS.has(g.group)) return true
-    for (const it of g.items) if (!seen.has(it.key)) return true
+    if (ALWAYS_STOPS.has(g.group)) return g.items[0] ?? null
+    for (const it of g.items) if (!seen.has(it.key)) return it
   }
-  return false
+  return null
 }
 
 export class TurnRunner {
@@ -63,6 +72,8 @@ export class TurnRunner {
   /** How long the current wait is, all told, so the button's bar can carry on where it was. */
   private waitMs = 0
   private timer: number | null = null
+  /** Turns this run has ended by itself, so a stop can say what they brought. */
+  private ran = 0
   /** The rigs and the smoke test drive the turns themselves; a check that wants a run says so. */
   allowInRigs = false
 
@@ -89,6 +100,7 @@ export class TurnRunner {
     this.quiet = false
     this.seen = seen
     this.dueAt = null
+    this.ran = 0
     this.ensureTicking()
   }
 
@@ -96,7 +108,7 @@ export class TurnRunner {
    *  was armed, so a tap on End turn is never redrawn out from under the finger. */
   interrupt() {
     if (this.seen === null && !this.quiet) return
-    this.stop()
+    this.stopped('touch')
   }
 
   stop() {
@@ -104,8 +116,16 @@ export class TurnRunner {
     this.seen = null
     this.quiet = false
     this.dueAt = null
+    this.ran = 0
     if (this.timer !== null) { clearInterval(this.timer); this.timer = null }
     if (was) this.host.renderBar()
+  }
+
+  /** A run stops by itself or at a touch: if it ended any turns, the app is told what stopped it. */
+  private stopped(why: QueueItem | 'touch' | null) {
+    const ran = this.ran
+    this.stop()
+    if (ran > 0) this.host.runStopped(ran, why)
   }
 
   private ensureTicking() {
@@ -121,9 +141,10 @@ export class TurnRunner {
     }
     const q = this.host.queue
     if (this.seen !== null) {
-      if (stopsRun(q, this.seen)) { this.stop(); return }
+      const why = stopper(q, this.seen)
+      if (why) { this.stopped(why); return }
     } else if (this.quiet) {
-      if (queueKeys(q).size > 0) { this.stop(); return }
+      if (queueKeys(q).size > 0) { this.stopped(stopper(q, new Set())); return }
     } else { this.stop(); return }
     const now = performance.now()
     if (this.dueAt === null) {
@@ -137,6 +158,7 @@ export class TurnRunner {
     this.seen = queueKeys(q)
     this.quiet = false
     this.dueAt = null
+    this.ran++
     this.host.endTurnForRunner()
   }
 }

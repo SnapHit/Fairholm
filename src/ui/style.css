@@ -1058,6 +1058,20 @@ input[type=text] {
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 
+/* what the turns that ran on brought, above the bar once a run stops (DECISIONS.md 196) */
+#runsum {
+  position: fixed; z-index: 8;
+  left: calc(var(--space-5) + var(--safe-left)); right: calc(var(--space-5) + var(--safe-right));
+  bottom: calc(var(--bar-cover, calc(var(--bar-h) + var(--safe-bottom))) + var(--space-4));
+  display: none; max-height: var(--runsum-max-h); overflow-y: auto;
+}
+#runsum.show { display: block; }
+#runsum .card { margin: 0; box-shadow: var(--shadow-sheet); }
+#runsum .line { display: flex; justify-content: flex-start; align-items: center; gap: var(--space-3); color: var(--ink-dim); font-size: var(--text-small); padding: var(--space-1) 0; border: none; min-height: 0; }
+#runsum .line.stop { color: var(--ink); }
+#runsum .line.more, #runsum .line.quiet { color: var(--ink-dim); }
+#runsum .card-actions { justify-content: flex-end; }
+
 #overlay {
   position: fixed; inset: 0; background: var(--surface-screen);
   display: none; align-items: center; justify-content: center; z-index: 10; padding: var(--space-8);
