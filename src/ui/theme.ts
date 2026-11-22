@@ -198,12 +198,12 @@ export const TOKENS: Record<string, string> = {
 
   // Type. In rem, so the whole interface follows the reader's own font size rather than ignoring
   // it. The numbers in brackets are what each comes to at the usual 16px root.
-  // The look of the recent Zelda games, in open faces (DECISIONS.md 206): they set their text in
-  // Fontworks' Rodin, a Japanese gothic, and their place names in a flared, inscriptional serif.
-  // M PLUS 1 (Coji Morishita) is a gothic of the same kind, and Marcellus (Astigmatic) a flared serif
-  // from Roman inscriptions. Self hosted, OFL
-  '--font': '"M PLUS 1", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  '--font-display': '"Marcellus", Georgia, "Times New Roman", serif',
+  // A printer's serif, chosen at the table from five set in the game itself (DECISIONS.md 207):
+  // Vollkorn (Friedrich Althausen) for everything read, and its small capitals in bold for titles,
+  // names and the opening. Dark, bracketed and old in feel, and still easy to read small on a phone.
+  // Self hosted, OFL. Its figures are old style by default; the interface sets them level.
+  '--font': '"Vollkorn", Georgia, "Times New Roman", serif',
+  '--font-display': '"Vollkorn SC", "Vollkorn", Georgia, "Times New Roman", serif',
   '--text-micro': '0.6875rem',   // 11
   '--text-tiny': '0.75rem',      // 12
   '--text-small': '0.8125rem',   // 13
@@ -216,7 +216,9 @@ export const TOKENS: Record<string, string> = {
    *  three rows on a phone and five of them covered the picture they are meant to sit over. */
   '--text-opening': '1.375rem',  // 22
   '--weight-normal': '400',
-  '--display-tracking': '0.02em',
+  /** The title face's weight (Vollkorn SC is drawn bold) and the air between its small capitals. */
+  '--weight-display': '700',
+  '--display-tracking': '0.03em',
   '--weight-medium': '500',
   '--weight-strong': '700',
   '--leading': '1.35',

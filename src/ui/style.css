@@ -5,13 +5,14 @@
    Every colour, size, radius, weight, border and duration in this file comes from src/ui/theme.ts.
    Nothing here is a literal. If a value looks like dress and is written out below, it is a bug. */
 
-/* the faces: M PLUS 1 for the interface, Marcellus for titles, names and the opening (decision 206) */
-@font-face { font-family: "M PLUS 1"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/m-plus-1-latin-400-normal.woff2") format("woff2"); }
-@font-face { font-family: "M PLUS 1"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/m-plus-1-latin-500-normal.woff2") format("woff2"); }
-@font-face { font-family: "M PLUS 1"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/m-plus-1-latin-700-normal.woff2") format("woff2"); }
-@font-face { font-family: "Marcellus"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/marcellus-latin-400-normal.woff2") format("woff2"); }
-/* titles in the inscriptional serif, which has one weight: drawn at it, a little spaced */
-h1, .sheet-title .h, .st-head .who .name, .card-title, #queuebar .uc-title .t, #hud .intent, #opening .line { font-family: var(--font-display); font-weight: var(--weight-normal); letter-spacing: var(--display-tracking); }
+/* the faces: Vollkorn for everything read, Vollkorn SC for titles, names and the opening (decision 207) */
+@font-face { font-family: "Vollkorn"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/vollkorn-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Vollkorn"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/vollkorn-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Vollkorn"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/vollkorn-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Vollkorn SC"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/vollkorn-sc-latin-700-normal.woff2") format("woff2"); }
+/* titles and names in the small capitals, at their one weight, a little spaced; the opening's
+   sentences stay in the text face, since whole lines of small capitals are hard going */
+h1, .sheet-title .h, .st-head .who .name, .card-title, #queuebar .uc-title .t, #hud .intent { font-family: var(--font-display); font-weight: var(--weight-display); letter-spacing: var(--display-tracking); }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
@@ -21,6 +22,8 @@ html, body {
 }
 body {
   font-family: var(--font);
+  /* Vollkorn's figures rise and fall by default; a game's numbers read better standing level */
+  font-variant-numeric: lining-nums;
   font-size: var(--text-body); line-height: var(--leading);
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   position: fixed; inset: 0; overflow: hidden;
@@ -84,7 +87,7 @@ body {
 #hud .status .purse { display: flex; gap: var(--space-6); }
 #hud .status .term { color: var(--ink); }
 /* a figure in the top strip: its icon and its number, the number underlined as a term is */
-#hud .fig { display: inline-flex; align-items: center; gap: var(--space-2); border-bottom: none; font-variant-numeric: tabular-nums; }
+#hud .fig { display: inline-flex; align-items: center; gap: var(--space-2); border-bottom: none; font-variant-numeric: lining-nums tabular-nums; }
 #hud .fig .u { border-bottom: var(--line-hair) dotted var(--ink-faint); }
 #hud .ic { filter: var(--ic-over-map); }
 #hud .menu {
@@ -165,9 +168,9 @@ body {
 #route.circuit .leg.guess { stroke: var(--accent); }
 #route.circuit .end { display: none; }
 #route .turn circle { fill: var(--surface-base); stroke: var(--route-line); stroke-width: 2px; }
-#route .turn text { fill: var(--route-line); font: var(--weight-strong) var(--text-tiny) var(--font); }
+#route .turn text { fill: var(--route-line); font: var(--weight-strong) var(--text-tiny) var(--font); font-variant-numeric: lining-nums; }
 #route .odds rect { fill: var(--loss); }
-#route .odds text { fill: var(--ink); font: var(--weight-strong) var(--text-tiny) var(--font); }
+#route .odds text { fill: var(--ink); font: var(--weight-strong) var(--text-tiny) var(--font); font-variant-numeric: lining-nums; }
 #stacks .stack {
   position: absolute; left: 0; top: 0;
   min-width: var(--stack-badge); height: var(--stack-badge); padding: 0 var(--space-2);
@@ -402,11 +405,11 @@ p { margin: var(--space-3) 0; }
 .sheet-title .sub { font-size: var(--text-small); }
 .company-banner { color: var(--company); }
 .charge { display: flex; flex-direction: column; align-items: flex-end; cursor: pointer; }
-.charge b { font-size: var(--text-display); line-height: var(--leading-tight); font-weight: var(--weight-strong); color: var(--company); font-variant-numeric: tabular-nums; }
+.charge b { font-size: var(--text-display); line-height: var(--leading-tight); font-weight: var(--weight-strong); color: var(--company); font-variant-numeric: lining-nums tabular-nums; }
 .charge small { font-size: var(--text-tiny); color: var(--ink-dim); }
 /* chips and lines that carry an icon before their words */
 .chip { display: inline-flex; align-items: center; gap: var(--space-2); }
-.fig { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fig { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
 .fig b { font-weight: var(--weight-medium); color: var(--ink); }
 
 /* ---- meters (src/ui/meters.ts): a level is a bar with a tick where a rule acts; a price is a gauge
@@ -422,7 +425,7 @@ p { margin: var(--space-3) 0; }
 .bar.wide { height: var(--bar-wide-h); }
 .gauge {
   display: flex; align-items: center; gap: var(--space-2);
-  font-size: var(--text-micro); line-height: var(--leading-tight); color: var(--ink-faint); font-variant-numeric: tabular-nums;
+  font-size: var(--text-micro); line-height: var(--leading-tight); color: var(--ink-faint); font-variant-numeric: lining-nums tabular-nums;
 }
 .gauge .end { flex: none; min-width: var(--gauge-end-w); text-align: center; }
 .gauge .track { position: relative; flex: 1; min-width: 0; height: var(--gauge-h); border-radius: var(--radius-pill); background: var(--fill-track); }
@@ -451,7 +454,7 @@ p { margin: var(--space-3) 0; }
 .meter-words { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); margin-top: var(--space-3); font-size: var(--text-small); color: var(--ink-dim); }
 .meter-words .ic { margin-right: var(--space-2); }
 .meter-words .rule-at { display: inline-flex; align-items: center; gap: var(--space-2); }
-.meter-words b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.meter-words b { color: var(--ink); font-variant-numeric: lining-nums tabular-nums; }
 .tick-key { display: inline-block; width: var(--tick-w); height: calc(var(--bar-wide-h) + var(--tick-over) * 2); border-radius: var(--tick-w); background: var(--tick); }
 
 /* ---- the market board: the goods as tiles, two across on a phone, three on a wide sheet -------- */
@@ -462,7 +465,7 @@ p { margin: var(--space-3) 0; }
 .mt-name { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .mt-name .term { font-weight: var(--weight-medium); overflow-wrap: anywhere; }
 .mt-name .held { font-size: var(--text-tiny); color: var(--ink-dim); white-space: nowrap; }
-.mt-price { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
+.mt-price { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-variant-numeric: lining-nums tabular-nums; }
 /* what it pays stands a little apart from what it asks, which wraps under it on a narrow tile */
 .mt-price b { font-size: var(--text-head); line-height: var(--leading-tight); font-weight: var(--weight-strong); margin-right: var(--space-4); }
 .mt-price .ask { font-size: var(--text-small); color: var(--ink-dim); white-space: nowrap; }
@@ -476,7 +479,7 @@ p { margin: var(--space-3) 0; }
 /* what a trade comes to: what goes, and what comes back */
 .deal { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap; margin-bottom: var(--space-5); }
 .deal .side { display: inline-flex; align-items: center; gap: var(--space-2); }
-.deal .side b { font-size: var(--text-display); line-height: var(--leading-tight); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.deal .side b { font-size: var(--text-display); line-height: var(--leading-tight); font-weight: var(--weight-strong); font-variant-numeric: lining-nums tabular-nums; }
 .deal .side.gold { display: grid; grid-template-columns: auto auto; justify-items: end; align-items: center; column-gap: var(--space-2); text-align: right; }
 .deal .side.gold small { grid-column: 1 / -1; font-size: var(--text-tiny); color: var(--ink-dim); }
 .small-print { font-size: var(--text-small); margin-top: var(--space-3); }
@@ -546,7 +549,7 @@ p { margin: var(--space-3) 0; }
 .underway { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--board-tile); }
 .underway .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .underway .name { font-weight: var(--weight-medium); }
-.cost-bar { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-small); color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.cost-bar { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-small); color: var(--ink-dim); font-variant-numeric: lining-nums tabular-nums; }
 .cost-bar .bar { flex: 1; }
 .cost-bar b { color: var(--ink); }
 /* what is queued, as the buildings' pictures in order */
@@ -567,12 +570,12 @@ p { margin: var(--space-3) 0; }
 /* a tally: each good's icon, its number and a short bar, made this turn or held */
 .tally { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-7); margin: var(--space-3) 0; }
 .tally-row { display: grid; grid-template-columns: auto var(--tally-num-w) minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); min-height: var(--control-h-tiny); }
-.tally-row b { text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--weight-medium); }
+.tally-row b { text-align: right; font-variant-numeric: lining-nums tabular-nums; font-weight: var(--weight-medium); }
 .tally-row.spoils b { color: var(--loss); }
 .tally-row.tappable { cursor: pointer; border-radius: var(--radius-sm); }
 .tally-row.tappable:active { background: var(--surface-tint); }
 .goods-row { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-6); margin-bottom: var(--space-4); }
-.chip.good-chip b { font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.chip.good-chip b { font-weight: var(--weight-strong); font-variant-numeric: lining-nums tabular-nums; }
 .chip.good-chip .word { color: var(--ink-dim); }
 /* a building in a list: its picture, its name, what it makes and its places */
 .in-building { gap: var(--space-4); }
@@ -606,7 +609,7 @@ p { margin: var(--space-3) 0; }
 .rival > .ic { grid-area: flag; }
 .rival .who { grid-area: who; display: flex; flex-direction: column; min-width: 0; }
 .rival .relation { grid-area: track; }
-.rival .count { grid-area: count; display: flex; flex-direction: column; align-items: center; font-variant-numeric: tabular-nums; }
+.rival .count { grid-area: count; display: flex; flex-direction: column; align-items: center; font-variant-numeric: lining-nums tabular-nums; }
 .rival .count b { font-size: var(--text-display); line-height: var(--leading-tight); }
 .rival .count small { font-size: var(--text-tiny); color: var(--ink-dim); }
 .relation { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; max-width: var(--relation-w); }
@@ -688,7 +691,7 @@ input[type=text] {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
   width: 100%; padding: 0; border: none; background: none; color: var(--ink); font: inherit;
   font-family: var(--font-display); letter-spacing: var(--display-tracking);
-  font-size: var(--text-head); font-weight: var(--weight-normal); line-height: var(--leading-tight);
+  font-size: var(--text-head); font-weight: var(--weight-display); line-height: var(--leading-tight);
   overflow-wrap: break-word; cursor: pointer;
 }
 /* on a narrow screen the name gives up a little size before it gives up a letter */
@@ -702,7 +705,7 @@ input[type=text] {
   font-size: var(--text-small); color: var(--ink-dim); white-space: nowrap; min-width: 0;
 }
 .st-head .sub .fig { display: inline-flex; align-items: center; gap: var(--space-2); }
-.st-head .sub .fig b { font-weight: var(--weight-medium); color: var(--ink); font-variant-numeric: tabular-nums; }
+.st-head .sub .fig b { font-weight: var(--weight-medium); color: var(--ink); font-variant-numeric: lining-nums tabular-nums; }
 .st-head .sub .fig.loss b { color: var(--loss); }
 /* the more control's menu: Build order, Equip, School, Hulls, Everything here */
 .st-more {
@@ -847,7 +850,7 @@ input[type=text] {
   border-top: calc(var(--line-hair) * 2) solid var(--plate-rule);
 }
 .lot .plate .n {
-  font-family: var(--font-display); letter-spacing: var(--display-tracking);
+  font-family: var(--font-display); font-weight: var(--weight-display); letter-spacing: var(--display-tracking);
   font-size: var(--text-small); line-height: var(--leading-tight); color: var(--ink);
 }
 .lot .plate .sub { font-size: var(--text-micro); line-height: var(--leading-tight); color: var(--ink-faint); }
@@ -930,7 +933,7 @@ input[type=text] {
 .good .n {
   position: relative; z-index: 1; margin-top: calc(var(--shelf-h) - var(--shelf-sink) + var(--space-2));
   font-size: var(--stock-size); line-height: var(--leading-tight); font-weight: var(--weight-strong);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-variant-numeric: lining-nums tabular-nums; white-space: nowrap;
 }
 .good .n small { margin-left: var(--space-1); font-size: var(--text-micro); font-weight: var(--weight-medium); color: var(--ink-dim); }
 .good .n small.gain { color: var(--gain); }
@@ -1051,7 +1054,7 @@ input[type=text] {
   padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: var(--radius-pill);
   background: var(--pill-bg); color: var(--ink);
 }
-.pill b { font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.pill b { font-weight: var(--weight-strong); font-variant-numeric: lining-nums tabular-nums; }
 .pill.faint { background: var(--pill-faint-bg); color: var(--ink-dim); }
 .pill.faint .ic { opacity: var(--ic-faint); }
 

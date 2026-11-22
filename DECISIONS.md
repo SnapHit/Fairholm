@@ -3753,6 +3753,26 @@ Tested on a phone, 22 November 2026.
   chosen, so with nothing chosen it pointed at a gesture that did nothing. *Show me* chooses the
   lander and brings it back.
 
+### 207. Vollkorn, chosen at the table
+
+Chosen 22 November 2026 from five open faces set in the game itself (charter capitals, pixel
+lettering, 17th century printing type, wood type and a printer's serif), against screenshots of the
+1994 game the player wanted the feel of. It replaces M PLUS 1 and Marcellus (206), which the player
+still did not like.
+
+- **Vollkorn** (Friedrich Althausen, OFL) sets everything read, in 400, 500 and 700, and **Vollkorn SC**
+  in bold sets titles, the settlement's name, the bar's titles, the intent line and building
+  nameplates, a little spaced. The opening's sentences stay in Vollkorn: five lines of bold small
+  capitals were hard going.
+- Vollkorn's figures rise and fall by default. The body sets `lining-nums`, and every place that sets
+  `tabular-nums` now sets `lining-nums tabular-nums`, since setting one alone turns the other off.
+  The route's turn numbers and odds, which use the `font` shorthand, set it again.
+- Of the five, pixel lettering was ruled out because it fights the painted art, and the 17th century
+  type because its figures cannot be set level. The 1994 game's own logo lettering and wood and gold
+  panels are not copied (rule 1); the faces only share their period.
+- Four files of the latin subset, 103 kB, are self hosted in `public/fonts` with their licences;
+  the text face's regular is preloaded.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).
