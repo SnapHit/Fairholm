@@ -15,7 +15,7 @@ import { C } from '../sim/constants'
 import { findPath, maxMoves } from '../sim/units'
 import { neighbours8, isLand } from '../sim/worldgen'
 import { foundingProblem } from '../sim/settlement'
-import { openingAction, siteScore, bestSites, sailHint } from '../sim/autopilot'
+import { openingAction, siteScore, bestSites, sailHint, siteReport } from '../sim/autopilot'
 import { planRoute, type RoutePlan, type Route } from '../sim/route'
 import type { HaulStop, UnitOrder } from '../sim/state'
 import { authoringCard } from './card'
@@ -38,7 +38,8 @@ import { mountRouteLayer, type RouteLayer } from './route'
 import { unitCard, passengerCard, tileCard, type Card } from './card'
 import { h, clear, append, button, row, muted, fmt, plural } from './dom'
 import { renderSheet, type SheetSpec } from './sheets'
-import { ownSettlements, type RingCell, type BuildingSlot } from './selectors'
+import { ownSettlements, ringCells, buildingSlots, goodWord, type RingCell, type BuildingSlot } from './selectors'
+import type { CarryTarget } from './carry'
 import { SHEET_DISMISS_PX, TAP_MIN_PX, RUN_SUMMARY_LINES, RUN_SUMMARY_MS, BAR_TITLE_CHARS, DESCENT, installTheme } from './theme'
 import { installIcons, icon, isGood, SEASON_ICONS, type IconName } from './icons'
 import { goodMark, queueIcon, dispatchIcon, UNITS_SHEET, unitPiece } from './pictures'
@@ -80,6 +81,9 @@ export class App {
   passenger: { lander: number; aboard: number | null } | null = null
   /** The colonist being placed, while the player is choosing where they should work. */
   pick: { settlement: number; colonist: number } | null = null
+  private sheetKey = ''
+  /** Whether the picked colonist is being carried by a finger rather than picked by a tap. */
+  carrying = false
   /** The tile the founding control is looking at: the shore the lander would beach on, or the
    *  ground a colonist stands on. The map paints the ring it would work while this is set. */
   foundTarget: number | null = null
@@ -252,7 +256,7 @@ export class App {
       for (;;) {
         const a = openingAction(this.state)
         if (!a || guard++ > 4) break
-        if (a.t === 'found') { await this.found(a.unit, a.tile); break }
+        if (a.t === 'found') { await this.found(a.unit, a.tile, true); break }
         if (a.t === 'moveUnit') { if (!(await this.moveTo(a.unit, a.path[a.path.length - 1]))) break; continue }
         if (!this.dispatch(a)) break
       }
@@ -289,8 +293,9 @@ export class App {
 
   /** Found a settlement with a unit: a colonist where it stands, the lander on the shore beside it.
    *  The lander's founding is the beaching, drawn over a second and a half while the state has
-   *  already moved on; the settlement screen opens when it is done. Resolves to whether it happened. */
-  found(unitId: number, tile?: number): Promise<boolean> {
+   *  already moved on; the settlement screen opens when it is done. Resolves to whether it happened.
+   *  On ground with no forest in sight it asks first, unless `sure`. */
+  found(unitId: number, tile?: number, sure = false): Promise<boolean> {
     // a move still being drawn ends first, so the beaching starts where the lander really is
     this.scene.finishMove()
     this.releaseUi()
@@ -299,6 +304,8 @@ export class App {
     if (!u) return Promise.resolve(false)
     const lander = u.kind === 'lander'
     const shore = tile ?? u.tile
+    if (!sure && foundingProblem(s, shore) === null && siteReport(s, shore).forest === 0) return this.askNoTimber(unitId, tile, shore)
+
     const from = this.scene.unitPositions.get(unitId) ?? [(u.tile % s.world.width) + 0.5, Math.floor(u.tile / s.world.width) + 0.5]
     // the ids the action will give the settlement and the boat, so the first frame after it draws
     // them at nothing rather than letting them pop in
@@ -319,6 +326,30 @@ export class App {
         this.afterSelect()
         resolve(true)
       })
+    })
+  }
+
+  /** The one question the game asks before acting (decision 206). Founding cannot be undone once
+   *  turns have passed, and a settlement with no forest can build nothing without buying timber, so
+   *  a slip of the thumb here costs the whole game. Everywhere else, undo instead. */
+  private askNoTimber(unitId: number, tile: number | undefined, shore: number): Promise<boolean> {
+    const s = this.state
+    const r = siteReport(s, shore)
+    const other = s.settlements.some(x => x.owner === 0)
+    const why = other
+      ? 'None of the ground around here has forest. Every plank would have to be shipped in from another settlement or bought.'
+      : 'None of the ground around here has forest. Without timber nothing can be built, and every plank would have to be bought.'
+    const fog = r.unseen ? ` ${plural(r.unseen, 'tile')} around it ${r.unseen === 1 ? 'is' : 'are'} still unseen.` : ''
+    return new Promise(resolve => {
+      const box = h('div', { class: 'screen ask' },
+        h('h1', {}, 'No timber here'),
+        h('p', { class: 'lead' }, why + fog),
+        h('div', { class: 'choices' },
+          button('Look for better ground', () => { this.hideScreen(); resolve(false) }, 'primary'),
+          button('Found here anyway', () => { this.hideScreen(); void this.found(unitId, tile, true).then(resolve) }, 'ghost'),
+        ),
+      )
+      this.showScreen(box)
     })
   }
 
@@ -687,9 +718,14 @@ export class App {
     return sailHint(s)
   }
 
-  /** The ring on the water where a hold would sail the lander, kept over its tile as the map moves. */
+  /** The ring on the water where a hold would sail the lander, kept over its tile as the map moves.
+   *  Only while the lander is the one chosen: a hold there moves whatever is chosen, so with nothing
+   *  or something else chosen the ring would point at a gesture that does not sail (decision 206).
+   *  Show me chooses the lander again and brings the ring back. */
   placeCoach() {
-    const tile = this.heldFor === null ? this.mustSail() : null
+    const lander = this.state.units.find(u => u.owner === 0 && u.kind === 'lander')
+    const chosen = !!lander && this.scene.cam.view.activeUnit === lander.id
+    const tile = this.heldFor === null && chosen ? this.mustSail() : null
     this.coachEl.classList.toggle('show', tile !== null)
     if (tile === null) return
     const w = this.state.world.width
@@ -1391,10 +1427,52 @@ export class App {
     this.open({ kind: 'assignBuilding', settlement: st.id, line: slot.line })
   }
 
+  /** A figure picked up on the settlement screen: every place that can take them is marked. */
+  carryStart(settlement: number, colonist: number) {
+    this.pick = { settlement, colonist }
+    this.carrying = true
+    this.renderSheet()
+  }
+
+  /** A figure put down (decision 206): on a tile or a building they go to work there, taking the
+   *  place of whoever was there, who goes where they came from; on the idle they stand down. Put
+   *  down anywhere else, or where they already are, nothing changes. */
+  carryEnd(settlement: number, colonist: number, to: CarryTarget | null) {
+    this.pick = null
+    this.carrying = false
+    const s = this.state
+    const st = s.settlements[settlement]
+    const c = st?.colonists[colonist]
+    if (!st || !c || !to) { this.renderSheet(); return }
+    if ('idle' in to) {
+      if (c.job.kind === 'idle' || !this.place(settlement, colonist, { kind: 'idle' }, 'Stood down')) this.renderSheet()
+      return
+    }
+    if ('tile' in to) {
+      const cell = ringCells(s, st).find(x => x.tile === to.tile)
+      if (!cell || cell.worker?.index === colonist) { this.renderSheet(); return }
+      if (cell.centre) { this.toast('The settlement works its own ground for nothing.'); this.renderSheet(); return }
+      const good = cell.worker?.good ?? (cell.available ? cell.best?.good : undefined)
+      if (!good) { this.toast(cell.reason ?? 'Nothing to work here.'); this.renderSheet(); return }
+      if (!this.place(settlement, colonist, { kind: 'tile', tile: to.tile, good }, `Set to ${goodWord(good).toLowerCase()}`, cell.worker?.index)) this.renderSheet()
+      return
+    }
+    const slot = buildingSlots(s, st).find(x => x.line === to.line)
+    if (!slot || slot.workers.some(w => w.index === colonist)) { this.renderSheet(); return }
+    if (!slot.built || slot.capacity === 0) { this.toast(slot.built ? `${slot.name}: ${slot.conversion}.` : `${slot.name} is not built yet.`); this.renderSheet(); return }
+    const full = slot.workers.length >= slot.capacity
+    if (!this.place(settlement, colonist, { kind: 'building', line: to.line }, `Set to ${slot.name.toLowerCase()}`, full ? slot.workers[slot.workers.length - 1].index : undefined)) this.renderSheet()
+  }
+
   /** Move one colonist to a tile or a building, swapping with whoever is there. */
   assign(settlement: number, colonist: number, job: { kind: 'tile'; tile: number; good: import('../sim/state').TileGood } | { kind: 'building'; line: BuildingLine } | { kind: 'idle' }, label: string, swapWith?: number) {
+    if (this.place(settlement, colonist, job, label, swapWith)) this.back()
+  }
+
+  /** The change of work under assign and a carried figure, with one undo. Returns whether it happened. */
+  private place(settlement: number, colonist: number, job: { kind: 'tile'; tile: number; good: import('../sim/state').TileGood } | { kind: 'building'; line: BuildingLine } | { kind: 'idle' }, label: string, swapWith?: number): boolean {
     const st = this.state.settlements[settlement]
-    if (!st) return
+    if (!st) return false
     if (swapWith !== undefined && swapWith !== colonist) {
       const theirs = st.colonists[colonist]?.job
       const mine = st.colonists[swapWith]?.job
@@ -1408,18 +1486,17 @@ export class App {
         } catch (e) {
           this.state = snapshot
           this.toast((e as Error).message)
-          return
+          return false
         }
         this.undoStack.push({ snapshot, label })
         if (this.undoStack.length > 8) this.undoStack.shift()
         this.toast(label, () => this.undo())
         this.scene.rebuild(this.state, 'dynamic')
         this.refresh()
-        this.back()
-        return
+        return true
       }
     }
-    if (this.dispatch({ t: 'assignWorker', settlement, colonist, job }, label)) this.back()
+    return this.dispatch({ t: 'assignWorker', settlement, colonist, job }, label)
   }
 
   // ---- rendering -------------------------------------------------------------------------------
@@ -1582,12 +1659,22 @@ export class App {
     // every sheet over the map, a unit's full detail included, goes away with a tap on the map: the
     // map is reached again with that one tap, and the card the detail grew from comes back
     this.scrim.classList.toggle('show', showing && !full)
+    // the same sheet drawn again keeps where it was scrolled to, its street and shelf included, so a
+    // figure picked up halfway down the street is still under the finger
+    const key = showing ? JSON.stringify(this.sheet) : ''
+    const same = key !== '' && key === this.sheetKey
+    const kept = same ? { top: this.sheetBody.scrollTop, sides: SIDEWAYS.map(q => this.sheetBody.querySelector(q)?.scrollLeft ?? 0) } : null
+    this.sheetKey = key
     clear(this.sheetBody)
     this.sheetBody.scrollTop = 0
     this.sheetEl.style.transform = ''
     if (showing) {
       if (this.sheet.kind === 'queue') this.sheetBody.append(this.renderQueue())
       else this.sheetBody.append(renderSheet(this, this.sheet))
+    }
+    if (kept) {
+      this.sheetBody.scrollTop = kept.top
+      SIDEWAYS.forEach((q, i) => { const el = this.sheetBody.querySelector(q); if (el) el.scrollLeft = kept.sides[i] })
     }
     // the bar is the card when nothing is up and the queue bar when a sheet is
     this.renderQueueBar()
@@ -1864,6 +1951,9 @@ export class App {
     this.refresh()
   }
 }
+
+/** The parts of a sheet that scroll sideways, kept where they were when the sheet is drawn again. */
+const SIDEWAYS = ['.st-town', '.st-goods']
 
 /** The queue bar's title for its top group: the group's, unless a lone problem's would not fit on a
  *  phone, when it is the problem's few words and its settlement, or the few words alone. */

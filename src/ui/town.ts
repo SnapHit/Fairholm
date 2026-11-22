@@ -33,6 +33,7 @@ import {
 } from './pictures'
 import { settled } from './ring'
 import type { App } from './app'
+import { carryable } from './carry'
 
 /** A person's height on the settlement sheet, in its pixels: the cabin's wall is drawn a person tall
  *  (src/render/look.ts, SPRITE.eave), so a figure at a door stands at the scale of the building. */
@@ -96,7 +97,7 @@ function buildingLot(app: App, s: GameState, st: Settlement, slot: BuildingSlot,
     const stands: HTMLElement[] = []
     for (let i = 0; i < slot.capacity; i++) {
       const w = slot.workers[i]
-      stands.push(w ? settled(standingFigure(w.colonist, 'var(--lot-figure-h)'), settling(w.colonist)) : emptyPlace('var(--lot-figure-h)'))
+      stands.push(w ? carryable(app, st.id, w.index, settled(standingFigure(w.colonist, 'var(--lot-figure-h)'), settling(w.colonist))) : emptyPlace('var(--lot-figure-h)'))
     }
     box.append(atTheDoor(stands))
   }
@@ -108,8 +109,9 @@ function buildingLot(app: App, s: GameState, st: Settlement, slot: BuildingSlot,
   return withWidth(box, h('button', {
     class: 'lot' + (lit ? ' can-take' : ''), type: 'button',
     'aria-label': `${slot.name}, ${slot.conversion}${who}${slot.output > 0 ? `, making ${slot.output}` : ''}${slot.warning ? `. ${slot.warning}` : ''}`,
+    'data-line': slot.line,
     onClick: () => app.settlementTapSlot(st, slot),
-  }, sign, box, h('span', { class: 'name' }, aboard ? `${slot.name}, in the lander` : slot.name)))
+  }, sign, box, h('span', { class: 'name named' }, h('span', { class: 'plate' }, h('span', { class: 'n' }, slot.name), aboard ? h('span', { class: 'sub' }, 'in the lander') : null))))
 }
 
 /** The lot takes its drawing's width, so its name can wrap under the drawing rather than past it. */
@@ -154,10 +156,10 @@ function plotLot(app: App, st: Settlement, slot: BuildingSlot): HTMLElement {
 function idleLot(app: App, st: Settlement, idle: { c: Colonist; i: number }[], pick: number | null, settling: (c: Colonist) => number | null): HTMLElement {
   const people = idle.map(({ c, i }) => {
     const picked = pick === i
-    const stand = settled(standingFigure(c, 'var(--lot-figure-h)'), settling(c))
+    const stand = carryable(app, st.id, i, settled(standingFigure(c, 'var(--lot-figure-h)'), settling(c)))
     return h('button', {
       class: 'idler' + (picked ? ' picked' : ''), type: 'button',
-      'aria-label': `${picked ? 'Picked. ' : ''}Idle colonist, standing ${standingWords(c)}. Tap a marked tile or building to put them to work.`,
+      'aria-label': `${picked ? 'Picked. ' : ''}Idle colonist, standing ${standingWords(c)}. Tap a marked tile or building, or carry them there, to put them to work.`,
       'aria-pressed': picked ? 'true' : 'false',
       onClick: () => app.pickColonist(st, i),
     }, stand)

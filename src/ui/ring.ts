@@ -24,6 +24,7 @@ import { RING_PICTURES_KEPT, SWIPE_PX, SWIPE_SLOP_PX } from './theme'
 import { centreYield, goodWord, standingWords, type RingCell } from './selectors'
 import { standingFigure, yieldPill } from './pictures'
 import type { App } from './app'
+import { carryable, isCarrying } from './carry'
 
 /** The ring cell's ground: the tile's own colour, then its features drawn over it. Every colour comes
  *  from the renderer's palette; every size and tint comes from the theme. The fallback when the
@@ -133,7 +134,7 @@ export type TileContent = (cell: RingCell, el: HTMLElement) => void
  *  with its standing beside its feet and its yield in a pill beside it; on each tile that could be
  *  worked and is not, its best yield in a faint pill; at the centre, what the settlement's own ground
  *  makes for nothing. `settling` says whether a colonist has just been sent where they now stand. */
-export function tileFigures(s: GameState, st: Settlement, settling: (c: Colonist) => number | null): TileContent {
+export function tileFigures(app: App, s: GameState, st: Settlement, settling: (c: Colonist) => number | null): TileContent {
   const own = centreYield(s, st)
   return (cell, el) => {
     if (cell.centre) {
@@ -142,7 +143,7 @@ export function tileFigures(s: GameState, st: Settlement, settling: (c: Colonist
     }
     if (cell.worker) {
       const c = cell.worker.colonist
-      el.append(settled(standingFigure(c, 'var(--ring-figure)'), settling(c)))
+      el.append(carryable(app, st.id, cell.worker.index, settled(standingFigure(c, 'var(--ring-figure)'), settling(c))))
       el.append(h('span', { class: 'pills' }, yieldPill(cell.worker.yield, cell.worker.good)))
     } else if (cell.available && cell.best) {
       el.append(h('span', { class: 'pills' }, yieldPill(cell.best.yield, cell.best.good, true)))
@@ -185,6 +186,7 @@ export function ringView(app: App, s: GameState, st: Settlement, cells: RingCell
       'aria-label': tileLabel(cell),
       onClick: () => app.settlementTapTile(st, cell),
     })
+    el.dataset.tile = String(cell.tile)
     content(cell, el)
     tiles.append(el)
   }
@@ -205,6 +207,8 @@ function attachRingSwipe(app: App, ring: HTMLElement) {
   const end = (e: PointerEvent) => {
     if (id !== e.pointerId) return
     id = null
+    // a figure carried across the ring is a carry, not a swipe
+    if (isCarrying(e.pointerId)) return
     const dx = e.clientX - x0, dy = e.clientY - y0
     if (Math.abs(dx) >= SWIPE_PX && Math.abs(dy) <= SWIPE_SLOP_PX) app.gotoSettlement(dx < 0 ? 1 : -1)
   }

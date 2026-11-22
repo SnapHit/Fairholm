@@ -125,7 +125,7 @@ function moreMenu(app: App, st: Settlement): HTMLElement {
  *  not fit. The held colonist's standing is on their figure, as chevrons, so the note need not say it. */
 function notesLine(app: App, s: GameState, st: Settlement, pick: number | null): HTMLElement | null {
   const notes: string[] = []
-  if (pick !== null && st.colonists[pick]) notes.push('Tap a marked tile or building to put them to work.')
+  if (pick !== null && st.colonists[pick]) notes.push(app.carrying ? 'Put them down on a marked tile or building.' : 'Tap a marked tile or building to put them to work.')
   // what is not working here comes first, as the queue says it, and opens its fixes (src/sim/problems.ts)
   const problems = pick === null ? settlementProblems(s, st) : []
   if (problems.length) {
@@ -187,7 +187,7 @@ export function settlementScreen(app: App, s: GameState, st: Settlement): HTMLEl
   moreJustOpened = false
   const settling = settlingSince(s, st)
   const head = header(app, s, st, own.length > 1)
-  const ring = ringView(app, s, st, ringCells(s, st), dests.tiles, tileFigures(s, st, settling))
+  const ring = ringView(app, s, st, ringCells(s, st), dests.tiles, tileFigures(app, s, st, settling))
   const town = townView(app, s, st, pick, dests.lines, settling)
   const body = h('div', { class: 'st-body' }, ring, town, goodsView(app, s, st))
   const screen = h('div', { class: 'settlement' }, head, notesLine(app, s, st, pick), body)

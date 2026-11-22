@@ -66,10 +66,13 @@ reached moves nothing, and a second finger cancels into a pinch. An attack commi
 once its odds have been on screen for half a second. A release never founds: the card offers Found
 here. This is the only way to move any unit, the lander included. No Go control, no tap on a route's
 end, no drag and drop. No card moves a unit to a place; a card may give a standing order (wait,
-explore, look for ground). No confirmation dialogs: undo instead. Below 44 px a tile, tiles are not
+explore, look for ground). No confirmation dialogs: undo instead, with one exception: founding where no forest is in sight
+asks first (`DECISIONS.md` 206). Below 44 px a tile, tiles are not
 tappable; a destination hold still works down to the overview zoom, because it commits nothing until
 the release. A settlement sends someone out to found from its card or the equip sheet; while a
-colonist is chosen, the best seen ground within a walk is marked (`DECISIONS.md` 195).
+colonist is chosen, the best seen ground within a walk is marked (`DECISIONS.md` 195). On the settlement
+screen a settler can be carried by a finger to a tile or a building (206); that is a change of work
+inside a settlement, never a unit's move.
 
 ## Nothing that is not working is silent
 

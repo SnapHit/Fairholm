@@ -72,6 +72,13 @@ export const DESCENT = {
 /** Version 2's ring cell and building slot. The settlement screen no longer uses them (version 3
  *  sizes its ring from the space it has); the founding preview's ring and the full screens still
  *  measure by them. */
+/** Carrying a colonist on the settlement screen (decision 206): how far a finger moves on a figure
+ *  before it is a carry rather than a tap, how near the street's edge it must come to scroll it, and
+ *  how far the street scrolls each frame while it is held there, and how long after letting go a
+ *  stray click is not taken for a tap; how much larger the carried figure is drawn, and how far its
+ *  feet stand over the finger. */
+export const CARRY = { startPx: 8, edgePx: 48, edgeStepPx: 9, clickGuardMs: 400, lift: 1.25, footPx: 14 }
+
 export const RING_CELL_PX = 88
 export const SLOT_W_PX = 56
 
@@ -191,24 +198,25 @@ export const TOKENS: Record<string, string> = {
 
   // Type. In rem, so the whole interface follows the reader's own font size rather than ignoring
   // it. The numbers in brackets are what each comes to at the usual 16px root.
-  // Alegreya Sans for the interface and Alegreya for titles and the opening, a humanist sans and the
-  // serif it was drawn beside (Juan Pablo del Peral, Huerta Tipográfica): warm, literary and legible
-  // small, where the phone's own face read as anyone's app. Self hosted, OFL (DECISIONS.md 205)
-  '--font': '"Alegreya Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  '--font-display': '"Alegreya", Georgia, "Times New Roman", serif',
-  // a pixel up on each from the system face's sizes: Alegreya Sans sits a little smaller on its body
-  '--text-micro': '0.75rem',     // 12
-  '--text-tiny': '0.8125rem',    // 13
-  '--text-small': '0.875rem',    // 14
-  '--text-body': '1rem',         // 16
-  '--text-lead': '1.0625rem',    // 17
-  '--text-title': '1.125rem',    // 18
-  '--text-head': '1.1875rem',    // 19
+  // The look of the recent Zelda games, in open faces (DECISIONS.md 206): they set their text in
+  // Fontworks' Rodin, a Japanese gothic, and their place names in a flared, inscriptional serif.
+  // M PLUS 1 (Coji Morishita) is a gothic of the same kind, and Marcellus (Astigmatic) a flared serif
+  // from Roman inscriptions. Self hosted, OFL
+  '--font': '"M PLUS 1", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  '--font-display': '"Marcellus", Georgia, "Times New Roman", serif',
+  '--text-micro': '0.6875rem',   // 11
+  '--text-tiny': '0.75rem',      // 12
+  '--text-small': '0.8125rem',   // 13
+  '--text-body': '0.9375rem',    // 15
+  '--text-lead': '1rem',         // 16
+  '--text-title': '1.0625rem',   // 17
+  '--text-head': '1.125rem',     // 18
   '--text-display': '1.625rem',  // 26
   /** The opening's lines: the display face a size down, because at twenty-six a sentence wraps to
    *  three rows on a phone and five of them covered the picture they are meant to sit over. */
   '--text-opening': '1.375rem',  // 22
   '--weight-normal': '400',
+  '--display-tracking': '0.02em',
   '--weight-medium': '500',
   '--weight-strong': '700',
   '--leading': '1.35',
@@ -292,6 +300,13 @@ export const TOKENS: Record<string, string> = {
   '--plot-h': '0.3',
   '--plot-line': 'rgba(233,226,204,0.4)',
   '--plot-fill': 'rgba(233,226,204,0.05)',
+  /** A built building's nameplate (decision 206): a dark board with a warm rule along its top, so the
+   *  name reads as a sign hung on the street rather than a caption. */
+  /** The shadow under a colonist carried across the settlement screen. */
+  '--shadow-carry': 'rgba(0,0,0,0.55)',
+  '--plate-bg': 'rgba(23,24,26,0.86)',
+  '--plate-line': 'rgba(233,226,204,0.22)',
+  '--plate-rule': 'rgba(255,154,60,0.7)',
   /** The goods shelf, settlement screen brief section 2: each good's icon stands on one shared shelf
    *  (a soft band in the raised surface colour under the row, lit from above like the drawings), its
    *  stock under it in large figures with the change this turn beside them, and under those the bar

@@ -3717,6 +3717,42 @@ From the owner's first games on a phone, 22 November 2026.
   a little smaller on its body.
 - **As the opening goes** the view takes in the lander and the ring on the water it is to hold.
 
+### 206. One question before founding on bare ground, settlers carried by a finger, a typeface after the recent Zelda games
+
+Tested on a phone, 22 November 2026.
+
+- **Founding where no forest is in sight asks first.** The one exception to "no confirmation dialogs,
+  undo instead": a founding is undone only until the next turn, and a settlement with no forest
+  round it can build nothing without buying every plank, which a new player cannot know until it is
+  too late. `app.found` checks `siteReport` and, with no forested tile seen around the site, shows
+  "No timber here" with *Look for better ground* (first, in the accent) and *Found here anyway*. A
+  second settlement's words say the timber could be shipped in from another; unseen tiles are named.
+  The machine's own voyage passes `sure` and is never asked. Nothing else asks.
+- **Settlers can be carried** on the settlement screen (`src/ui/carry.ts`). A figure on the ring, at a
+  building's door or among the idle can be picked up and put down on a ring tile, a built building or
+  the idle. Moving eight pixels on a figure starts the carry; a tap is still a tap. While carried,
+  every place that can take them is marked, the note reads "Put them down on a marked tile or
+  building", a copy of the figure rides over the finger, and held at either end the street scrolls.
+  Put down on a worked tile or a full building they take that place and whoever was there goes where
+  they came from, as one change with one undo; anywhere else nothing happens. This is not a unit's
+  move on the map, which the hold and release alone still make. Figures take the touch
+  (`touch-action: none`), so the street scrolls from its buildings and ground, not from a person.
+  The same sheet drawn again now keeps its scroll, street and shelf included, so a picked figure
+  stays under the finger.
+- **The typeface follows the recent Zelda games** instead of Alegreya (205), which the player still
+  found generic. Breath of the Wild and Tears of the Kingdom set their text in Fontworks' Rodin, a
+  Japanese gothic, and their place names in a flared, inscriptional serif (recreated by fans as Hylia
+  Serif, which has no clear licence and is not used). M PLUS 1 (Coji Morishita, OFL) is a gothic of
+  the same family of shapes and sets the interface; Marcellus (Astigmatic, OFL), a flared serif drawn
+  from Roman inscriptions, sets titles, the settlement's name, the bar's titles, the intent line and
+  the opening, at its one weight with a little tracking. Text sizes go back to the system face's.
+- **Built buildings carry a nameplate**: the name in the title face on a small dark board with an
+  accent rule along its top, and "in the lander" as a smaller second line while the tools are aboard.
+  The carpenter's shop read as a caption before.
+- **The ring on the water shows only while the lander is chosen.** A hold there moves whatever is
+  chosen, so with nothing chosen it pointed at a gesture that did nothing. *Show me* chooses the
+  lander and brings it back.
+
 ## Left out of version one
 
 - Rival diplomacy offers (`C.flags.rivalDiplomacyOffers: false`).
